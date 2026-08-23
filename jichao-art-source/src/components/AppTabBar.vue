@@ -48,6 +48,9 @@ function go(tab) {
         :class="tab.round ? 'app-tabbar__image' : 'app-tabbar__icon'"
         :src="isActive(tab) ? tab.imageActive : tab.image"
         alt=""
+        draggable="false"
+        @click.prevent
+        @contextmenu.prevent
       />
       <span v-if="!tab.hideLabel" class="app-tabbar__label">{{ tab.label }}</span>
     </div>
@@ -87,6 +90,10 @@ function go(tab) {
   width: 30px;
   height: 30px;
   object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
 }
 .app-tabbar__image {
   width: 64px;
@@ -96,5 +103,9 @@ function go(tab) {
   margin-top: -25px;
   border: 2px solid #fff;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
 }
 </style>

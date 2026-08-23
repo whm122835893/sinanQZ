@@ -48,6 +48,11 @@ html, body, #app {
   padding: 0;
 }
 
+html {
+  background: $color-bg;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: $font-family;
   font-size: 14px;
@@ -55,6 +60,7 @@ body {
   background: $color-bg;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
 }
 
 a {
@@ -115,3 +121,11 @@ img {
 
 // 滚动条隐藏
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+// ---- 安全区域工具类（safe-top / safe-bottom 模板中大量引用）----
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
