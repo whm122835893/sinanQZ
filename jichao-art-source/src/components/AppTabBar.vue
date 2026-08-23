@@ -83,12 +83,12 @@ function go(tab) {
   }
 }
 .app-tabbar__label {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
 }
 .app-tabbar__icon {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;
@@ -96,11 +96,11 @@ function go(tab) {
   pointer-events: none;
 }
 .app-tabbar__image {
-  width: 64px;
-  height: 64px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   object-fit: cover;
-  margin-top: -25px;
+  margin-top: -30px;
   border: 2px solid #fff;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
   user-select: none;
