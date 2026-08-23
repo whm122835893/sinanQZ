@@ -1,0 +1,117 @@
+// ============================================================
+// 司南艺术 —— 全局样式（入口引入一次，输出 :root 变量与基础重置）
+// ============================================================
+
+:root {
+  // ---- 色彩令牌（强制：全站严格引用）----
+  --color-primary:          #C00000;
+  --color-primary-dark:     #A00000;
+  --color-primary-light:    #F5E0E0;
+  --color-primary-disabled: #E08080;
+  --color-bg:               #F7F8FA;
+  --color-card:             #FFFFFF;
+  --color-surface:          #F2F3F5;
+  --color-text-primary:     #333333;
+  --color-text-secondary:   #666666;
+  --color-text-tertiary:    #999999;
+  --color-border:           #EEEEEE;
+  --color-gold:             #D4A574;
+  --color-gold-dark:        #B08D55;
+  --color-dark:             #1A1A1A;
+  --color-primary-bg:       #FFF5F5;
+
+  // ---- 覆盖 Vant 主题令牌，使组件库与设计系统一致 ----
+  --van-primary-color:      var(--color-primary);
+  --van-danger-color:       var(--color-primary);
+  --van-success-color:      #07c160;
+  --van-text-color:         var(--color-text-primary);
+  --van-text-color-2:       var(--color-text-secondary);
+  --van-text-color-3:       var(--color-text-tertiary);
+  --van-gray-1:             var(--color-surface);
+  --van-gray-2:             var(--color-bg);
+  --van-gray-3:             #ebedf0;
+  --van-border-color:       var(--color-border);
+  --van-button-default-color: var(--color-text-primary);
+  --van-button-primary-background: var(--color-primary);
+  --van-button-primary-border-color: var(--color-primary);
+  --van-font-family:        'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: $font-family;
+  font-size: 14px;
+  color: $color-text-primary;
+  background: $color-bg;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul, li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+// ---- 通用工具类 ----
+.t-primary   { color: $color-primary; }
+.t-secondary { color: $color-text-secondary; }
+.t-tertiary  { color: $color-text-tertiary; }
+.t-white     { color: #fff; }
+.fw-600 { font-weight: 600; }
+.fw-700 { font-weight: 700; }
+
+.page {
+  min-height: 100%;
+  background: $color-bg;
+  padding-bottom: calc(#{$tabbar-height} + env(safe-area-inset-bottom) + 12px);
+}
+
+.page--no-tabbar {
+  min-height: 100%;
+  background: $color-bg;
+}
+
+// 书法“司”字通用样式
+.calligraphy {
+  font-family: $font-calligraphy;
+  font-weight: 700;
+}
+
+// 价格数字
+.price {
+  font-family: $font-price;
+  font-weight: 700;
+  color: $color-primary;
+}
+
+// 小组分组标题
+.group-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: $color-text-primary;
+  padding: 16px $page-padding 12px;
+}
+
+// 滚动条隐藏
+.no-scrollbar::-webkit-scrollbar { display: none; }

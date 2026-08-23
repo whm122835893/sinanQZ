@@ -1,0 +1,44 @@
+// ============================================================
+// 司南艺术 Design Tokens —— 仅声明 SCSS 变量 / 函数，不输出 CSS
+// 所有色值对应的 :root CSS 变量在 global.scss 中定义并全站引用
+// ============================================================
+
+// ---- 色彩令牌（编译为 CSS 变量引用，保证全站严格引用 :root 变量）----
+$color-primary:            var(--color-primary);
+$color-primary-dark:       var(--color-primary-dark);
+$color-primary-light:      var(--color-primary-light);
+$color-primary-disabled:   var(--color-primary-disabled);
+$color-bg:                 var(--color-bg);
+$color-card:               var(--color-card);
+$color-surface:            var(--color-surface);
+$color-text-primary:       var(--color-text-primary);
+$color-text-secondary:     var(--color-text-secondary);
+$color-text-tertiary:      var(--color-text-tertiary);
+$color-border:             var(--color-border);
+$color-gold:               var(--color-gold);
+$color-gold-dark:          var(--color-gold-dark);
+$color-dark:               var(--color-dark);
+// 衍生令牌
+$color-primary-bg:         var(--color-primary-bg);   // 浅红选中底 #FFF5F5
+$color-white:              #ffffff;
+
+// ---- 字体 ----
+$font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+$font-price: 'DIN Alternate', 'DIN Condensed', 'Helvetica Neue', Arial, sans-serif;
+$font-calligraphy: 'STKaiti', 'KaiTi', 'Kaiti SC', 'PingFang SC', serif; // 书法“司”字
+
+// ---- 间距与圆角 ----
+$page-padding: 16px;     // 页面左右边距
+$radius-lg: 12px;        // 大卡片
+$radius-md: 8px;         // 小标签 / 按钮 / 输入框
+$radius-pill: 24px;      // 胶囊按钮
+
+// ---- 尺寸 ----
+$navbar-height: 44px;    // 顶部导航高度
+$tabbar-height: 60px;    // 底部 Tab 高度
+$list-item-min-height: 56px;
+
+// ---- 层级 ----
+$z-navbar: 100;
+$z-tabbar: 100;
+$z-modal: 1000;
