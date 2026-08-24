@@ -14,7 +14,7 @@ function goResale() {
 <template>
   <div class="market-card" @click="goResale">
     <div class="market-card__cover-wrap">
-      <img class="market-card__cover" :src="item.coverImage" alt="" />
+      <img class="market-card__cover" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
       <span class="market-card__tag">寄售</span>
     </div>
     <p class="market-card__name">{{ item.name }}</p>
@@ -44,6 +44,7 @@ function goResale() {
   }
   &__cover {
     width: 100%; height: 100%; object-fit: cover; display: block;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__tag {
     position: absolute; top: 8px; left: 8px;

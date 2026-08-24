@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
@@ -20,12 +20,45 @@ onMounted(async () => {
   detail.value = await store.fetchDetail(route.params.id)
 })
 
+// ---- 发售状态：倒计时 / 发售中 / 已售罄 ----
+const now = ref(Date.now())
+let saleTimer = null
+onMounted(() => {
+  saleTimer = setInterval(() => { now.value = Date.now() }, 1000)
+})
+onUnmounted(() => { if (saleTimer) clearInterval(saleTimer) })
+
+const featuredItem = computed(() => store.getFeaturedById(route.params.id))
+
+const saleStatus = computed(() => {
+  if (!featuredItem.value) return 'selling'
+  return store.getSaleStatus(featuredItem.value)
+})
+
+const countdownText = computed(() => {
+  if (!featuredItem.value || !featuredItem.value.saleTime) return ''
+  const diff = featuredItem.value.saleTime - now.value
+  if (diff <= 0) return ''
+  const h = Math.floor(diff / 3600000)
+  const m = Math.floor((diff % 3600000) / 60000)
+  const s = Math.floor((diff % 60000) / 1000)
+  const pad = (n) => String(n).padStart(2, '0')
+  return pad(h) + ':' + pad(m) + ':' + pad(s)
+})
+
+const buyButtonText = computed(() => {
+  if (saleStatus.value === 'countdown') return countdownText.value || '即将发售'
+  if (saleStatus.value === 'selling') return '立即购买'
+  return '已售罄'
+})
+
 const intro = computed(() => {
   if (!detail.value) return ''
   return '《' + detail.value.title + '》为平台精选数字藏品，已完成链上确权，支持自由寄售与流转，该藏品具体信息以下方为准。'
 })
 
 function onBuy() {
+  if (saleStatus.value !== 'selling') return
   if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
   router.push({ name: 'pay', params: { mode: 'release', id: route.params.id } })
 }
@@ -111,7 +144,7 @@ function onSuccessDone() {
 
     <!-- 主视觉卡片 -->
     <div class="detail-hero">
-      <img class="detail-hero__cover" :src="detail.coverImage" alt="" />
+      <img class="detail-hero__cover" :src="detail.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
       <div class="detail-hero__metal"><span>SINAN DIGITAI</span></div>
     </div>
 
@@ -158,7 +191,7 @@ function onSuccessDone() {
       <div class="detail-buy__price">
         <b>¥{{ detail.price }}</b>
       </div>
-      <button class="detail-buy__btn" @click="onBuy">立即购买</button>
+      <button class="detail-buy__btn" :class="{ 'is-soldout': saleStatus === 'soldout' }" :disabled="saleStatus !== 'selling'" @click="onBuy">{{ buyButtonText }}</button>
     </div>
     <!-- 仓库：仅立即寄售 -->
     <div class="detail-buy safe-bottom" v-else>
@@ -177,7 +210,7 @@ function onSuccessDone() {
         <template v-if="!pwdStep">
           <!-- 藏品信息 -->
           <div class="consign__item">
-            <img class="consign__cover" :src="detail.coverImage" alt="" />
+            <img class="consign__cover" :src="detail.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <div class="consign__info">
               <p class="consign__name">{{ detail.title }}</p>
               <p class="consign__no" v-if="serialNo">编号：{{ serialNo }}</p>
@@ -255,7 +288,9 @@ function onSuccessDone() {
   position: relative; margin: 12px $page-padding; border-radius: $radius-lg;
   background: $color-card; height: 320px; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  &__cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+  &__cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+  }
   &__metal {
     position: absolute; z-index: 2; bottom: 0; left: 0; right: 0; height: 46px;
     background: rgba(255, 255, 255, 0.08);
@@ -308,6 +343,7 @@ function onSuccessDone() {
     flex: 1; height: 48px; margin-right: 5px; border: none; cursor: pointer; color: #fff; font-size: 16px; font-weight: 500;
     border-radius: $radius-pill; background: linear-gradient(135deg, #D00000, #B00000);
     &:disabled { opacity: .6; }
+    &.is-soldout { background: #cccccc; cursor: not-allowed; opacity: 1; }
   }
 }
 
@@ -325,6 +361,7 @@ function onSuccessDone() {
   }
   &__cover {
     width: 56px; height: 56px; border-radius: $radius-md; object-fit: cover; flex-shrink: 0;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__info { min-width: 0; }
   &__name { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: $color-text-primary; }

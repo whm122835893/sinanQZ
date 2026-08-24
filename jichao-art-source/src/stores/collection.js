@@ -3,12 +3,16 @@ import { ref, computed } from 'vue'
 
 // 藏品状态：列表 / 详情 / 筛选
 export const useCollectionStore = defineStore('collection', () => {
-  // 首页发售区藏品（mock）—— 含封面图
+  // 首页发售区藏品（mock）—— 含封面图 + 发售时间
+  const _now = Date.now()
+  const _2h = 2 * 60 * 60 * 1000
+  const _5h = 5 * 60 * 60 * 1000
+  const _24h = 24 * 60 * 60 * 1000
   const featured = ref([
-    { id: '1', name: '龙纹罗盘', tag: '首发', price: '0.10', total: '500份', coverImage: '/images/collections/cover-1.jpg' },
-    { id: '2', name: '虎纹卡牌', tag: '首发', price: '0.10', total: '800份', coverImage: '/images/collections/cover-2.jpg' },
-    { id: '3', name: '水晶菱形', tag: '首发', price: '0.10', total: '300份', coverImage: '/images/collections/cover-3.jpg' },
-    { id: '4', name: '司南青龙', tag: '热售', price: '0.20', total: '1000份', coverImage: '/images/collections/cover-4.jpg' }
+    { id: '1', name: '龙纹罗盘', tag: '首发', price: '0.10', total: '500份', coverImage: '/images/collections/cover-1.jpg', saleTime: _now + _2h, saleEndTime: _now + _2h + _24h, soldOut: false },
+    { id: '2', name: '虎纹卡牌', tag: '首发', price: '0.10', total: '800份', coverImage: '/images/collections/cover-2.jpg', saleTime: _now + _5h, saleEndTime: _now + _5h + _24h, soldOut: false },
+    { id: '3', name: '水晶菱形', tag: '首发', price: '0.10', total: '300份', coverImage: '/images/collections/cover-3.jpg', saleTime: _now - _5h, saleEndTime: _now + _24h, soldOut: true },
+    { id: '4', name: '司南青龙', tag: '热售', price: '0.20', total: '1000份', coverImage: '/images/collections/cover-4.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false }
   ])
 
   // 市场寄售藏品（mock）—— 点击进入寄售详情
@@ -111,5 +115,32 @@ export const useCollectionStore = defineStore('collection', () => {
     return Promise.resolve({ meta, orders: resaleOrders.value })
   }
 
-  return { featured, resaleCollection, collections, filters, detail, resaleOrders, marketViewMode, marketCollections, marketSort, sortedMarketCollections, toggleMarketSort, fetchList, fetchDetail, fetchResale }
+  // 发售状态：'countdown' 倒计时 | 'selling' 发售中 | 'soldout' 已售罄
+  function getSaleStatus(item) {
+    if (!item) return 'soldout'
+    if (item.soldOut) return 'soldout'
+    const now = Date.now()
+    if (item.saleTime && now < item.saleTime) return 'countdown'
+    if (item.saleEndTime && now >= item.saleEndTime) return 'soldout'
+    return 'selling'
+  }
+
+  // 倒计时文案
+  function getCountdownText(item) {
+    if (!item || !item.saleTime) return ''
+    const diff = item.saleTime - Date.now()
+    if (diff <= 0) return ''
+    const h = Math.floor(diff / 3600000)
+    const m = Math.floor((diff % 3600000) / 60000)
+    const s = Math.floor((diff % 60000) / 1000)
+    const pad = (n) => String(n).padStart(2, '0')
+    return pad(h) + ':' + pad(m) + ':' + pad(s)
+  }
+
+  // 按 id 获取 featured 藏品
+  function getFeaturedById(id) {
+    return featured.value.find(f => f.id === String(id)) || null
+  }
+
+  return { featured, resaleCollection, collections, filters, detail, resaleOrders, marketViewMode, marketCollections, marketSort, sortedMarketCollections, toggleMarketSort, fetchList, fetchDetail, fetchResale, getSaleStatus, getCountdownText, getFeaturedById }
 })

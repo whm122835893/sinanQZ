@@ -13,7 +13,7 @@ function goResale() {
 
 <template>
   <div class="resale-item" @click="goResale">
-    <img class="resale-item__cover" :src="item.coverImage" alt="" />
+    <img class="resale-item__cover" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
     <div class="resale-item__info">
       <p class="resale-item__name">{{ item.name }}</p>
       <div class="resale-item__stats">
@@ -34,6 +34,7 @@ function goResale() {
   &__cover {
     width: 60px; height: 60px; border-radius: 8px; object-fit: cover; flex-shrink: 0;
     background: #141415;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__info { flex: 1; min-width: 0; }
   &__name { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: $color-text-primary; }

@@ -36,7 +36,7 @@ function saveNick() {
     <div class="profile-group">
       <AppListItem title="头像">
         <template #value>
-          <img class="profile-avatar" src="/images/avatar-new.png" alt="" />
+          <img class="profile-avatar profile-avatar--logo" src="/images/platform-logo.png" alt="" />
         </template>
       </AppListItem>
 
@@ -70,6 +70,10 @@ function saveNick() {
 .profile-group { margin: 12px $page-padding; border-radius: $radius-lg; overflow: hidden; }
 .profile-avatar {
   width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: #fff;
+}
+.profile-avatar--logo {
+  display: block; margin-left: auto;
+  -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
 }
 .profile-nick-edit { padding: 12px 16px; background: $color-card; border-bottom: 1px solid $color-border; }
 .profile-nick-edit__btns { display: flex; gap: 12px; margin-top: 12px; }

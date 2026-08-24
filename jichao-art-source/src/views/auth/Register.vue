@@ -6,7 +6,7 @@ import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useCountdown } from '@/utils/useCountdown'
-import { showToast } from 'vant'
+import { showToast, showDialog } from 'vant'
 
 const router = useRouter()
 const { counting, remain, start } = useCountdown(60)
@@ -36,13 +36,17 @@ function onSubmit() {
   showToast('注册成功')
   router.replace('/auth/login')
 }
+
+function goAgreement(name) {
+  showDialog({ title: name, message: '此处为' + name + '的正文内容，实际接入后替换为真实条款。', confirmButtonText: '我知道了' })
+}
 </script>
 
 <template>
   <div class="auth page--no-tabbar">
     <AppNavBar title="注册" @click-left="$router.back()" />
 
-    <p class="auth-sub">数/字/藏/珍/品 · 司/南/鉴/匠/心</p>
+    <p class="auth-sub">司/南/载/道·文/脉/传/心</p>
 
     <div class="auth-form">
       <AppInput v-model="phone" label="手机号" type="tel" maxlength="11" placeholder="请输入手机号" />
@@ -59,9 +63,9 @@ function onSubmit() {
 
       <div class="auth-agree" @click="agreed = !agreed">
         <span class="auth-checkbox" :class="{ checked: agreed }">
-          <AppIcon v-if="agreed" name="back" :size="12" color="#fff" style="transform: rotate(-45deg)" />
+          <AppIcon v-if="agreed" name="check" :size="12" color="#fff" />
         </span>
-        <span class="auth-agree-text">我已阅读并同意<em>《用户协议》</em>和<em>《隐私政策》</em></span>
+        <span class="auth-agree-text">我已阅读并同意<em @click.stop="goAgreement('用户协议')">《用户协议》</em>和<em @click.stop="goAgreement('隐私政策')">《隐私政策》</em></span>
       </div>
 
       <AppButton :disabled="!canSubmit" @click="onSubmit">立即注册</AppButton>
@@ -85,5 +89,5 @@ function onSubmit() {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   &.checked { background: $color-primary; border-color: $color-primary; }
 }
-.auth-agree-text { font-size: 12px; color: $color-text-secondary; em { color: $color-primary; font-style: normal; } }
+.auth-agree-text { font-size: 12px; color: $color-text-secondary; em { color: $color-primary; font-style: normal; cursor: pointer; } }
 </style>

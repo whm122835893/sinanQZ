@@ -1,19 +1,37 @@
 <script setup>
+import { computed } from 'vue'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppTag from '@/components/AppTag.vue'
+import { useCollectionStore } from '@/stores/collection'
 
-const timeline = [
-  { time: '2026年07月01日 10:28', title: '司南暴富', count: '500份', price: '0.10', status: '已售罄' },
-  { time: '2026年07月05日 14:00', title: '龙纹罗盘', count: '300份', price: '0.20', status: '已售罄' },
-  { time: '2026年07月11日 20:00', title: '虎纹卡牌', count: '200份', price: '0.30', status: '已售罄' }
-]
+const store = useCollectionStore()
+
+function formatDate(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const pad = (n) => String(n).padStart(2, '0')
+  return d.getFullYear() + '年' + pad(d.getMonth() + 1) + '月' + pad(d.getDate()) + '日 ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+}
+
+const STATUS_MAP = { countdown: '待发售', selling: '发售中', soldout: '已售罄' }
+
+const timeline = computed(() =>
+  store.featured.map((item) => ({
+    time: formatDate(item.saleTime),
+    title: item.name,
+    count: item.total,
+    price: item.price,
+    coverImage: item.coverImage,
+    status: STATUS_MAP[store.getSaleStatus(item)] || '已售罄'
+  }))
+)
 </script>
 
 <template>
   <div class="calendar page--no-tabbar">
     <AppNavBar title="首发日历" @click-left="$router.back()">
       <template #right>
-        <span class="calligraphy cal-logo">司</span>
+        <img class="cal-logo-img" src="/images/platform-logo.png" alt="" />
       </template>
     </AppNavBar>
 
@@ -31,7 +49,7 @@ const timeline = [
             <AppTag type="gray">{{ item.status }}</AppTag>
           </div>
           <div class="timeline__card">
-            <div class="timeline__thumb calligraphy">司</div>
+            <img class="timeline__thumb" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <div class="timeline__info">
               <span class="timeline__title">{{ item.title }}</span>
               <div class="timeline__meta">
@@ -47,7 +65,7 @@ const timeline = [
 </template>
 
 <style scoped lang="scss">
-.cal-logo { font-size: 22px; color: #C00000; font-weight: 700; }
+.cal-logo-img { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
 .calendar-sub { margin: 14px $page-padding; font-size: 14px; color: $color-text-secondary; }
 
 .timeline { padding: 0 $page-padding 24px; }
@@ -63,8 +81,8 @@ const timeline = [
   display: flex; gap: 12px; background: $color-card; border-radius: $radius-lg; padding: 16px;
 }
 .timeline__thumb {
-  width: 56px; height: 56px; border-radius: 8px; background: $color-primary-light; color: #C00000;
-  display: flex; align-items: center; justify-content: center; font-size: 30px; flex-shrink: 0;
+  width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex-shrink: 0;
+  -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
 }
 .timeline__info { flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .timeline__title { font-size: 16px; font-weight: 700; color: $color-text-primary; }

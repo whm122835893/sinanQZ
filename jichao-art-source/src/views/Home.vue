@@ -12,6 +12,20 @@ const userStore = useUserStore()
 const store = useCollectionStore()
 const featured = store.featured
 
+// 发售倒计时：每秒刷新状态
+const now = ref(Date.now())
+let saleTimer = null
+const STATUS_TEXT = { countdown: '距发售', selling: '发售中', soldout: '已售罄' }
+
+const featuredWithStatus = computed(() => {
+  now.value  // touch for reactivity
+  return store.featured.map(item => ({
+    ...item,
+    status: store.getSaleStatus(item),
+    countdownText: store.getCountdownText(item)
+  }))
+})
+
 // 背景轮播：横向无缝滚动 + 手势拖动
 const slides = ['slide-1.jpg', 'slide-2.jpg', 'slide-3.jpg']
 const n = slides.length
@@ -105,8 +119,9 @@ function onTouchEnd(e) {
 onMounted(() => {
   if (Math.round(pos.value) >= n) pos.value = 0
   startAuto()
+  saleTimer = setInterval(() => { now.value = Date.now() }, 1000)
 })
-onUnmounted(() => stopAuto())
+onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer) })
 
 const notices = [
   "司南艺术·全域'生态星推官'共建招募，共创价值！",
@@ -142,6 +157,8 @@ function onSign() {
             class="home-hero__slide"
             :src="'/images/hero/' + s"
             alt=""
+            draggable="false"
+            @contextmenu.prevent
           />
         </div>
       </div>
@@ -156,7 +173,7 @@ function onSign() {
 
       <div class="home-hero__top safe-top">
         <div class="home-hero__sign" @click="onSign">
-          <img class="home-hero__sign-icon" src="/images/tab/tab-gift-line.png" alt="" />
+          <img class="home-hero__sign-icon" src="/images/tab/tab-gift-line.png" alt="" draggable="false" @contextmenu.prevent />
           <span>签到有礼</span>
         </div>
       </div>
@@ -165,7 +182,7 @@ function onSign() {
 
     <!-- 品牌卡片 -->
     <div class="brand-card">
-      <img class="brand-card__logo" src="/images/brand-logo.png" alt="" />
+      <img class="brand-card__logo" src="/images/brand-logo.png" alt="" draggable="false" @contextmenu.prevent />
       <p class="brand-card__text">数字指针｜司南文创</p>
     </div>
 
@@ -233,14 +250,19 @@ function onSign() {
       </div>
       <div class="home-releases__grid">
         <div
-          v-for="item in featured"
+          v-for="item in featuredWithStatus"
           :key="item.id"
           class="release-card"
           @click="goDetail(item.id)"
         >
           <div class="release-card__cover">
-            <img class="release-card__img" :src="item.coverImage" alt="" />
+            <img class="release-card__img" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <span class="release-card__tag">{{ item.tag }}</span>
+            <!-- 液态玻璃：发售状态/倒计时 -->
+            <div class="release-card__glass">
+              <span v-if="item.status === 'countdown'" class="release-card__status">{{ STATUS_TEXT[item.status] }} {{ item.countdownText }}</span>
+              <span v-else class="release-card__status" :class="{ 'is-soldout': item.status === 'soldout' }">{{ STATUS_TEXT[item.status] }}</span>
+            </div>
           </div>
           <p class="release-card__name">{{ item.name }}</p>
           <div class="release-card__meta">
@@ -270,6 +292,7 @@ function onSign() {
   &__slide {
     flex: 0 0 100%; width: 100%; height: 100%;
     object-fit: cover; display: block;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__dots {
     position: absolute; z-index: 1; left: 50%; bottom: 14px;
@@ -298,7 +321,7 @@ function onSign() {
     padding: 5px 10px; font-size: 12px; color: #C00000; font-weight: 500;
     box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
   }
-  &__sign-icon { width: 16px; height: 16px; }
+  &__sign-icon { width: 16px; height: 16px; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
 }
 
 /* 品牌卡：云雷纹白底金纹 + 液态玻璃 */
@@ -349,12 +372,8 @@ function onSign() {
   }
 
   &__logo {
-    position: relative;
-    z-index: 1;
-    display: block;
-    height: 72px;
-    margin: 0 auto;
-    object-fit: contain;
+    position: relative; z-index: 1; display: block; height: 72px; margin: 0 auto; object-fit: contain;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__text {
     position: relative;
@@ -437,12 +456,29 @@ function onSign() {
     position: relative; width: 100%; aspect-ratio: 1 / 1;
     border-radius: 10px; overflow: hidden; background: #141415;
   }
-  &__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  &__img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+  }
   &__tag {
-    position: absolute; top: 8px; left: 8px; z-index: 1;
+    position: absolute; top: 8px; left: 8px; z-index: 2;
     font-size: 10px; font-weight: 600; color: #fff;
     background: linear-gradient(135deg, $color-primary, #8B0000);
     padding: 2px 6px; border-radius: 4px;
+  }
+  &__glass {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 32px; z-index: 1;
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    display: flex; align-items: center; justify-content: center;
+  }
+  &__status {
+    font-size: 12px; font-weight: 600; color: #fff;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    letter-spacing: 1px;
+    &.is-soldout { color: rgba(255, 255, 255, 0.6); }
   }
   &__name {
     margin: 10px 0 6px;

@@ -24,10 +24,10 @@ function logout() {
 <template>
   <div class="user page">
     <!-- 用户信息 -->
-    <div class="user-info safe-top">
+    <div class="user-info safe-top" @click="!user.isLoggedIn && router.push('/auth/login')">
       <div class="user-info__main">
-        <span class="user-info__name">{{ user.userInfo.nickname }}</span>
-        <span class="user-info__addr">钱包地址:实名后获得</span>
+        <span class="user-info__name">{{ user.isLoggedIn ? user.userInfo.nickname : '未登录' }}</span>
+        <span class="user-info__addr">{{ user.isLoggedIn ? '钱包地址:实名后获得' : '点击登录账号' }}</span>
       </div>
       <img class="user-info__avatar" src="/images/platform-logo.png" alt="" />
     </div>
@@ -82,7 +82,7 @@ function logout() {
       <AppListItem title="我的客服" icon="headset" arrow border @click="go('/user/service')" />
     </div>
 
-    <div class="user-logout" @click="logout">退出登录</div>
+    <div class="user-logout" v-if="user.isLoggedIn" @click="logout">退出登录</div>
   </div>
 </template>
 
@@ -99,6 +99,7 @@ function logout() {
   &__avatar {
     width: 58px; height: 58px; border-radius: 50%; object-fit: cover;
     background: #fff; border: 1px solid #eee;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
 }
 
