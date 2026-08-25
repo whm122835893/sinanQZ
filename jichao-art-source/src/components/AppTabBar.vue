@@ -123,8 +123,8 @@ function go(tab) {
   line-height: 1;
 }
 .app-tabbar__icon {
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   object-fit: contain;
   -webkit-user-drag: none;
   user-select: none;

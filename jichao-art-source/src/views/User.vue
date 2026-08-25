@@ -1,12 +1,19 @@
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useIconThemeStore } from '@/stores/iconTheme'
 import AppIcon from '@/components/AppIcon.vue'
 import AppListItem from '@/components/AppListItem.vue'
 import { showConfirmDialog, showToast } from 'vant'
 
 const router = useRouter()
 const user = useUserStore()
+const iconTheme = useIconThemeStore()
+
+// 功能入口图标（跟随当前主题动态切换）
+const inventoryIcon = computed(() => iconTheme.getFeatureIcon('inventory'))
+const walletIcon    = computed(() => iconTheme.getFeatureIcon('wallet'))
 
 function go(path) { router.push(path) }
 
@@ -45,14 +52,16 @@ function logout() {
     <!-- 资产入口 -->
     <div class="asset-grid">
       <div class="asset-card" @click="go('/user/collections')">
-        <AppIcon name="cube" :size="30" color="#C00000" />
+        <img v-if="inventoryIcon?.type === 'image'" :src="inventoryIcon.image" class="asset-card__icon" alt="" draggable="false" @contextmenu.prevent />
+        <AppIcon v-else-if="inventoryIcon?.type === 'svg'" :name="inventoryIcon.icon" :size="30" color="#C00000" />
         <div class="asset-card__text">
           <span class="asset-card__title">我的库存</span>
           <span class="asset-card__sub">藏品轻松管理</span>
         </div>
       </div>
       <div class="asset-card" @click="go('/user/wallet')">
-        <AppIcon name="wallet" :size="30" color="#1A1A1A" />
+        <img v-if="walletIcon?.type === 'image'" :src="walletIcon.image" class="asset-card__icon" alt="" draggable="false" @contextmenu.prevent />
+        <AppIcon v-else-if="walletIcon?.type === 'svg'" :name="walletIcon.icon" :size="30" color="#1A1A1A" />
         <div class="asset-card__text">
           <span class="asset-card__title">我的钱包</span>
           <span class="asset-card__sub">资产安全无忧</span>
@@ -126,6 +135,7 @@ function logout() {
 .asset-card {
   flex: 1; background: $color-card; border-radius: $radius-lg; padding: 10px;
   display: flex; align-items: center; gap: 12px; cursor: pointer;
+  &__icon { width: 40px; height: 40px; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
   &__text { display: flex; flex-direction: column; gap: 4px; }
   &__title { font-size: 15px; font-weight: 600; color: $color-text-primary; }
   &__sub { font-size: 12px; color: $color-text-tertiary; }

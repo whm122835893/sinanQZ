@@ -4,13 +4,20 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
+import { useIconThemeStore } from '@/stores/iconTheme'
 import AppButton from '@/components/AppButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 const store = useCollectionStore()
+const iconTheme = useIconThemeStore()
 const featured = store.featured
+
+// 功能入口图标（跟随当前主题动态切换）
+const calendarIcon = computed(() => iconTheme.getFeatureIcon('calendar'))
+const activityIcon = computed(() => iconTheme.getFeatureIcon('activity'))
+const lotteryIcon  = computed(() => iconTheme.getFeatureIcon('lottery'))
 
 // 发售倒计时：每秒刷新状态
 const now = ref(Date.now())
@@ -211,7 +218,8 @@ function onSign() {
           <span class="grid-main__sub">独家发售，先到先得</span>
         </div>
         <div class="grid-main__cal">
-          <AppIcon name="calendar" :size="40" color="#C00000" />
+          <img v-if="calendarIcon?.type === 'image'" :src="calendarIcon.image" class="grid-main__cal-icon" alt="" draggable="false" @contextmenu.prevent />
+          <AppIcon v-else-if="calendarIcon?.type === 'svg'" :name="calendarIcon.icon" :size="44" color="#C00000" class="grid-main__cal-icon" />
           <div class="grid-main__date">
             <strong>21</strong>
             <span>2024.11.11</span>
@@ -228,7 +236,10 @@ function onSign() {
             </div>
             <span class="side-card__sub">让你资产换新</span>
           </div>
-          <span class="side-card__tag"><AppIcon name="activity" :size="30" color="#C00000" /></span>
+          <span class="side-card__tag">
+            <img v-if="activityIcon?.type === 'image'" :src="activityIcon.image" alt="" draggable="false" @contextmenu.prevent />
+            <AppIcon v-else-if="activityIcon?.type === 'svg'" :name="activityIcon.icon" :size="30" color="#C00000" />
+          </span>
         </div>
         <div class="side-card" @click="goLottery">
           <div class="side-card__text">
@@ -237,7 +248,10 @@ function onSign() {
             </div>
             <span class="side-card__sub">幸运好礼相送</span>
           </div>
-          <span class="side-card__tag"><AppIcon name="gift2" :size="30" color="#C00000" /></span>
+          <span class="side-card__tag">
+            <img v-if="lotteryIcon?.type === 'image'" :src="lotteryIcon.image" alt="" draggable="false" @contextmenu.prevent />
+            <AppIcon v-else-if="lotteryIcon?.type === 'svg'" :name="lotteryIcon.icon" :size="30" color="#C00000" />
+          </span>
         </div>
       </div>
     </section>
@@ -419,7 +433,7 @@ function onSign() {
     &__title { font-size: 15px; font-weight: 700; color: $color-text-primary; }
     &__sub { display: block; font-size: 11px; color: $color-text-tertiary; margin-top: 4px; }
     &__cal { display: flex; align-items: center; gap: 10px; }
-    &__cal-icon { width: 40px; height: 40px; flex: none; }
+    &__cal-icon { width: 44px; height: 44px; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
     &__date { display: flex; flex-direction: column; line-height: 1.1;
       strong { font-size: 22px; color: $color-primary; font-family: $font-price; }
       span { font-size: 11px; color: $color-text-tertiary; }
@@ -434,9 +448,9 @@ function onSign() {
     &__head { display: flex; align-items: center; }
     &__title { font-size: 15px; font-weight: 700; color: $color-text-primary; }
     &__tag {
-      width: 32px; height: 32px; border-radius: 8px; background: transparent; flex: none;
+      width: 40px; height: 40px; border-radius: 8px; background: transparent; flex: none;
       display: flex; align-items: center; justify-content: center;
-      img { width: 28px; height: 28px; }
+      img { width: 36px; height: 36px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
     }
     &__sub { font-size: 11px; color: $color-text-tertiary; }
   }
