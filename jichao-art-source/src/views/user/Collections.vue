@@ -10,10 +10,12 @@ const user = useUserStore()
 const tabs = ['数字藏品', '盲盒', '已售出']
 const active = ref('数字藏品')
 
-// 仅展示「数字藏品」库存（其余分类暂为空）
-const list = computed(() =>
-  active.value === '数字藏品' ? user.inventory : []
-)
+// 按类型筛选库存
+const list = computed(() => {
+  if (active.value === '数字藏品') return user.inventory.filter(i => i.type !== 'blindbox')
+  if (active.value === '盲盒') return user.inventory.filter(i => i.type === 'blindbox')
+  return []
+})
 
 // 点击藏品卡片 → 弹出该藏品所有编号
 const showSerials = ref(false)
@@ -34,7 +36,9 @@ function openSerials(it) {
 }
 function goDetail(it, no) {
   showSerials.value = false
-  router.push({ name: 'collection-detail', params: { id: it.id }, query: { no, from: 'warehouse' } })
+  const query = { no, from: 'warehouse' }
+  if (it.type === 'blindbox') query.type = 'blindbox'
+  router.push({ name: 'collection-detail', params: { id: it.id }, query })
 }
 </script>
 
@@ -57,6 +61,8 @@ function goDetail(it, no) {
       <div class="collections-grid__item" v-for="(it, i) in list" :key="i" @click="openSerials(it)">
         <div class="collections-grid__cover-wrap">
           <img class="collections-grid__cover" :src="it.coverImage" alt="" />
+          <span v-if="it.type === 'blindbox' && it.opened" class="collections-grid__badge collections-grid__badge--opened">已开启</span>
+          <span v-else-if="it.type === 'blindbox'" class="collections-grid__badge">未开启</span>
         </div>
         <p class="collections-grid__name">{{ it.name }}</p>
         <p class="collections-grid__count">持有 {{ it.qty }} 件</p>
@@ -69,8 +75,8 @@ function goDetail(it, no) {
     <van-popup v-model:show="showSerials" position="bottom" round>
       <div class="serials">
         <div class="serials__head">
-          <p class="serials__title">{{ current?.name }}</p>
-          <p class="serials__sub">共持有 {{ currentSerials.length }} 个编号</p>
+          <p class="serials__title">{{ current?.type === 'blindbox' ? '查看编号' : current?.name }}</p>
+          <p class="serials__sub">{{ current?.type === 'blindbox' ? current?.name + ' · ' : '' }}共持有 {{ currentSerials.length }} 个编号</p>
           <span class="serials__close" @click="showSerials = false">✕</span>
         </div>
         <div class="serials__grid">
@@ -109,6 +115,13 @@ function goDetail(it, no) {
   border-radius: 10px; overflow: hidden; background: #141415;
 }
 .collections-grid__cover { width: 100%; height: 100%; object-fit: cover; display: block; }
+.collections-grid__badge {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  font-size: 10px; font-weight: 600; color: #fff;
+  background: linear-gradient(135deg, #D00000, #B00000);
+  padding: 2px 8px; border-radius: 4px;
+}
+.collections-grid__badge--opened { background: #999; }
 .collections-grid__name {
   margin: 10px 0 4px; font-size: 14px; font-weight: 600; color: $color-text-primary;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

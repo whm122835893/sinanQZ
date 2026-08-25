@@ -63,12 +63,12 @@ function goResale() {
   &__stat {
     font-size: 10px; color: $color-text-tertiary;
     display: flex; flex-direction: column; gap: 2px;
-    b { font-size: 12px; color: $color-text-primary; font-weight: 600; font-family: $font-price; }
+    b { font-size: 12px; color: $color-text-primary; font-weight: 600; font-family: $font-price; line-height: 1; }
   }
   &__footer {
     display: flex; align-items: flex-end; justify-content: space-between;
     margin-top: 10px; padding-top: 10px; border-top: 1px solid $color-border;
   }
-  &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; }
+  &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; line-height: 1; }
 }
 </style>

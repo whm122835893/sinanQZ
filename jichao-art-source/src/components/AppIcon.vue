@@ -44,7 +44,10 @@ const ICONS = {
   refresh: { path: '<path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/>' },
   quote: { fill: true, path: '<path d="M9 6C5.5 7.5 4 10.5 4 14c0 2.8 1.8 4.5 4 4.5S12 16.8 12 14s-1.8-4.5-4-4.5c0-2.2.9-4 2-5.5L9 6zm11 0c-3.5 1.5-5 4.5-5 8 0 2.8 1.8 4.5 4 4.5s4-1.7 4-4.5-1.8-4.5-4-4.5c0-2.2.9-4 2-5.5L20 6z"/>' },
   check: { path: '<polyline points="20 7 9.5 17.5 4 12"/>' },
-  clock: { path: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>' }
+  clock: { path: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>' },
+  home: { fill: true, path: '<path d="M12 3l9 7.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/>' },
+  bag: { fill: true, path: '<path d="M5 8h14l-1 12H6z"/><path d="M8.5 8V6.5a3.5 3.5 0 017 0V8" fill="none" stroke="currentColor" stroke-width="2"/>' },
+  bell: { fill: true, path: '<path d="M12 2a6 6 0 016 6v4l2 3v2H4v-2l2-3V8a6 6 0 016-6z"/><path d="M10 19a2 2 0 004 0" fill="none" stroke="currentColor" stroke-width="2"/>' }
 }
 
 const icon = computed(() => ICONS[props.name] || ICONS.back)

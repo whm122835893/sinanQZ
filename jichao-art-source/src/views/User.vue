@@ -48,14 +48,14 @@ function logout() {
         <AppIcon name="cube" :size="30" color="#C00000" />
         <div class="asset-card__text">
           <span class="asset-card__title">我的库存</span>
-          <span class="asset-card__sub">让你的资产换新</span>
+          <span class="asset-card__sub">藏品轻松管理</span>
         </div>
       </div>
       <div class="asset-card" @click="go('/user/wallet')">
         <AppIcon name="wallet" :size="30" color="#1A1A1A" />
         <div class="asset-card__text">
           <span class="asset-card__title">我的钱包</span>
-          <span class="asset-card__sub">让你的资产换新</span>
+          <span class="asset-card__sub">资产安全无忧</span>
         </div>
       </div>
     </div>
@@ -124,7 +124,7 @@ function logout() {
 
 .asset-grid { display: flex; gap: 12px; padding: 0 $page-padding; }
 .asset-card {
-  flex: 1; background: $color-card; border-radius: $radius-lg; padding: 16px;
+  flex: 1; background: $color-card; border-radius: $radius-lg; padding: 10px;
   display: flex; align-items: center; gap: 12px; cursor: pointer;
   &__text { display: flex; flex-direction: column; gap: 4px; }
   &__title { font-size: 15px; font-weight: 600; color: $color-text-primary; }

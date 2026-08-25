@@ -1,16 +1,26 @@
 <script setup>
+import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
 
 const route = useRoute()
+const refreshing = ref(false)
+
+function onRefresh() {
+  setTimeout(() => {
+    refreshing.value = false
+  }, 1000)
+}
 </script>
 
 <template>
-  <router-view v-slot="{ Component }">
-    <Transition name="page">
-      <component :is="Component" :key="route.fullPath" />
-    </Transition>
-  </router-view>
+  <van-pull-refresh v-model="refreshing" @refresh="onRefresh" class="app-refresh">
+    <router-view v-slot="{ Component }">
+      <Transition name="page">
+        <component :is="Component" :key="route.fullPath" />
+      </Transition>
+    </router-view>
+  </van-pull-refresh>
 
   <AppTabBar v-if="route.meta.tabbar" />
 </template>

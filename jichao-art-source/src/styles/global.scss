@@ -129,3 +129,24 @@ img {
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+// ---- 下拉刷新：平台 logo 作为下拉显示内容 ----
+.van-pull-refresh__head {
+  height: 60px;
+  .van-pull-refresh__text {
+    font-size: 0;
+    &::before {
+      content: '';
+      display: block;
+      width: 36px;
+      height: 36px;
+      background: url('/images/platform-logo.png') center / contain no-repeat;
+      animation: pr-spin 0.8s linear infinite;
+    }
+  }
+  .van-loading { display: none; }
+}
+@keyframes pr-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

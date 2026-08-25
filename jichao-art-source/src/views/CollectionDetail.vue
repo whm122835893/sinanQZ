@@ -15,6 +15,8 @@ const detail = ref(null)
 const serialNo = computed(() => route.query.no)
 // 仓库进入：隐藏购买/价格，底部改为「立即寄售」
 const isWarehouse = computed(() => route.query.from === 'warehouse')
+// 盲盒进入：底部显示「开启盲盒」+「立即寄售(灰色)」
+const isBlindbox = computed(() => route.query.type === 'blindbox')
 
 onMounted(async () => {
   detail.value = await store.fetchDetail(route.params.id)
@@ -57,10 +59,15 @@ const intro = computed(() => {
   return '《' + detail.value.title + '》为平台精选数字藏品，已完成链上确权，支持自由寄售与流转，该藏品具体信息以下方为准。'
 })
 
+// 盲盒子藏品列表
+const blindboxItems = computed(() => featuredItem.value?.items || [])
+
 function onBuy() {
   if (saleStatus.value !== 'selling') return
   if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
-  router.push({ name: 'pay', params: { mode: 'release', id: route.params.id } })
+  const query = {}
+  if (featuredItem.value?.type === 'blindbox') query.type = 'blindbox'
+  router.push({ name: 'pay', params: { mode: 'release', id: route.params.id }, query })
 }
 
 /* ---------- 寄售流程 ---------- */
@@ -136,6 +143,28 @@ function onSuccessDone() {
   showSuccess.value = false
   router.back()
 }
+
+/* ---------- 盲盒开启 ---------- */
+const showOpenResult = ref(false)
+const revealItem = ref(null)
+const opening = ref(false)
+
+async function onOpenBlindbox() {
+  if (opening.value) return
+  opening.value = true
+  await new Promise(r => setTimeout(r, 800))
+  const reveal = await userStore.openBlindbox(route.params.id, serialNo.value)
+  opening.value = false
+  if (reveal) {
+    revealItem.value = reveal
+    showOpenResult.value = true
+  }
+}
+
+function onOpenResultDone() {
+  showOpenResult.value = false
+  router.back()
+}
 </script>
 
 <template>
@@ -151,6 +180,21 @@ function onSuccessDone() {
     <!-- 藏品名 -->
     <p class="detail-hero__name">{{ detail.title }}</p>
     <p class="detail-hero__serial" v-if="serialNo">编号：{{ serialNo }}</p>
+
+    <!-- 盲盒内容 -->
+    <section class="detail-block" v-if="blindboxItems.length">
+      <h2 class="detail-block__title"><span class="red">盲盒</span>内容</h2>
+      <div class="blindbox-items">
+        <div class="blindbox-items__row" v-for="(it, i) in blindboxItems" :key="i">
+          <img class="blindbox-items__cover" :src="it.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
+          <div class="blindbox-items__info">
+            <span class="blindbox-items__name">{{ it.name }}</span>
+            <span class="blindbox-items__rarity" :class="'blindbox-items__rarity--' + it.rarity">{{ it.rarity }}</span>
+          </div>
+          <span class="blindbox-items__prob">{{ it.probability }}</span>
+        </div>
+      </div>
+    </section>
 
     <!-- 藏品信息 -->
     <section class="detail-block">
@@ -193,7 +237,12 @@ function onSuccessDone() {
       </div>
       <button class="detail-buy__btn" :class="{ 'is-soldout': saleStatus === 'soldout' }" :disabled="saleStatus !== 'selling'" @click="onBuy">{{ buyButtonText }}</button>
     </div>
-    <!-- 仓库：仅立即寄售 -->
+    <!-- 仓库：盲盒 → 立即寄售(灰色) + 开启盲盒 -->
+    <div class="detail-buy safe-bottom" v-else-if="isBlindbox">
+      <button class="detail-buy__btn detail-buy__btn--disabled" disabled>立即寄售</button>
+      <button class="detail-buy__btn" @click="onOpenBlindbox">{{ opening ? '开启中…' : '开启盲盒' }}</button>
+    </div>
+    <!-- 仓库：普通藏品 → 仅立即寄售 -->
     <div class="detail-buy safe-bottom" v-else>
       <button class="detail-buy__btn" @click="openConsign">立即寄售</button>
     </div>
@@ -278,6 +327,19 @@ function onSuccessDone() {
         <button class="consign-success__btn" @click="onSuccessDone">完成</button>
       </div>
     </van-popup>
+
+    <!-- 盲盒开启结果 -->
+    <van-overlay :show="showOpenResult" :z-index="100" @click="onOpenResultDone">
+      <div class="open-result" @click.stop>
+        <p class="open-result__title">盲盒开启</p>
+        <div class="open-result__img-wrap">
+          <img :src="revealItem?.coverImage" alt="" />
+        </div>
+        <p class="open-result__name">{{ revealItem?.name }}</p>
+        <p class="open-result__tip">恭喜获得以上藏品，已存入您的仓库</p>
+        <button class="open-result__btn" @click="onOpenResultDone">收下藏品</button>
+      </div>
+    </van-overlay>
   </div>
 </template>
 
@@ -344,7 +406,37 @@ function onSuccessDone() {
     border-radius: $radius-pill; background: linear-gradient(135deg, #D00000, #B00000);
     &:disabled { opacity: .6; }
     &.is-soldout { background: #cccccc; cursor: not-allowed; opacity: 1; }
+    &--disabled { background: #cccccc; cursor: not-allowed; opacity: 1; color: #999; }
   }
+}
+
+/* ---------- 盲盒内容列表 ---------- */
+.blindbox-items {
+  background: $color-card; border-radius: $radius-lg; padding: 4px 14px;
+  &__row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0;
+    &:not(:last-child) { border-bottom: 1px solid $color-border; }
+  }
+  &__cover {
+    width: 48px; height: 48px; border-radius: $radius-md; object-fit: cover; flex-shrink: 0; background: #141415;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+  }
+  &__info { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  &__name {
+    font-size: 14px; font-weight: 600; color: $color-text-primary;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  &__rarity {
+    display: inline-block; width: fit-content;
+    font-size: 10px; font-weight: 600; color: #fff;
+    padding: 1px 8px; border-radius: 4px;
+    &--普通 { background: rgba(120, 120, 120, 0.85); }
+    &--稀有 { background: linear-gradient(135deg, #2563EB, #1D4ED8); }
+    &--史诗 { background: linear-gradient(135deg, #9333EA, #7C2DD4); }
+    &--传说 { background: linear-gradient(135deg, #F59E0B, #D97706); }
+  }
+  &__prob { font-size: 14px; font-weight: 600; color: $color-primary; font-family: $font-price; flex-shrink: 0; }
 }
 
 /* ---------- 寄售弹窗 ---------- */
@@ -441,6 +533,29 @@ function onSuccessDone() {
   &__btn {
     width: 100%; height: 44px; border: none; cursor: pointer; color: #fff; font-size: 15px; font-weight: 500;
     border-radius: $radius-pill; background: linear-gradient(135deg, #D00000, #B00000);
+  }
+}
+
+/* ---------- 盲盒开启结果 ---------- */
+.open-result {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px; background: #fff; border-radius: 20px;
+  padding: 26px 22px 22px; text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  &__title { margin: 0 0 14px; font-size: 16px; font-weight: 700; color: $color-text-tertiary; }
+  &__img-wrap {
+    width: 120px; height: 120px; margin: 0 auto 14px;
+    border-radius: 16px; background: $color-surface;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    img { width: 112px; height: 112px; border-radius: 12px; object-fit: cover; display: block; }
+  }
+  &__name { margin: 0 0 6px; font-size: 22px; font-weight: 800; color: $color-primary; }
+  &__tip { margin: 0 0 20px; font-size: 12px; color: $color-text-tertiary; }
+  &__btn {
+    width: 100%; height: 44px; border: none; border-radius: $radius-pill;
+    background: linear-gradient(135deg, #D00000, #B00000); color: #fff;
+    font-size: 15px; font-weight: 600; cursor: pointer;
   }
 }
 </style>

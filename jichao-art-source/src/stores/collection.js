@@ -12,7 +12,14 @@ export const useCollectionStore = defineStore('collection', () => {
     { id: '1', name: '龙纹罗盘', tag: '首发', price: '0.10', total: '500份', coverImage: '/images/collections/cover-1.jpg', saleTime: _now + _2h, saleEndTime: _now + _2h + _24h, soldOut: false },
     { id: '2', name: '虎纹卡牌', tag: '首发', price: '0.10', total: '800份', coverImage: '/images/collections/cover-2.jpg', saleTime: _now + _5h, saleEndTime: _now + _5h + _24h, soldOut: false },
     { id: '3', name: '水晶菱形', tag: '首发', price: '0.10', total: '300份', coverImage: '/images/collections/cover-3.jpg', saleTime: _now - _5h, saleEndTime: _now + _24h, soldOut: true },
-    { id: '4', name: '司南青龙', tag: '热售', price: '0.20', total: '1000份', coverImage: '/images/collections/cover-4.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false }
+    { id: '4', name: '司南青龙', tag: '热售', price: '0.20', total: '1000份', coverImage: '/images/collections/cover-4.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false },
+    { id: 'bb1', name: '神秘盲盒', tag: '盲盒', price: '0.50', total: '200份', coverImage: '/images/collections/cover-5.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false, type: 'blindbox', reveals: { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', price: '0.20' }, items: [
+      { id: '1', name: '龙纹罗盘', coverImage: '/images/collections/cover-1.jpg', rarity: '普通', probability: '35%' },
+      { id: '2', name: '虎纹卡牌', coverImage: '/images/collections/cover-2.jpg', rarity: '普通', probability: '30%' },
+      { id: '3', name: '水晶菱形', coverImage: '/images/collections/cover-3.jpg', rarity: '稀有', probability: '20%' },
+      { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', rarity: '史诗', probability: '10%' },
+      { id: '5', name: '司南暴富', coverImage: '/images/collections/cover-5.jpg', rarity: '传说', probability: '5%' }
+    ] }
   ])
 
   // 市场寄售藏品（mock）—— 点击进入寄售详情
@@ -72,7 +79,8 @@ export const useCollectionStore = defineStore('collection', () => {
     '1': '龙纹罗盘以东方祥龙为引，盘心暗藏玄机，寓意藏家在数字藏海之中寻得方向与财富。',
     '2': '虎纹卡牌取猛虎之威，每一张都铭刻独一无二的链上纹路，象征勇气与守护。',
     '3': '水晶菱形凝练水之灵动，切面折射数字光晕，如冰晶般剔透且不可复制。',
-    '4': '司南青龙承袭司南文创核心意象，东方苍龙腾云驾雾，为藏家开启一场国潮 digital 之旅。'
+    '4': '司南青龙承袭司南文创核心意象，东方苍龙腾云驾雾，为藏家开启一场国潮 digital 之旅。',
+    'bb1': '神秘盲盒蕴含未知惊喜，开启即随机获得一款精选数字藏品，好运藏在每一次开启之中。'
   }
 
   function fetchDetail(id) {

@@ -1,8 +1,9 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
 
 // 全局底部导航：首页 / 市场 / 商城 / 公告 / 我的
-// 商城为圆形大图（半露导航栏外），其余四个为统一 26px 图片图标
+// 商城为圆形大图（半露导航栏外），其余四个为统一 30px SVG 矢量图标
 const props = defineProps({
   active: { type: Number, default: -1 } // 显式指定；否则按路由自动识别
 })
@@ -11,11 +12,11 @@ const route = useRoute()
 const router = useRouter()
 
 const tabs = [
-  { index: 0, name: 'home', label: '首页', to: '/', image: '/images/tab/tab-home.png', imageActive: '/images/tab/tab-home-active.png' },
-  { index: 1, name: 'market', label: '市场', to: '/market/activity', image: '/images/tab/tab-grid.png', imageActive: '/images/tab/tab-grid-active.png' },
-  { index: 2, name: 'mall', label: '商城', to: '/mall', image: '/images/platform-logo.png', imageActive: '/images/platform-logo.png', round: true, hideLabel: true },
-  { index: 3, name: 'notice', label: '公告', to: '/notice', image: '/images/tab/tab-horn.png', imageActive: '/images/tab/tab-horn-active.png' },
-  { index: 4, name: 'user', label: '我的', to: '/user', image: '/images/tab/tab-person.png', imageActive: '/images/tab/tab-person-active.png' }
+  { index: 0, name: 'home', label: '首页', to: '/', icon: 'home' },
+  { index: 1, name: 'market', label: '市场', to: '/market/activity', icon: 'bag' },
+  { index: 2, name: 'mall', label: '商城', to: '/mall', image: '/images/platform-logo.png', round: true, hideLabel: true },
+  { index: 3, name: 'notice', label: '公告', to: '/notice', icon: 'bell' },
+  { index: 4, name: 'user', label: '我的', to: '/user', icon: 'person' }
 ]
 
 function isActive(tab) {
@@ -45,12 +46,19 @@ function go(tab) {
       @click="go(tab)"
     >
       <img
-        :class="tab.round ? 'app-tabbar__image' : 'app-tabbar__icon'"
-        :src="isActive(tab) ? tab.imageActive : tab.image"
+        v-if="tab.round"
+        class="app-tabbar__image"
+        :src="tab.image"
         alt=""
         draggable="false"
         @click.prevent
         @contextmenu.prevent
+      />
+      <AppIcon
+        v-else
+        :name="tab.icon"
+        :size="30"
+        :color="isActive(tab) ? '#C00000' : '#999'"
       />
       <span v-if="!tab.hideLabel" class="app-tabbar__label">{{ tab.label }}</span>
     </div>
@@ -75,7 +83,8 @@ function go(tab) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  padding-top: 15px;
+  gap: 4px;
   color: $color-text-tertiary;
   cursor: pointer;
   &.is-active {
@@ -85,15 +94,6 @@ function go(tab) {
 .app-tabbar__label {
   font-size: 12px;
   line-height: 1;
-}
-.app-tabbar__icon {
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-  user-select: none;
-  -webkit-user-drag: none;
-  -webkit-touch-callout: none;
-  pointer-events: none;
 }
 .app-tabbar__image {
   width: 70px;

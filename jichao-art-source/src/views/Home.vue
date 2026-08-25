@@ -226,7 +226,7 @@ function onSign() {
             <div class="side-card__head">
               <span class="side-card__title">活动中心</span>
             </div>
-            <span class="side-card__sub">让你的资产换新</span>
+            <span class="side-card__sub">让你资产换新</span>
           </div>
           <span class="side-card__tag"><AppIcon name="activity" :size="30" color="#C00000" /></span>
         </div>
@@ -235,7 +235,7 @@ function onSign() {
             <div class="side-card__head">
               <span class="side-card__title">幸运抽奖</span>
             </div>
-            <span class="side-card__sub">幸运好礼送不停</span>
+            <span class="side-card__sub">幸运好礼相送</span>
           </div>
           <span class="side-card__tag"><AppIcon name="gift2" :size="30" color="#C00000" /></span>
         </div>
@@ -257,7 +257,7 @@ function onSign() {
         >
           <div class="release-card__cover">
             <img class="release-card__img" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
-            <span class="release-card__tag">{{ item.tag }}</span>
+            <span class="release-card__tag" :class="{ 'release-card__tag--blindbox': item.type === 'blindbox' }">{{ item.tag }}</span>
             <!-- 液态玻璃：发售状态/倒计时 -->
             <div class="release-card__glass">
               <span v-if="item.status === 'countdown'" class="release-card__status">{{ STATUS_TEXT[item.status] }} {{ item.countdownText }}</span>
@@ -414,7 +414,7 @@ function onSign() {
 .home-grid {
   display: flex; gap: 12px; margin: 12px $page-padding 0;
   .grid-main {
-    flex: 1; background: $color-card; border-radius: $radius-lg; padding: 14px;
+    flex: 1; background: $color-card; border-radius: $radius-lg; padding: 10px 14px;
     display: flex; flex-direction: column; gap: 10px;
     &__title { font-size: 15px; font-weight: 700; color: $color-text-primary; }
     &__sub { display: block; font-size: 11px; color: $color-text-tertiary; margin-top: 4px; }
@@ -428,7 +428,7 @@ function onSign() {
   }
   .grid-side { flex: 1; display: flex; flex-direction: column; gap: 12px; }
   .side-card {
-    flex: 1; background: $color-card; border-radius: $radius-lg; padding: 14px;
+    flex: 1; background: $color-card; border-radius: $radius-lg; padding: 10px 14px;
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     &__text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     &__head { display: flex; align-items: center; }
@@ -465,6 +465,7 @@ function onSign() {
     font-size: 10px; font-weight: 600; color: #fff;
     background: linear-gradient(135deg, $color-primary, #8B0000);
     padding: 2px 6px; border-radius: 4px;
+    &--blindbox { background: linear-gradient(135deg, #6B2DD4, #4A1B9E); }
   }
   &__glass {
     position: absolute; bottom: 0; left: 0; right: 0; height: 32px; z-index: 1;
@@ -492,8 +493,8 @@ function onSign() {
   &__total {
     font-size: 10px; color: $color-text-tertiary;
     display: flex; flex-direction: column; gap: 2px;
-    b { font-size: 12px; color: $color-text-primary; font-weight: 600; font-family: $font-price; }
+    b { font-size: 12px; color: $color-text-primary; font-weight: 600; font-family: $font-price; line-height: 1; }
   }
-  &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; }
+  &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; line-height: 1; }
 }
 </style>

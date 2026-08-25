@@ -15,6 +15,7 @@ const user = useUserStore()
 
 // 路由区分：发售支付(mode=release) / 挂单支付(mode=order) 单路由，按 mode 决定数据源与限购
 const isRelease = computed(() => route.params.mode === 'release')
+const isBlindbox = computed(() => route.query.type === 'blindbox')
 const id = route.params.id
 const no = route.params.no
 
@@ -92,15 +93,21 @@ function submit() {
     payPwd.value = ''
     return
   }
-  user.addToInventory({
+  const itemData = {
     id,
     name: meta.value.name,
     coverImage: meta.value.coverImage,
     price: unitPrice.value,
     qty: qty.value,
     no: orderNo.value,
-    type: isRelease.value ? 'release' : 'order'
-  })
+    type: isBlindbox.value ? 'blindbox' : (isRelease.value ? 'release' : 'order')
+  }
+  if (isBlindbox.value) {
+    const feat = store.getFeaturedById(id)
+    itemData.opened = false
+    itemData.reveals = feat?.reveals || { id: id + '-r', name: meta.value.name, coverImage: meta.value.coverImage, price: unitPrice.value }
+  }
+  user.addToInventory(itemData)
   stop()
   pwdSheet.value = false
   success.value = true
