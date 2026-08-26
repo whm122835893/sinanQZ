@@ -1,49 +1,32 @@
 <script setup>
-import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import AppIcon from '@/components/AppIcon.vue'
-import { useIconThemeStore } from '@/stores/iconTheme'
+import AppIcon from './AppIcon.vue'
 
 // 全局底部导航：首页 / 市场 / 商城 / 公告 / 我的
-// 商城为圆形大图（半露导航栏外），其余四个 Tab 的图标风格由
-// iconTheme store 统一管理，后期管理后台调用 setTheme() 即可一键切换。
+// 四个线性标签使用现代矢量图标（AppIcon），商城为圆形平台 logo（半露导航栏外）
 const props = defineProps({
   active: { type: Number, default: -1 } // 显式指定；否则按路由自动识别
 })
 
 const route = useRoute()
 const router = useRouter()
-const iconTheme = useIconThemeStore()
 
-// 静态 Tab 基础信息（不含图标），与主题无关
-const BASE_TABS = [
-  { index: 0, name: 'home',   label: '首页', to: '/' },
-  { index: 1, name: 'market', label: '市场', to: '/market/activity' },
-  { index: 2, name: 'mall',   label: '商城', to: '/mall', image: '/images/platform-logo.png', round: true, hideLabel: true },
-  { index: 3, name: 'notice',  label: '公告', to: '/notice' },
-  { index: 4, name: 'user',    label: '我的', to: '/user' }
+const tabs = [
+  { index: 0, name: 'home',   label: '首页', to: '/',                icon: 'home' },
+  { index: 1, name: 'market', label: '市场', to: '/market/activity', icon: 'grid' },
+  { index: 2, name: 'mall',   label: '商城', to: '/mall',            round: true, hideLabel: true },
+  { index: 3, name: 'notice', label: '公告', to: '/notice',          icon: 'bell' },
+  { index: 4, name: 'user',   label: '我的', to: '/user',            icon: 'person' }
 ]
-
-// 合并主题图标配置到 Tab 定义（home/market/notice/user 读 store，mall 固定）
-const tabs = computed(() =>
-  BASE_TABS.map(tab => {
-    if (tab.round) return tab
-    const iconCfg = iconTheme.getTabIcon(tab.name)
-    return { ...tab, ...iconCfg }
-  })
-)
-
-// 当前主题渲染方式：'svg' | 'image'
-const renderType = computed(() => iconTheme.current.type)
 
 function isActive(tab) {
   if (props.active === tab.index) return true
   if (props.active !== -1) return false
-  if (tab.name === 'home') return route.path === '/'
+  if (tab.name === 'home')   return route.path === '/'
   if (tab.name === 'market') return route.path.startsWith('/market')
-  if (tab.name === 'mall') return route.path.startsWith('/mall')
+  if (tab.name === 'mall')   return route.path.startsWith('/mall')
   if (tab.name === 'notice') return route.path.startsWith('/notice')
-  if (tab.name === 'user') return route.path.startsWith('/user')
+  if (tab.name === 'user')   return route.path.startsWith('/user')
   return false
 }
 
@@ -59,33 +42,23 @@ function go(tab) {
       v-for="tab in tabs"
       :key="tab.name"
       class="app-tabbar__item"
-      :class="{ 'is-active': isActive(tab) }"
+      :class="{ 'is-active': isActive(tab), 'is-round': tab.round }"
       @click="go(tab)"
     >
-      <!-- 商城：圆形大图，固定不变 -->
       <img
         v-if="tab.round"
         class="app-tabbar__image"
-        :src="tab.image"
+        src="/images/platform-logo.png"
         alt=""
         draggable="false"
         @click.prevent
         @contextmenu.prevent
       />
-      <!-- SVG 矢量主题 -->
       <AppIcon
-        v-else-if="renderType === 'svg'"
-        :name="tab.icon"
-        :size="30"
-        :color="isActive(tab) ? '#C00000' : '#999'"
-      />
-      <!-- 位图主题（3D 宝石等） -->
-      <img
         v-else
         class="app-tabbar__icon"
-        :src="isActive(tab) ? tab.imageActive : tab.image"
-        alt=""
-        draggable="false"
+        :name="tab.icon"
+        :size="30"
       />
       <span v-if="!tab.hideLabel" class="app-tabbar__label">{{ tab.label }}</span>
     </div>
@@ -100,8 +73,15 @@ function go(tab) {
   bottom: 0;
   height: $tabbar-height;
   display: flex;
-  background: $color-card;
-  border-top: 1px solid $color-border;
+  // —— 液态玻璃核心：半透明 + 背景模糊 + 饱和增强 ——
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  // 顶边细线 + 内高光，营造悬浮玻璃质感
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 -6px 20px rgba(0, 0, 0, 0.06);
   z-index: $z-tabbar;
 }
 .app-tabbar__item {
@@ -110,36 +90,64 @@ function go(tab) {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding-top: 15px;
-  gap: 4px;
-  color: $color-text-tertiary;
+  gap: 3px;                         // 图标与文字间距
+  color: $color-text-tertiary;      // 未选中：灰 #999
   cursor: pointer;
+  position: relative;
+  transition: color 0.25s ease, transform 0.25s ease;
   &.is-active {
-    color: $color-primary;
+    color: $color-primary;          // 选中：红色 #C00000
+    // 图标上浮 + 轻微放大
+    .app-tabbar__icon {
+      transform: translateY(-3px) scale(1.1);
+    }
+    // 顶部红色渐变指示条
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 26px;                  // 指示条宽
+      height: 3px;                  // 指示条高
+      border-radius: 0 0 3px 3px;
+      background: linear-gradient(90deg, $color-primary-dark, $color-primary);
+      box-shadow: 0 1px 4px rgba(192, 0, 0, 0.4);
+    }
+  }
+  // 商城圆形项不显示顶部指示条
+  &.is-round.is-active::after {
+    content: none;
   }
 }
 .app-tabbar__label {
-  font-size: 12px;
+  font-size: 11px;                  // 文字大小
   line-height: 1;
+  transition: color 0.25s ease;
 }
 .app-tabbar__icon {
-  width: 38px;
-  height: 38px;
+  width: 30px;                     // 线性图标尺寸
+  height: 30px;
   object-fit: contain;
-  -webkit-user-drag: none;
-  user-select: none;
+  transition: transform 0.25s ease;
 }
 .app-tabbar__image {
-  width: 70px;
-  height: 70px;
+  width: 60px;                     // 商城圆标尺寸
+  height: 60px;
   border-radius: 50%;
   object-fit: cover;
-  margin-top: -30px;
-  border: 2px solid #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  margin-top: -30px;               // 半露导航栏外（再往上移一点）
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 6px 16px rgba(192, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
+  background: #fff;
+  transition: transform 0.25s ease;
   user-select: none;
   -webkit-user-drag: none;
   -webkit-touch-callout: none;
   pointer-events: none;
+}
+// 商城圆形项激活时上浮放大
+.app-tabbar__item.is-round.is-active .app-tabbar__image {
+  transform: translateY(-4px) scale(1.06);
 }
 </style>

@@ -432,8 +432,9 @@ function onSign() {
     display: flex; flex-direction: column; gap: 10px;
     &__title { font-size: 15px; font-weight: 700; color: $color-text-primary; }
     &__sub { display: block; font-size: 11px; color: $color-text-tertiary; margin-top: 4px; }
-    &__cal { display: flex; align-items: center; gap: 10px; }
-    &__cal-icon { width: 44px; height: 44px; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
+    &__cal { display: flex; align-items: center; gap: 8px; }
+    // 图标视觉放大到 58px，负边距抵消增量，卡片高度不变
+    &__cal-icon { width: 58px; height: 58px; margin: -7px 0; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
     &__date { display: flex; flex-direction: column; line-height: 1.1;
       strong { font-size: 22px; color: $color-primary; font-family: $font-price; }
       span { font-size: 11px; color: $color-text-tertiary; }
@@ -448,9 +449,10 @@ function onSign() {
     &__head { display: flex; align-items: center; }
     &__title { font-size: 15px; font-weight: 700; color: $color-text-primary; }
     &__tag {
-      width: 40px; height: 40px; border-radius: 8px; background: transparent; flex: none;
+      width: 40px; height: 40px; border-radius: 8px; background: transparent; flex: none; overflow: visible;
       display: flex; align-items: center; justify-content: center;
-      img { width: 36px; height: 36px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
+      // 图标视觉放大到 48px，超出 40px 容器但不影响卡片高度
+      img { width: 48px; height: 48px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
     }
     &__sub { font-size: 11px; color: $color-text-tertiary; }
   }

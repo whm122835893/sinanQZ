@@ -41,11 +41,11 @@ const ICON_THEMES = {
       user:   { icon: 'person' }
     },
     features: {
-      calendar:   { type: 'svg', icon: 'calendar' },
-      activity:   { type: 'svg', icon: 'activity' },
-      lottery:    { type: 'svg', icon: 'gift2' },
-      inventory:  { type: 'svg', icon: 'cube' },
-      wallet:     { type: 'svg', icon: 'wallet' }
+      calendar:   { type: 'image', image: '/images/tab/modern-calendar.png' },
+      activity:   { type: 'image', image: '/images/tab/modern-activity.png' },
+      lottery:    { type: 'image', image: '/images/tab/modern-lottery.png' },
+      inventory:  { type: 'image', image: '/images/tab/modern-inventory.png' },
+      wallet:     { type: 'image', image: '/images/tab/modern-wallet.png' }
     }
   },
 

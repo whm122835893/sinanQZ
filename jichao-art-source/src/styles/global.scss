@@ -130,23 +130,33 @@ img {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-// ---- 下拉刷新：平台 logo 作为下拉显示内容 ----
+// ---- 下拉刷新：松开后显示平台 logo（替代转圈等待），居中、28px、圆角 8px、静止不旋转 ----
 .van-pull-refresh__head {
   height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // 下拉过程中不显示任何提示内容
   .van-pull-refresh__text {
-    font-size: 0;
+    display: none;
+  }
+  // 松手进入加载状态：隐藏转圈与文字，用居中的小 logo 替代
+  .van-loading {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    .van-loading__spinner,
+    .van-loading__text {
+      display: none;
+    }
     &::before {
       content: '';
       display: block;
-      width: 36px;
-      height: 36px;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
       background: url('/images/platform-logo.png') center / contain no-repeat;
-      animation: pr-spin 0.8s linear infinite;
     }
   }
-  .van-loading { display: none; }
-}
-@keyframes pr-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
