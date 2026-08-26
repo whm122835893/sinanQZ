@@ -19,7 +19,7 @@ const ICONS = {
   calendar: { path: '<rect x="3.6" y="5.2" width="16.8" height="15.2" rx="3.2"/><path d="M3.6 9.8h16.8"/><path d="M8.2 3.2v3.6M15.8 3.2v3.6"/><circle cx="12" cy="14.8" r="1.5"/>' },
   cube: { path: '<path d="M12 3l8.2 4.4v9.2L12 21l-8.2-4.4V7.4z"/><path d="M12 12l8.2-4.4M12 12v9M12 12L3.8 7.6"/>' },
   wallet: { path: '<rect x="3.6" y="6.4" width="16.8" height="11.8" rx="2.8"/><path d="M3.6 10.6h16.8"/><circle cx="16.4" cy="13" r="1.5"/>' },
-  person: { path: '<circle cx="12" cy="8.6" r="4.3"/><path d="M4.6 20.2c.3-4.1 3.7-6.7 7.4-6.7s7.1 2.6 7.4 6.7"/>' },
+  person: { path: '<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>' },
   shield: { path: '<path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5z"/>' },
   idcard: { path: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M5.5 16c.6-2 2-3 3.5-3s2.9 1 3.5 3M14.5 10h4M14.5 13h4M14.5 16h4"/>' },
   community: { path: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.5c2.6.2 5 1.8 5 5.5"/>' },
@@ -45,9 +45,9 @@ const ICONS = {
   quote: { fill: true, path: '<path d="M9 6C5.5 7.5 4 10.5 4 14c0 2.8 1.8 4.5 4 4.5S12 16.8 12 14s-1.8-4.5-4-4.5c0-2.2.9-4 2-5.5L9 6zm11 0c-3.5 1.5-5 4.5-5 8 0 2.8 1.8 4.5 4 4.5s4-1.7 4-4.5-1.8-4.5-4-4.5c0-2.2.9-4 2-5.5L20 6z"/>' },
   check: { path: '<polyline points="20 7 9.5 17.5 4 12"/>' },
   clock: { path: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>' },
-  home: { fill: true, path: '<path d="M12 3l9 7.5V20a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/>' },
-  bag: { fill: true, path: '<path d="M5 8h14l-1 12H6z"/><path d="M8.5 8V6.5a3.5 3.5 0 017 0V8" fill="none" stroke="currentColor" stroke-width="2"/>' },
-  bell: { fill: true, path: '<path d="M12 2a6 6 0 016 6v4l2 3v2H4v-2l2-3V8a6 6 0 016-6z"/><path d="M10 19a2 2 0 004 0" fill="none" stroke="currentColor" stroke-width="2"/>' }
+  home: { path: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' },
+  bag: { path: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>' },
+  bell: { path: '<path d="M12 2a6 6 0 0 0-6 6v3.719l-1.78 3.945a1 1 0 0 0 .907 1.406h13.746a1 1 0 0 0 .907-1.406L18 11.72V8a6 6 0 0 0-6-6z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/>' }
 }
 
 const icon = computed(() => ICONS[props.name] || ICONS.back)

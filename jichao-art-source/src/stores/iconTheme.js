@@ -137,10 +137,10 @@ const ICON_THEMES = {
 const STORAGE_KEY = 'jc_icon_theme'
 
 export const useIconThemeStore = defineStore('iconTheme', () => {
-  // 默认使用青绿山水风
-  const currentId = ref(localStorage.getItem(STORAGE_KEY) || 'shanse')
+  // 默认使用经典矢量风（SVG）
+  const currentId = ref(localStorage.getItem(STORAGE_KEY) || 'classic')
 
-  const current = computed(() => ICON_THEMES[currentId.value] || ICON_THEMES.shanse)
+  const current = computed(() => ICON_THEMES[currentId.value] || ICON_THEMES.classic)
 
   // 供后台展示的所有可选主题
   const themes = Object.values(ICON_THEMES)
