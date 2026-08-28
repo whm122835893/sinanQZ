@@ -24,6 +24,25 @@ const now = ref(Date.now())
 let saleTimer = null
 const STATUS_TEXT = { countdown: '距发售', selling: '发售中', soldout: '已售罄' }
 
+// 首发日历：动态日期，午夜自动更新
+const today = ref(new Date())
+const calendarDay = computed(() => today.value.getDate())
+const calendarYm  = computed(() => {
+  const y = today.value.getFullYear()
+  const m = String(today.value.getMonth() + 1).padStart(2, '0')
+  return `${y}/${m}`
+})
+let midnightTimer = null
+function scheduleMidnightUpdate() {
+  const now = new Date()
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1)
+  const ms = next - now
+  midnightTimer = setTimeout(() => {
+    today.value = new Date()
+    scheduleMidnightUpdate()
+  }, ms)
+}
+
 const featuredWithStatus = computed(() => {
   now.value  // touch for reactivity
   return store.featured.map(item => ({
@@ -127,8 +146,9 @@ onMounted(() => {
   if (Math.round(pos.value) >= n) pos.value = 0
   startAuto()
   saleTimer = setInterval(() => { now.value = Date.now() }, 1000)
+  scheduleMidnightUpdate()
 })
-onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer) })
+onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer); if (midnightTimer) clearTimeout(midnightTimer) })
 
 const notices = [
   "司南艺术·全域'生态星推官'共建招募，共创价值！",
@@ -221,8 +241,8 @@ function onSign() {
           <img v-if="calendarIcon?.type === 'image'" :src="calendarIcon.image" class="grid-main__cal-icon" alt="" draggable="false" @contextmenu.prevent />
           <AppIcon v-else-if="calendarIcon?.type === 'svg'" :name="calendarIcon.icon" :size="44" color="#C00000" class="grid-main__cal-icon" />
           <div class="grid-main__date">
-            <strong>21</strong>
-            <span>2024.11.11</span>
+            <strong>{{ calendarDay }}</strong>
+            <span>{{ calendarYm }}</span>
           </div>
         </div>
         <AppButton size="small" @click.stop="goCalendar">去看看</AppButton>
@@ -433,11 +453,11 @@ function onSign() {
     &__title { font-size: 15px; font-weight: 700; color: $color-text-primary; }
     &__sub { display: block; font-size: 11px; color: $color-text-tertiary; margin-top: 4px; }
     &__cal { display: flex; align-items: center; gap: 8px; }
-    // 图标视觉放大到 58px，负边距抵消增量，卡片高度不变
-    &__cal-icon { width: 58px; height: 58px; margin: -7px 0; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
-    &__date { display: flex; flex-direction: column; line-height: 1.1;
-      strong { font-size: 22px; color: $color-primary; font-family: $font-price; }
-      span { font-size: 11px; color: $color-text-tertiary; }
+    // 图标视觉放大到 66px，负边距抵消增量，卡片高度不变
+    &__cal-icon { width: 66px; height: 66px; margin: -11px 0; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
+    &__date { display: flex; flex-direction: column; align-items: center; line-height: 1.1; margin-left: 6px;
+      strong { font-size: 26px; color: $color-primary; font-family: $font-price; }
+      span { font-size: 13px; color: $color-text-tertiary; }
     }
     :deep(.app-btn) { margin-top: auto; }
   }
@@ -451,8 +471,8 @@ function onSign() {
     &__tag {
       width: 40px; height: 40px; border-radius: 8px; background: transparent; flex: none; overflow: visible;
       display: flex; align-items: center; justify-content: center;
-      // 图标视觉放大到 48px，超出 40px 容器但不影响卡片高度
-      img { width: 48px; height: 48px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
+      // 图标视觉放大到 56px，超出 40px 容器但不影响卡片高度
+      img { width: 56px; height: 56px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
     }
     &__sub { font-size: 11px; color: $color-text-tertiary; }
   }

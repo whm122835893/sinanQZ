@@ -10,7 +10,7 @@ const router = useRouter()
 const activityStore = useActivityStore()
 const { synthesisActivities } = storeToRefs(activityStore)
 
-const tabs = ['活动', '升级']
+const tabs = ['活动', '置换']
 const active = ref('活动')
 
 function goSynthesis(id) {

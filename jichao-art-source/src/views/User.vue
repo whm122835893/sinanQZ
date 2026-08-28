@@ -135,7 +135,7 @@ function logout() {
 .asset-card {
   flex: 1; background: $color-card; border-radius: $radius-lg; padding: 10px;
   display: flex; align-items: center; gap: 12px; cursor: pointer;
-  &__icon { width: 40px; height: 40px; flex: none; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
+  &__icon { width: 48px; height: 48px; flex: none; object-fit: contain; margin: -4px 0; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
   &__text { display: flex; flex-direction: column; gap: 4px; }
   &__title { font-size: 15px; font-weight: 600; color: $color-text-primary; }
   &__sub { font-size: 12px; color: $color-text-tertiary; }
