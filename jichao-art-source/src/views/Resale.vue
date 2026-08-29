@@ -2,13 +2,13 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
-import { useUserStore } from '@/stores/user'
+import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
-const userStore = useUserStore()
+const { requireLogin } = useLoginGate()
 const meta = ref(null)
 const orders = ref([])
 const activeTab = ref('onsale')
@@ -31,7 +31,7 @@ function sortPrice() {
 
 function onQuickBuy() {
   if (!orders.value.length) return
-  if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
+  if (!requireLogin(route.fullPath)) return
   // 快捷购买：自动选择价格最低的挂单
   const min = orders.value.reduce(
     (m, o) => (parseFloat(o.price) < parseFloat(m.price) ? o : m),
@@ -41,7 +41,7 @@ function onQuickBuy() {
 }
 
 function goPay(o) {
-  if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
+  if (!requireLogin(route.fullPath)) return
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: o.no } })
 }
 

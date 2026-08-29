@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
+import { useLoginGate } from '@/utils/loginGate'
 import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -11,6 +12,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
 const userStore = useUserStore()
+const { requireLogin } = useLoginGate()
 const detail = ref(null)
 const serialNo = computed(() => route.query.no)
 // 仓库进入：隐藏购买/价格，底部改为「立即寄售」
@@ -64,7 +66,7 @@ const blindboxItems = computed(() => featuredItem.value?.items || [])
 
 function onBuy() {
   if (saleStatus.value !== 'selling') return
-  if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
+  if (!requireLogin(route.fullPath)) return
   const query = {}
   if (featuredItem.value?.type === 'blindbox') query.type = 'blindbox'
   router.push({ name: 'pay', params: { mode: 'release', id: route.params.id }, query })
@@ -95,7 +97,10 @@ const priceError = computed(() => {
 })
 const canSubmit = computed(() => priceNum.value > 0 && !consigning.value)
 
-function openConsign() { price.value = ''; payPwd.value = ''; pwdStep.value = false; showConsign.value = true }
+function openConsign() {
+  if (!requireLogin(route.fullPath)) return
+  price.value = ''; payPwd.value = ''; pwdStep.value = false; showConsign.value = true
+}
 function closeConsign() { showConsign.value = false; pwdStep.value = false; payPwd.value = '' }
 
 // 价格步骤：确认寄售 -> 进入交易密码步骤
@@ -179,7 +184,6 @@ function onOpenResultDone() {
 
     <!-- 藏品名 -->
     <p class="detail-hero__name">{{ detail.title }}</p>
-    <p class="detail-hero__serial" v-if="serialNo">编号：{{ serialNo }}</p>
 
     <!-- 盲盒内容 -->
     <section class="detail-block" v-if="blindboxItems.length">
@@ -200,6 +204,10 @@ function onOpenResultDone() {
     <section class="detail-block">
       <h2 class="detail-block__title"><span class="red">藏品</span>信息</h2>
       <div class="detail-meta">
+        <div class="detail-meta__row" v-if="serialNo">
+          <span class="detail-meta__label">藏品编号</span>
+          <span class="detail-meta__value">#{{ serialNo }}</span>
+        </div>
         <div class="detail-meta__row">
           <span class="detail-meta__label">发行份数</span>
           <span class="detail-meta__value">{{ detail.issueCount }}</span>
@@ -369,11 +377,6 @@ function onOpenResultDone() {
     margin: 12px $page-padding 0;
     text-align: center;
     font-size: 18px; font-weight: 700; color: $color-text-primary;
-  }
-  &__serial {
-    margin: 6px $page-padding 0;
-    text-align: center;
-    font-size: 13px; color: $color-primary; font-family: $font-price;
   }
 }
 

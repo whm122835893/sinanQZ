@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
+import AppLoginModal from '@/components/AppLoginModal.vue'
 
 const route = useRoute()
 const refreshing = ref(false)
@@ -23,6 +24,9 @@ function onRefresh() {
   </van-pull-refresh>
 
   <AppTabBar v-if="route.meta.tabbar" />
+
+  <!-- 全局登录提示弹窗 -->
+  <AppLoginModal />
 </template>
 
 <style lang="scss">

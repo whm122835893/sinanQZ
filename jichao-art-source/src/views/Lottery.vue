@@ -1,6 +1,11 @@
 <script setup>
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
+import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
+
+const route = useRoute()
+const { requireLogin } = useLoginGate()
 
 // 六个奖品：图片 / 数量（剩余） / 奖项名称
 const prizes = [
@@ -37,6 +42,7 @@ function nowStr() {
 // 抽 n 次：转盘依次转动，每次结果写入抽奖记录；仅最后一次弹窗
 function drawTimes(n) {
   if (spinning.value) return
+  if (!requireLogin(route.fullPath)) return
   spinDuration.value = n > 1 ? 1400 : 4200
   let left = n
   const runOne = () => {

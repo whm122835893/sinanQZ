@@ -6,10 +6,12 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { useActivityStore } from '@/stores/activity'
 import { useUserStore } from '@/stores/user'
+import { useLoginGate } from '@/utils/loginGate'
 
 const route = useRoute()
 const activityStore = useActivityStore()
 const user = useUserStore()
+const { requireLogin } = useLoginGate()
 const { synthesisActivities } = storeToRefs(activityStore)
 // 仓库藏品来自用户库存
 const { inventory: userInventory } = storeToRefs(user)
@@ -44,6 +46,7 @@ const showSuccess = ref(false)
 
 function startSynthesis() {
   if (synthesizing.value || !selected.value.length || !act.value) return
+  if (!requireLogin(route.fullPath)) return
   synthesizing.value = true
   setTimeout(() => {
     // 按数量消耗所选材料

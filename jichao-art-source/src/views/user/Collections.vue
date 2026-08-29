@@ -22,11 +22,8 @@ const showSerials = ref(false)
 const current = ref(null)
 
 function genSerials(it) {
-  // 挂单场景：单编号（no 已存在）
-  if (it.no) return [it.no]
-  // 发售场景：按数量生成序列号
-  const qty = it.qty || 1
-  return Array.from({ length: qty }, (_, i) => 'SN-' + it.id + '-' + String(i + 1).padStart(4, '0'))
+  // 直接使用 nos 数组（已按实际入库数量生成）
+  return it.nos || []
 }
 const currentSerials = computed(() => (current.value ? genSerials(current.value) : []))
 

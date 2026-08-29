@@ -51,7 +51,15 @@ const ICONS = {
   home: { path: '<path d="M3 10.8 12 4l9 6.8"/><path d="M5.4 9.3V19.6h13.2V9.3"/>' },
   bag: { path: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>' },
   // 导航栏：现代线性风格（铃铛）
-  bell: { path: '<path d="M6 9a6 6 0 1112 0c0 5 1.6 6.6 2.2 7.2H3.8C4.4 15.6 6 14 6 9z"/><path d="M9.8 20a2.2 2.2 0 004.4 0"/>' }
+  bell: { path: '<path d="M6 9a6 6 0 1112 0c0 5 1.6 6.6 2.2 7.2H3.8C4.4 15.6 6 14 6 9z"/><path d="M9.8 20a2.2 2.2 0 004.4 0"/>' },
+  // 订单：剪贴板（订单记录）
+  clipboard: { path: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v2h6V3"/><path d="M8 12h8M8 16h5"/>' },
+  // 转赠：双向箭头（藏品转移）
+  transfer: { path: '<path d="M7 7h13l-3-3"/><path d="M17 17H4l3 3"/>' },
+  // 邀请好友：人形 + 加号
+  invite: { path: '<circle cx="8" cy="8" r="3"/><path d="M2 20c.5-3.3 3.2-5.5 6-5.5s5.5 2.2 6 5.5"/><path d="M16 7v6M13 10h6"/>' },
+  // 空藏品台：展柜
+  showcase: { path: '<rect x="3" y="6" width="18" height="2" rx="1"/><path d="M5 8v11h14V8"/><rect x="7" y="10" width="10" height="7" rx="1"/><path d="M9 13h6"/>' }
 }
 
 const icon = computed(() => ICONS[props.name] || ICONS.back)

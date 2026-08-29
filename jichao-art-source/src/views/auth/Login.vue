@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -8,6 +8,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { useCountdown } from '@/utils/useCountdown'
 import { showToast, showDialog } from 'vant'
 
+const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
@@ -36,7 +37,13 @@ function onLogin() {
   if (!agreed.value) { showToast('请先阅读并同意协议'); return }
   user.login({ phone: phone.value })
   showToast('登录成功')
-  router.replace('/')
+  // 登录后回跳来源页面（从全局登录弹窗进入时携带 redirect 参数）
+  const redirect = route.query.redirect
+  if (redirect) {
+    router.replace(String(redirect))
+  } else {
+    router.replace('/')
+  }
 }
 function onRegister() { router.push('/auth/register') }
 function onForgot() { router.push('/auth/forgot') }

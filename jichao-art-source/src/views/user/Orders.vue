@@ -10,7 +10,7 @@ const router = useRouter()
 const tabs = [
   { key: 'all', label: '全部' },
   { key: 'pending', label: '待付款' },
-  { key: 'shipping', label: '待收货' },
+  { key: 'shipping', label: '已取消' },
   { key: 'done', label: '已完成' }
 ]
 const active = ref('all')
@@ -24,7 +24,7 @@ const orders = [
 
 const statusMeta = {
   pending: { text: '待付款', cls: 'pending' },
-  shipping: { text: '待收货', cls: 'shipping' },
+  shipping: { text: '已取消', cls: 'canceled' },
   done: { text: '已完成', cls: 'done' }
 }
 
@@ -34,7 +34,7 @@ const list = computed(() =>
 
 function action(o) {
   if (o.status === 'pending') showToast('前往支付')
-  else if (o.status === 'shipping') showToast('查看物流')
+  else if (o.status === 'shipping') showToast('已取消的订单不可操作')
   else showToast('再次购买')
 }
 function goDetail(o) {
@@ -75,7 +75,7 @@ function goDetail(o) {
         </div>
         <div class="order-card__foot">
           <button class="order-card__btn" @click="action(o)">
-            {{ o.status === 'pending' ? '去支付' : o.status === 'shipping' ? '查看物流' : '再次购买' }}
+            {{ o.status === 'pending' ? '去支付' : o.status === 'shipping' ? '已取消' : '再次购买' }}
           </button>
         </div>
       </div>
@@ -109,7 +109,7 @@ function goDetail(o) {
   &__no { font-size: 12px; color: $color-text-tertiary; font-family: $font-price; }
   &__status { font-size: 12px; font-weight: 600; }
   &__status.pending { color: $color-primary; }
-  &__status.shipping { color: #E8A33D; }
+  &__status.canceled { color: #999; }
   &__status.done { color: $color-text-tertiary; }
   &__body {
     display: flex; gap: 12px; padding: 12px 0; cursor: pointer;

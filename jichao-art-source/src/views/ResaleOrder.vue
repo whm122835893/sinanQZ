@@ -2,13 +2,13 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
-import { useUserStore } from '@/stores/user'
+import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
-const userStore = useUserStore()
+const { requireLogin } = useLoginGate()
 
 const meta = ref(null)
 const order = ref(null)
@@ -32,7 +32,7 @@ const notices = [
 ]
 
 function onBuy() {
-  if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
+  if (!requireLogin(route.fullPath)) return
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: order.value.no } })
 }
 </script>
@@ -55,7 +55,7 @@ function onBuy() {
       <h2 class="detail-block__title"><span class="red">藏品</span>信息</h2>
       <div class="detail-meta">
         <div class="detail-meta__row">
-          <span class="detail-meta__label">挂单编号</span>
+          <span class="detail-meta__label">藏品编号</span>
           <span class="detail-meta__value">#{{ order.no }}</span>
         </div>
         <div class="detail-meta__row">

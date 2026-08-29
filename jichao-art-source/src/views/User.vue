@@ -1,21 +1,29 @@
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useIconThemeStore } from '@/stores/iconTheme'
+import { useLoginGate } from '@/utils/loginGate'
 import AppIcon from '@/components/AppIcon.vue'
 import AppListItem from '@/components/AppListItem.vue'
 import { showConfirmDialog, showToast } from 'vant'
 
+const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
 const iconTheme = useIconThemeStore()
+const { requireLogin } = useLoginGate()
 
 // 功能入口图标（跟随当前主题动态切换）
 const inventoryIcon = computed(() => iconTheme.getFeatureIcon('inventory'))
 const walletIcon    = computed(() => iconTheme.getFeatureIcon('wallet'))
 
-function go(path) { router.push(path) }
+// 需登录才能访问的私有入口（未登录时统一弹全局登录提示）
+const needAuth = ['/user/invite', '/user/collections', '/user/wallet', '/user/orders', '/user/purchase', '/user/profile', '/user/security', '/user/realname']
+function go(path) {
+  if (needAuth.includes(path) && !requireLogin(route.fullPath)) return
+  router.push(path)
+}
 
 function logout() {
   showConfirmDialog({ title: '提示', message: '确定退出登录吗？' })
@@ -41,7 +49,7 @@ function logout() {
 
     <!-- 邀请横幅 -->
     <div class="invite-banner" @click="go('/user/invite')">
-      <div class="invite-banner__icon"><AppIcon name="gift" :size="28" color="#C00000" /></div>
+      <div class="invite-banner__icon"><AppIcon name="invite" :size="28" color="#C00000" /></div>
       <div class="invite-banner__text">
         <span class="invite-banner__title">司南·邀新玩法</span>
         <span class="invite-banner__sub">同游作伴，潮流好礼不设限</span>
@@ -72,8 +80,8 @@ function logout() {
     <!-- 订单管理 -->
     <div class="group-title">订单管理</div>
     <div class="group-card">
-      <AppListItem title="我的订单" icon="ticket" arrow @click="go('/user/orders')" />
-      <AppListItem title="申购订单" icon="file" arrow border @click="go('/user/purchase')" />
+      <AppListItem title="我的订单" icon="clipboard" arrow @click="go('/user/orders')" />
+      <AppListItem title="转赠记录" icon="transfer" arrow border @click="go('/user/purchase')" />
     </div>
 
     <!-- 账户设置 -->
@@ -115,16 +123,21 @@ function logout() {
 .invite-banner {
   margin: 12px $page-padding; border-radius: $radius-lg; padding: 16px;
   background:
-    radial-gradient(120% 100% at 90% 0%, rgba(192,0,0,0.25), transparent 60%),
-    linear-gradient(135deg, #2a2a2a, #1A1A1A);
+    linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.86) 100%),
+    url('/images/invite-banner-bg.jpg') center/cover no-repeat;
+  border: 1px solid rgba(192,0,0,0.1);
   display: flex; align-items: center; gap: 12px; cursor: pointer;
+  box-shadow: 0 2px 12px rgba(192,0,0,0.08);
+  position: relative; overflow: hidden;
   &__icon {
-    width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,0.1);
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, rgba(192,0,0,0.12), rgba(210,140,50,0.1));
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    backdrop-filter: blur(2px);
   }
   &__text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-  &__title { font-size: 15px; font-weight: 700; color: #fff; }
-  &__sub { font-size: 12px; color: rgba(255,255,255,0.7); }
+  &__title { font-size: 15px; font-weight: 700; color: #9A1A1A; letter-spacing: 0.5px; }
+  &__sub { font-size: 12px; color: rgba(80,50,20,0.6); }
   &__btn {
     border: none; cursor: pointer; background: #C00000; color: #fff; font-size: 14px;
     padding: 8px 18px; border-radius: $radius-pill;

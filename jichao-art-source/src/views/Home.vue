@@ -1,17 +1,18 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useUserStore } from '@/stores/user'
+import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
 import { useIconThemeStore } from '@/stores/iconTheme'
+import { useLoginGate } from '@/utils/loginGate'
 import AppButton from '@/components/AppButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
 
+const route = useRoute()
 const router = useRouter()
-const userStore = useUserStore()
 const store = useCollectionStore()
 const iconTheme = useIconThemeStore()
+const { requireLogin } = useLoginGate()
 const featured = store.featured
 
 // 功能入口图标（跟随当前主题动态切换）
@@ -161,7 +162,7 @@ function goActivity() { router.push('/activity') }
 function goLottery() { router.push('/lottery') }
 function goDetail(id) { router.push('/collection/' + id) }
 function onSign() {
-  if (!userStore.isLoggedIn) { router.push('/auth/login'); return }
+  if (!requireLogin(route.fullPath)) return
   showToast('签到成功，今日积分 +10')
 }
 </script>

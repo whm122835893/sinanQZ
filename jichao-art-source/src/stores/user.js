@@ -16,10 +16,10 @@ export const useUserStore = defineStore('user', () => {
 
   // 我的藏品库存（mock：默认含部分藏品，购买成功后继续入库）
   const inventory = ref([
-    { id: '1', name: '龙纹罗盘', coverImage: '/images/collections/cover-1.jpg', price: '0.10', qty: 3, no: 'SN-1-0001', type: 'release', boughtAt: Date.now() },
-    { id: '2', name: '虎纹卡牌', coverImage: '/images/collections/cover-2.jpg', price: '0.10', qty: 2, no: 'SN-2-0001', type: 'release', boughtAt: Date.now() },
-    { id: '3', name: '水晶菱形', coverImage: '/images/collections/cover-3.jpg', price: '0.10', qty: 1, no: 'SN-3-0001', type: 'release', boughtAt: Date.now() },
-    { id: 'bb1', name: '神秘盲盒', coverImage: '/images/collections/cover-4.jpg', price: '0.50', qty: 1, no: 'SN-BB-0001', type: 'blindbox', opened: false, boughtAt: Date.now(), reveals: { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', price: '0.20' } }
+    { id: '1', name: '龙纹罗盘', coverImage: '/images/collections/cover-1.jpg', price: '0.10', qty: 3, nos: ['SN-1-0001', 'SN-1-0002', 'SN-1-0003'], type: 'release', boughtAt: Date.now() },
+    { id: '2', name: '虎纹卡牌', coverImage: '/images/collections/cover-2.jpg', price: '0.10', qty: 2, nos: ['SN-2-0001', 'SN-2-0002'], type: 'release', boughtAt: Date.now() },
+    { id: '3', name: '水晶菱形', coverImage: '/images/collections/cover-3.jpg', price: '0.10', qty: 1, nos: ['SN-3-0001'], type: 'release', boughtAt: Date.now() },
+    { id: 'bb1', name: '神秘盲盒', coverImage: '/images/collections/cover-4.jpg', price: '0.50', qty: 1, nos: ['SN-BB-0001'], type: 'blindbox', opened: false, boughtAt: Date.now(), reveals: { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', price: '0.20' } }
   ])
   // 我的寄售挂单（mock：从仓库发起寄售后记录）
   const consignments = ref([])
@@ -65,13 +65,23 @@ export const useUserStore = defineStore('user', () => {
 
   // 购买成功：藏品入库
   function addToInventory(item) {
+    const qty = item.qty || 1
+    // 生成序列号
+    let nos = []
+    if (item.no) {
+      // 挂单场景：指定编号
+      nos = [item.no]
+    } else {
+      // 发售场景：按数量生成
+      nos = Array.from({ length: qty }, (_, i) => 'SN-' + item.id + '-' + String(i + 1).padStart(4, '0'))
+    }
     const entry = {
       id: item.id,
       name: item.name,
       coverImage: item.coverImage,
       price: item.price,
-      qty: item.qty || 1,
-      no: item.no || '',
+      qty,
+      nos,
       type: item.type || 'release',
       boughtAt: Date.now()
     }
@@ -100,8 +110,15 @@ export const useUserStore = defineStore('user', () => {
   function consign(payload) {
     const idx = inventory.value.findIndex(i => String(i.id) === String(payload.id))
     if (idx !== -1) {
-      if (inventory.value[idx].qty > 1) {
-        inventory.value[idx].qty -= 1
+      // 从 nos 中移除指定编号
+      const item = inventory.value[idx]
+      const removedNo = payload.no
+      if (removedNo && item.nos) {
+        const ni = item.nos.indexOf(removedNo)
+        if (ni !== -1) item.nos.splice(ni, 1)
+      }
+      if (item.qty > 1) {
+        item.qty -= 1
       } else {
         inventory.value.splice(idx, 1)
       }
@@ -122,19 +139,20 @@ export const useUserStore = defineStore('user', () => {
 
   // 开启盲盒：标记为已开启，并将开启获得的藏品入库
   function openBlindbox(id, no) {
-    const idx = inventory.value.findIndex(i => String(i.id) === String(id) && i.type === 'blindbox' && (no ? i.no === no : true))
+    const idx = inventory.value.findIndex(i => String(i.id) === String(id) && i.type === 'blindbox' && (no ? i.nos?.includes(no) : true))
     if (idx === -1) return Promise.resolve(null)
     const box = inventory.value[idx]
     if (box.opened) return Promise.resolve(null)
-    inventory.value[idx].opened = true
+    box.opened = true
     const reveal = box.reveals || { id: box.id + '-r', name: box.name, coverImage: box.coverImage, price: box.price }
+    const revealNo = box.nos?.[0] || 'SN-' + reveal.id + '-0001'
     inventory.value.push({
       id: reveal.id,
       name: reveal.name,
       coverImage: reveal.coverImage,
       price: reveal.price,
       qty: 1,
-      no: box.no,
+      nos: [revealNo],
       type: 'release',
       boughtAt: Date.now()
     })

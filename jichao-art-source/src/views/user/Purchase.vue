@@ -34,8 +34,8 @@ const list = computed(() =>
 
 function action(o) {
   if (o.status === 'pending') showToast('前往支付')
-  else if (o.status === 'ongoing') showToast('查看申购进度')
-  else showToast('重新申购')
+  else if (o.status === 'ongoing') showToast('查看转赠进度')
+  else showToast('重新发起')
 }
 function goDetail(o) {
   router.push({ name: 'collection-detail', params: { id: o.id } })
@@ -44,7 +44,7 @@ function goDetail(o) {
 
 <template>
   <div class="purchase page--no-tabbar">
-    <AppNavBar title="申购订单" @click-left="$router.back()" />
+    <AppNavBar title="转赠记录" @click-left="$router.back()" />
 
     <div class="purchase-tabs">
       <div
@@ -59,31 +59,31 @@ function goDetail(o) {
     <div class="purchase__list" v-if="list.length">
       <div v-for="o in list" :key="o.id" class="pur-card">
         <div class="pur-card__head">
-          <span class="pur-card__no">申购单 {{ o.id }}</span>
+          <span class="pur-card__no">转赠单 {{ o.id }}</span>
           <span class="pur-card__status" :class="statusMeta[o.status].cls">{{ statusMeta[o.status].text }}</span>
         </div>
         <div class="pur-card__body" @click="goDetail(o)">
           <img class="pur-card__cover" :src="o.cover" alt="" />
           <div class="pur-card__info">
             <p class="pur-card__name">{{ o.name }}</p>
-            <p class="pur-card__sub">申购价 ¥{{ o.price }} · {{ o.qty }} 份</p>
+            <p class="pur-card__sub">转赠价 ¥{{ o.price }} · {{ o.qty }} 份</p>
             <div class="pur-card__bar" v-if="o.status === 'ongoing'">
               <div class="pur-card__bar-fill" :style="{ width: o.progress + '%' }"></div>
             </div>
             <p class="pur-card__hint" v-if="o.status === 'ongoing'">
-              {{ o.progress >= 100 ? '已全额申购，等待发货' : '已申购 ' + o.progress + '%' }}
+              {{ o.progress >= 100 ? '已全额转赠，等待发货' : '已转赠 ' + o.progress + '%' }}
             </p>
           </div>
         </div>
         <div class="pur-card__foot">
           <button class="pur-card__btn" :class="{ ghost: o.status !== 'pending' }" @click="action(o)">
-            {{ o.status === 'pending' ? '去支付' : o.status === 'ongoing' ? '查看进度' : '重新申购' }}
+            {{ o.status === 'pending' ? '去支付' : o.status === 'ongoing' ? '查看进度' : '重新发起' }}
           </button>
         </div>
       </div>
     </div>
 
-    <AppEmpty v-else description="暂无相关申购" />
+    <AppEmpty v-else description="暂无相关转赠" />
   </div>
 </template>
 

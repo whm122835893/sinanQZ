@@ -9,19 +9,29 @@ defineProps({
 <template>
   <div class="app-empty">
     <svg class="app-empty__img" viewBox="0 0 160 150" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <!-- 飘出的 3 个红色爱心 / 花瓣 -->
-      <path d="M52 40c-3-5-12-3-12 3 0 4 7 9 12 13 5-4 12-9 12-13 0-6-9-8-12-3z" fill="#C00000"/>
-      <path d="M86 26c-2.4-4-9.6-2.4-9.6 2.4 0 3.2 5.6 7.2 9.6 10.4 4-3.2 9.6-7.2 9.6-10.4 0-4.8-7.2-6.4-9.6-2.4z" fill="#E08080"/>
-      <path d="M116 44c-2-3.4-8-2-8 2 0 2.8 4.8 6 8 8.8 3.2-2.8 8-6 8-8.8 0-4-6-5.4-8-2z" fill="#C00000"/>
-      <!-- 箱身 -->
-      <path d="M34 78 L126 78 L116 128 L44 128 Z" fill="#EAD7B7" stroke="#C9A66B" stroke-width="2.5" stroke-linejoin="round"/>
-      <!-- 箱内阴影 -->
-      <path d="M44 78 L116 78 L112 92 L48 92 Z" fill="#DCC49A"/>
-      <!-- 左右打开的箱盖 -->
-      <path d="M34 78 L50 60 L78 78 Z" fill="#F0E2C6" stroke="#C9A66B" stroke-width="2.5" stroke-linejoin="round"/>
-      <path d="M126 78 L110 60 L82 78 Z" fill="#F0E2C6" stroke="#C9A66B" stroke-width="2.5" stroke-linejoin="round"/>
-      <!-- 箱体竖纹 -->
-      <path d="M80 78 L80 128" stroke="#D8BE8E" stroke-width="2"/>
+      <!-- 地面投影 -->
+      <ellipse cx="80" cy="138" rx="46" ry="5" fill="#E8D5B7" opacity="0.6"/>
+      <!-- 展柜底座 -->
+      <path d="M36 126 L124 126 L118 134 L42 134 Z" fill="#C9A66B" opacity="0.8"/>
+      <rect x="40" y="122" width="80" height="6" rx="2" fill="#E8D5B7" stroke="#C9A66B" stroke-width="1.5"/>
+      <!-- 玻璃罩主体 -->
+      <path d="M46 122 L46 54 Q46 44 56 44 L104 44 Q114 44 114 54 L114 122" fill="#F5F9FC" stroke="#B8C8D6" stroke-width="2" stroke-linejoin="round"/>
+      <!-- 玻璃高光 -->
+      <path d="M52 60 L52 110" stroke="#D4E4EF" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+      <path d="M108 64 L108 100" stroke="#D4E4EF" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+      <!-- 玻璃顶部 -->
+      <ellipse cx="80" cy="44" rx="28" ry="6" fill="#EBF2F7" stroke="#B8C8D6" stroke-width="2"/>
+      <path d="M52 44 Q52 38 80 38 Q108 38 108 44" fill="none" stroke="#B8C8D6" stroke-width="2"/>
+      <!-- 内部空空：一颗小小的灰钻石 -->
+      <path d="M74 108 L86 108 L92 102 L80 94 L68 102 Z" fill="#D0D8DE" opacity="0.5"/>
+      <path d="M80 108 L80 116" stroke="#B8C8D6" stroke-width="1.5"/>
+      <!-- 漂浮的星星 -->
+      <path d="M44 32 l2 4.5 l4.5 .7 l-3.4 3.2 l1 4.6 l-4.1 -2.3 l-4.1 2.3 l1 -4.6 l-3.4 -3.2 l4.5 -.7 z" fill="#E8A33D"/>
+      <path d="M128 26 l1.5 3.5 l3.5 .5 l-2.6 2.5 l.8 3.6 l-3.2 -1.8 l-3.2 1.8 l.8 -3.6 l-2.6 -2.5 l3.5 -.5 z" fill="#C00000"/>
+      <circle cx="32" cy="72" r="2.2" fill="#E8A33D"/>
+      <circle cx="134" cy="68" r="1.8" fill="#C00000"/>
+      <circle cx="58" cy="20" r="1.5" fill="#E8A33D"/>
+      <circle cx="102" cy="16" r="1.2" fill="#C00000"/>
     </svg>
     <p class="app-empty__text">{{ description }}</p>
   </div>

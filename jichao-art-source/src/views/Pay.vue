@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
+import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useCountdown } from '@/utils/useCountdown'
@@ -12,6 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
 const user = useUserStore()
+const { requireLogin } = useLoginGate()
 
 // 路由区分：发售支付(mode=release) / 挂单支付(mode=order) 单路由，按 mode 决定数据源与限购
 const isRelease = computed(() => route.params.mode === 'release')
@@ -26,9 +28,9 @@ const payMethods = ['微信', '支付宝', '汇']
 const payMethod = ref('微信')
 
 onMounted(async () => {
-  if (!user.isLoggedIn) {
-    showToast('请先登录')
-    router.replace('/auth/login')
+  if (!requireLogin(route.fullPath)) {
+    // 未登录：弹出全局登录提示并返回上一页
+    router.back()
     return
   }
   if (isRelease.value) {
