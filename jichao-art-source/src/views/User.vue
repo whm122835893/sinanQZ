@@ -122,25 +122,28 @@ function logout() {
 
 .invite-banner {
   margin: 12px $page-padding; border-radius: $radius-lg; padding: 16px;
-  background:
-    linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.86) 100%),
-    url('/images/invite-banner-bg.jpg') center/cover no-repeat;
-  border: 1px solid rgba(192,0,0,0.1);
+  background: #ffffff;
+  border: 1px solid rgba(192,0,0,0.12);
   display: flex; align-items: center; gap: 12px; cursor: pointer;
-  box-shadow: 0 2px 12px rgba(192,0,0,0.08);
+  box-shadow: 0 2px 12px rgba(192,0,0,0.06);
   position: relative; overflow: hidden;
+  &::before {
+    content: ''; position: absolute; inset: 0; z-index: 0;
+    background: url('/images/invite-banner-bg.jpg') center/cover no-repeat;
+    opacity: 0.3; filter: brightness(1.6) saturate(0.7); pointer-events: none;
+  }
   &__icon {
-    width: 44px; height: 44px; border-radius: 12px;
-    background: linear-gradient(135deg, rgba(192,0,0,0.12), rgba(210,140,50,0.1));
+    width: 44px; height: 44px; border-radius: 12px; position: relative; z-index: 1;
+    background: linear-gradient(135deg, rgba(192,0,0,0.1), rgba(210,140,50,0.08));
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     backdrop-filter: blur(2px);
   }
-  &__text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  &__text { flex: 1; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
   &__title { font-size: 15px; font-weight: 700; color: #9A1A1A; letter-spacing: 0.5px; }
   &__sub { font-size: 12px; color: rgba(80,50,20,0.6); }
   &__btn {
     border: none; cursor: pointer; background: #C00000; color: #fff; font-size: 14px;
-    padding: 8px 18px; border-radius: $radius-pill;
+    padding: 8px 18px; border-radius: $radius-pill; position: relative; z-index: 1;
   }
 }
 
