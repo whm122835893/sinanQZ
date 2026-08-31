@@ -94,7 +94,7 @@ function go(tab) {
   color: $color-text-tertiary;      // 未选中：灰 #999
   cursor: pointer;
   position: relative;
-  transition: color 0.25s ease, transform 0.25s ease;
+  transition: color 0.1s ease, transform 0.1s ease;
   &.is-active {
     color: $color-primary;          // 选中：红色 #C00000
     // 图标上浮 + 轻微放大
@@ -123,13 +123,13 @@ function go(tab) {
 .app-tabbar__label {
   font-size: 11px;                  // 文字大小
   line-height: 1;
-  transition: color 0.25s ease;
+  transition: color 0.1s ease;
 }
 .app-tabbar__icon {
   width: 30px;                     // 线性图标尺寸
   height: 30px;
   object-fit: contain;
-  transition: transform 0.25s ease;
+  transition: transform 0.1s ease;
 }
 .app-tabbar__image {
   width: 60px;                     // 商城圆标尺寸

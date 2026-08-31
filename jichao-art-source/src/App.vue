@@ -31,15 +31,13 @@ function onRefresh() {
 
 <style lang="scss">
 // 原生 H5 风格的页面切换：淡入淡出 + 轻微滑动
-.page-enter-active, .page-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.1s ease;
 }
-.page-enter-from {
-  opacity: 0;
-  transform: translateX(12px);
-}
+
+.page-enter-from,
 .page-leave-to {
   opacity: 0;
-  transform: translateX(-12px);
 }
 </style>

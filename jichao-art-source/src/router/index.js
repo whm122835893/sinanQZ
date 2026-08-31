@@ -1,20 +1,28 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import Home from '@/views/Home.vue'
+import Market from '@/views/Market.vue'
+import Mall from '@/views/Mall.vue'
+import Notice from '@/views/Notice.vue'
+import User from '@/views/User.vue'
 
 // ============================================================
 // 司南艺术 路由表（Hash 模式，适配 H5）
 // meta.tabbar: 该页面底部固定显示 5 个主 Tab
+// 优化：5 个主 Tab（首页/市场/商城/公告/我的）使用静态 import 同步加载，
+//      避免首次点击时因异步组件加载造成的体感延迟；
+//      其余所有子页（详情页、用户中心子页、鉴权页、业务页）继续懒加载。
 // ============================================================
 
 const routes = [
   {
     path: '/',
     name: 'home',
-    component: () => import('@/views/Home.vue'),
+    component: Home,
     meta: { title: '司南艺术', tabbar: true }
   },
   {
     path: '/market',
-    component: () => import('@/views/Market.vue'),
+    component: Market,
     redirect: '/market/activity',
     meta: { title: '市场', tabbar: true },
     children: [
@@ -26,13 +34,13 @@ const routes = [
   {
     path: '/mall',
     name: 'mall',
-    component: () => import('@/views/Mall.vue'),
+    component: Mall,
     meta: { title: '商城', tabbar: true }
   },
   {
     path: '/notice',
     name: 'notice',
-    component: () => import('@/views/Notice.vue'),
+    component: Notice,
     meta: { title: '公告列表', tabbar: true }
   },
   {
@@ -44,7 +52,7 @@ const routes = [
   {
     path: '/user',
     name: 'user',
-    component: () => import('@/views/User.vue'),
+    component: User,
     meta: { title: '我的', tabbar: true }
   },
   // ---- 用户中心子页 ----
