@@ -211,7 +211,7 @@ function onSign() {
     <!-- 品牌卡片 -->
     <div class="brand-card">
       <img class="brand-card__logo" src="/images/brand-logo.png" alt="" draggable="false" @contextmenu.prevent />
-      <p class="brand-card__text">数字指针｜司南文创</p>
+      <img class="brand-card__text" src="/images/brand-text-xiaozhuan.png" alt="千年司南｜一器载道" draggable="false" @contextmenu.prevent />
     </div>
 
     <!-- 公告流动区 -->
@@ -413,10 +413,14 @@ function onSign() {
   &__text {
     position: relative;
     z-index: 1;
-    margin: 4px 0 0;
-    font-size: 13px;
-    color: $color-text-tertiary;
-    letter-spacing: 1px;
+    display: block;
+    width: 100%;
+    height: 22px;
+    margin: 4px auto 0;
+    object-fit: contain;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
 }
 
