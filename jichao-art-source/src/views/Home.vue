@@ -407,7 +407,7 @@ function onSign() {
   }
 
   &__logo {
-    position: relative; z-index: 1; display: block; height: 72px; margin: 0 auto; object-fit: contain;
+    position: relative; z-index: 1; display: block; height: 60px; margin: 0 auto; object-fit: contain;
     -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__text {
@@ -415,7 +415,7 @@ function onSign() {
     z-index: 1;
     display: block;
     width: 100%;
-    height: 22px;
+    height: 19px;
     margin: 4px auto 0;
     object-fit: contain;
     image-rendering: -webkit-optimize-contrast;
