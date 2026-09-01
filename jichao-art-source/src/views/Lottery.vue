@@ -126,7 +126,6 @@ function onAgain() {
     <div class="lottery__records">
       <div class="lottery__records-head">
         <span>抽奖记录</span>
-        <span v-if="records.length" class="lottery__records-clear" @click="records = []">清空</span>
       </div>
       <div v-if="records.length" class="lottery__record-list">
         <div v-for="(r, i) in records" :key="i" class="record-item">
@@ -250,9 +249,6 @@ function onAgain() {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 14px; font-weight: 700; color: $color-text-primary;
   padding-bottom: 10px; border-bottom: 1px solid $color-border;
-}
-.lottery__records-clear {
-  font-size: 12px; font-weight: 400; color: $color-text-tertiary; cursor: pointer;
 }
 .lottery__record-list { max-height: 320px; overflow-y: auto; }
 .record-item {

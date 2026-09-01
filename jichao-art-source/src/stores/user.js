@@ -159,8 +159,53 @@ export const useUserStore = defineStore('user', () => {
     return Promise.resolve(reveal)
   }
 
+  // ---- 每日签到 ----
+  // 纯打卡签到：不发放奖励，奖励由管理员后台后期配置
+  const signStore = JSON.parse(localStorage.getItem('jc_sign') || '{}')
+  const signState = ref({
+    day: signStore.day || 0, // 已连续签到天数
+    lastSignDate: signStore.lastSignDate || '',
+    records: signStore.records || [] // [{ date: 'YYYY-MM-DD' }]
+  })
+
+  const pad2 = (n) => String(n).padStart(2, '0')
+  const fmtSignDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+  const todayStr = () => fmtSignDate(new Date())
+
+  function persistSign() {
+    localStorage.setItem('jc_sign', JSON.stringify({
+      day: signState.value.day,
+      lastSignDate: signState.value.lastSignDate,
+      records: signState.value.records
+    }))
+  }
+
+  // 今日是否已签到
+  const todaySigned = computed(() => signState.value.lastSignDate === todayStr())
+
+  // 本次签到后的连续天数：昨天连续则 +1，断签则回到 1
+  function nextStreak() {
+    const s = signState.value
+    if (!s.day || !s.lastSignDate) return 1
+    const last = new Date(s.lastSignDate.replace(/-/g, '/')).toDateString()
+    const diff = Math.round((new Date(new Date().toDateString()) - new Date(last)) / 86400000)
+    return diff === 1 ? s.day + 1 : 1
+  }
+
+  // 执行签到：成功返回 { ok: true, day }，今日已签返回 { already: true }
+  function doSign() {
+    if (todaySigned.value) return Promise.resolve({ already: true })
+    const day = nextStreak()
+    signState.value.day = day
+    signState.value.lastSignDate = todayStr()
+    signState.value.records.unshift({ date: todayStr() })
+    persistSign()
+    return Promise.resolve({ ok: true, day })
+  }
+
   return {
     token, userInfo, isLoggedIn, inventory, payPassword, consignments,
+    signState, todaySigned, doSign,
     setUserInfo, login, logout, fetchUserInfo,
     verifyPaymentPassword, ownedCount, addToInventory, consume, consign, openBlindbox
   }

@@ -15,14 +15,14 @@ function goResale() {
   <div class="market-card" @click="goResale">
     <div class="market-card__cover-wrap">
       <img class="market-card__cover" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
-      <span class="market-card__tag">寄售</span>
     </div>
     <p class="market-card__name">{{ item.name }}</p>
+    <div class="market-card__meta">
+      <span class="market-card__stat">发行<b>{{ item.issueCount }}</b></span>
+      <span class="market-card__stat">流通<b>{{ item.circulationCount }}</b></span>
+    </div>
     <div class="market-card__footer">
-      <div class="market-card__stats">
-        <span class="market-card__stat">发行量<b>{{ item.issueCount }}</b></span>
-        <span class="market-card__stat">流通量<b>{{ item.circulationCount }}</b></span>
-      </div>
+      <span class="market-card__floor">地板价</span>
       <span class="market-card__price">¥{{ item.price }}</span>
     </div>
   </div>
@@ -46,24 +46,23 @@ function goResale() {
     width: 100%; height: 100%; object-fit: cover; display: block;
     -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
-  &__tag {
-    position: absolute; top: 8px; left: 8px;
-    font-size: 10px; font-weight: 600; color: #fff;
-    background: linear-gradient(135deg, $color-primary, #8B0000);
-    padding: 2px 6px; border-radius: 4px;
-  }
   &__name {
-    margin: 10px 0 6px;
+    margin: 10px 0 0;
     font-size: 14px; font-weight: 600; color: $color-text-primary;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  &__stats {
-    display: flex; align-items: center; gap: 10px;
+  &__meta {
+    display: flex; align-items: center; gap: 14px;
+    flex-wrap: nowrap; margin-top: 6px;
   }
   &__stat {
-    font-size: 10px; color: $color-text-tertiary;
-    display: flex; flex-direction: column; gap: 2px;
-    b { font-size: 12px; color: $color-text-primary; font-weight: 600; font-family: $font-price; line-height: 1; }
+    font-size: 11px; color: $color-text-tertiary;
+    display: flex; align-items: center; gap: 4px; white-space: nowrap;
+    b { font-size: 13px; color: $color-text-primary; font-weight: 400; font-family: $font-price; line-height: 1; }
+  }
+  &__floor {
+    font-size: 12px; color: $color-text-tertiary;
+    display: flex; align-items: baseline; line-height: 1;
   }
   &__footer {
     display: flex; align-items: flex-end; justify-content: space-between;

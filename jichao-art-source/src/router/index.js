@@ -83,6 +83,7 @@ const routes = [
   { path: '/activity', name: 'activity', component: () => import('@/views/Activity.vue'), meta: { title: '活动' } },
   { path: '/activity/synthesis/:id', name: 'activity-synthesis', component: () => import('@/views/Synthesis.vue'), meta: { title: '合成活动' } },
   { path: '/lottery', name: 'lottery', component: () => import('@/views/Lottery.vue'), meta: { title: '司南·抽奖' } },
+  { path: '/sign', name: 'sign', component: () => import('@/views/Sign.vue'), meta: { title: '每日签到' } },
   // ---- 兜底 ----
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]

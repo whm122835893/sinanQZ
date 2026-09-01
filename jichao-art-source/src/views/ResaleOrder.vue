@@ -43,12 +43,24 @@ function onBuy() {
 
     <!-- 主视觉卡片 -->
     <div class="detail-hero">
-      <img class="detail-hero__cover" :src="meta.coverImage" alt="" />
+      <img class="detail-hero__cover" :src="meta.coverImage" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
       <div class="detail-hero__metal"><span>SINAN DIGITAI</span></div>
     </div>
 
     <!-- 藏品名 -->
     <p class="detail-hero__name">{{ meta.name }}</p>
+
+    <!-- 发行量 / 流通量 -->
+    <div class="detail-stats">
+      <div class="detail-stats__item">
+        <span class="detail-stats__label">发行量</span>
+        <b class="detail-stats__value">{{ meta.issueCount }}</b>
+      </div>
+      <div class="detail-stats__item">
+        <span class="detail-stats__label">流通量</span>
+        <b class="detail-stats__value">{{ meta.circulationCount }}</b>
+      </div>
+    </div>
 
     <!-- 藏品信息 -->
     <section class="detail-block">
@@ -57,14 +69,6 @@ function onBuy() {
         <div class="detail-meta__row">
           <span class="detail-meta__label">藏品编号</span>
           <span class="detail-meta__value">#{{ order.no }}</span>
-        </div>
-        <div class="detail-meta__row">
-          <span class="detail-meta__label">发行份数</span>
-          <span class="detail-meta__value">{{ meta.issueCount }}</span>
-        </div>
-        <div class="detail-meta__row">
-          <span class="detail-meta__label">流通份数</span>
-          <span class="detail-meta__value">{{ meta.circulationCount }}</span>
         </div>
         <div class="detail-meta__row">
           <span class="detail-meta__label">发行方</span>
@@ -104,7 +108,7 @@ function onBuy() {
   position: relative; margin: 12px $page-padding; border-radius: $radius-lg;
   background: $color-card; height: 320px; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  &__cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+  &__cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
   &__metal {
     position: absolute; z-index: 2; bottom: 0; left: 0; right: 0; height: 46px;
     background: rgba(255, 255, 255, 0.08);
@@ -130,6 +134,21 @@ function onBuy() {
 .detail-block__body { margin: 0; font-size: 14px; color: $color-text-secondary; line-height: 1.6; }
 .detail-block__list { margin: 0; padding-left: 18px; }
 .detail-block__list li { font-size: 14px; color: $color-text-secondary; line-height: 1.6; margin-bottom: 6px; }
+
+.detail-stats {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  margin: 12px $page-padding 0; padding: 14px 0;
+  background: $color-card; border-radius: $radius-lg;
+  &__item {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    &:first-child::after {
+      content: ''; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+      width: 1px; height: 28px; background: $color-border;
+    }
+  }
+  &__label { font-size: 12px; color: $color-text-tertiary; }
+  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; }
+}
 
 .detail-meta { background: $color-card; border-radius: $radius-lg; padding: 4px 14px; }
 .detail-meta__row {

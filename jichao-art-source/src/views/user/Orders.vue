@@ -63,7 +63,7 @@ function goDetail(o) {
           <span class="order-card__status" :class="statusMeta[o.status].cls">{{ statusMeta[o.status].text }}</span>
         </div>
         <div class="order-card__body" @click="goDetail(o)">
-          <img class="order-card__cover" :src="o.cover" alt="" />
+          <img class="order-card__cover" :src="o.cover" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
           <div class="order-card__info">
             <p class="order-card__name">{{ o.name }}</p>
             <p class="order-card__sub">编号 #{{ o.no }} · ×{{ o.qty }}</p>
@@ -114,7 +114,7 @@ function goDetail(o) {
   &__body {
     display: flex; gap: 12px; padding: 12px 0; cursor: pointer;
   }
-  &__cover { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: $color-surface; }
+  &__cover { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: $color-surface; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
   &__info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   &__name { margin: 0; font-size: 15px; font-weight: 600; color: $color-text-primary; @include ellipsis; }
   &__sub { margin: 0; font-size: 12px; color: $color-text-tertiary; }

@@ -163,7 +163,7 @@ function goLottery() { router.push('/lottery') }
 function goDetail(id) { router.push('/collection/' + id) }
 function onSign() {
   if (!requireLogin(route.fullPath)) return
-  showToast('签到成功，今日积分 +10')
+  router.push('/sign')
 }
 </script>
 

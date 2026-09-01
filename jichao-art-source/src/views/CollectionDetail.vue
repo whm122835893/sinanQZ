@@ -185,6 +185,18 @@ function onOpenResultDone() {
     <!-- 藏品名 -->
     <p class="detail-hero__name">{{ detail.title }}</p>
 
+    <!-- 发行量 / 流通量 -->
+    <div class="detail-stats">
+      <div class="detail-stats__item">
+        <span class="detail-stats__label">发行量</span>
+        <b class="detail-stats__value">{{ detail.issueCount }}</b>
+      </div>
+      <div class="detail-stats__item">
+        <span class="detail-stats__label">流通量</span>
+        <b class="detail-stats__value">{{ detail.circulationCount }}</b>
+      </div>
+    </div>
+
     <!-- 盲盒内容 -->
     <section class="detail-block" v-if="blindboxItems.length">
       <h2 class="detail-block__title"><span class="red">盲盒</span>内容</h2>
@@ -207,14 +219,6 @@ function onOpenResultDone() {
         <div class="detail-meta__row" v-if="serialNo">
           <span class="detail-meta__label">藏品编号</span>
           <span class="detail-meta__value">#{{ serialNo }}</span>
-        </div>
-        <div class="detail-meta__row">
-          <span class="detail-meta__label">发行份数</span>
-          <span class="detail-meta__value">{{ detail.issueCount }}</span>
-        </div>
-        <div class="detail-meta__row">
-          <span class="detail-meta__label">流通份数</span>
-          <span class="detail-meta__value">{{ detail.circulationCount }}</span>
         </div>
         <div class="detail-meta__row">
           <span class="detail-meta__label">发行方</span>
@@ -386,6 +390,21 @@ function onOpenResultDone() {
 .detail-block__body { margin: 0; font-size: 14px; color: $color-text-secondary; line-height: 1.6; }
 .detail-block__list { margin: 0; padding-left: 18px; }
 .detail-block__list li { font-size: 14px; color: $color-text-secondary; line-height: 1.6; margin-bottom: 6px; }
+
+.detail-stats {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  margin: 12px $page-padding 0; padding: 14px 0;
+  background: $color-card; border-radius: $radius-lg;
+  &__item {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    &:first-child::after {
+      content: ''; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+      width: 1px; height: 28px; background: $color-border;
+    }
+  }
+  &__label { font-size: 12px; color: $color-text-tertiary; }
+  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; }
+}
 
 .detail-meta { background: $color-card; border-radius: $radius-lg; padding: 4px 14px; }
 .detail-meta__row {

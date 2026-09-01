@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
-// 极潮艺术 H5 工程配置
+// 司南艺术 H5 工程配置
 export default defineConfig({
   plugins: [vue()],
   resolve: {

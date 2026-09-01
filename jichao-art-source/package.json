@@ -1,8 +1,8 @@
 {
-  "name": "jichao-art",
+  "name": "sinan-art",
   "version": "1.0.0",
   "private": true,
-  "description": "极潮艺术 - 移动端数字藏品(NFT)交易平台",
+  "description": "司南艺术 - 移动端数字藏品(NFT)交易平台",
   "type": "module",
   "scripts": {
     "dev": "vite --host",

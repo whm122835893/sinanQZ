@@ -57,7 +57,7 @@ function goDetail(it, no) {
     <div class="collections-grid" v-if="list.length">
       <div class="collections-grid__item" v-for="(it, i) in list" :key="i" @click="openSerials(it)">
         <div class="collections-grid__cover-wrap">
-          <img class="collections-grid__cover" :src="it.coverImage" alt="" />
+          <img class="collections-grid__cover" :src="it.coverImage" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
           <span v-if="it.type === 'blindbox' && it.opened" class="collections-grid__badge collections-grid__badge--opened">已开启</span>
           <span v-else-if="it.type === 'blindbox'" class="collections-grid__badge">未开启</span>
         </div>
@@ -111,7 +111,7 @@ function goDetail(it, no) {
   position: relative; width: 100%; aspect-ratio: 1 / 1;
   border-radius: 10px; overflow: hidden; background: #141415;
 }
-.collections-grid__cover { width: 100%; height: 100%; object-fit: cover; display: block; }
+.collections-grid__cover { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
 .collections-grid__badge {
   position: absolute; top: 8px; left: 8px; z-index: 2;
   font-size: 10px; font-weight: 600; color: #fff;

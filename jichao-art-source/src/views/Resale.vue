@@ -60,26 +60,18 @@ function goOrder(o) {
     <!-- 藏品展示区 -->
     <section class="resale-asset">
       <div class="resale-asset__card">
-        <img class="resale-asset__cover" :src="meta.coverImage" alt="" />
+        <img class="resale-asset__cover" :src="meta.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
       </div>
       <h1 class="resale-asset__name">{{ meta.name }}</h1>
 
       <div class="resale-asset__stats">
         <div class="resale-asset__stat">
-          <span class="resale-asset__label">发行份数</span>
+          <span class="resale-asset__label">发行量</span>
           <span class="resale-asset__value">{{ meta.issueCount }}</span>
         </div>
         <div class="resale-asset__stat">
-          <span class="resale-asset__label">流通份数</span>
+          <span class="resale-asset__label">流通量</span>
           <span class="resale-asset__value">{{ meta.circulationCount }}</span>
-        </div>
-        <div class="resale-asset__stat">
-          <span class="resale-asset__label">今日成交</span>
-          <span class="resale-asset__value">{{ meta.todayCount }}</span>
-        </div>
-        <div class="resale-asset__stat">
-          <span class="resale-asset__label">交易限价</span>
-          <span class="resale-asset__value">¥{{ meta.limitPrice }}</span>
         </div>
       </div>
     </section>
@@ -113,7 +105,7 @@ function goOrder(o) {
     <section class="resale-list">
       <template v-if="activeTab === 'onsale'">
         <div class="resale-list__item" v-for="o in orders" :key="o.no" @click="goOrder(o)">
-          <img class="resale-list__thumb" :src="o.cover" alt="" />
+          <img class="resale-list__thumb" :src="o.cover" alt="" draggable="false" @contextmenu.prevent />
           <div class="resale-list__info">
             <div class="resale-list__title">
               <span class="resale-list__name">{{ o.name }}</span>
@@ -157,6 +149,7 @@ function goOrder(o) {
   }
   &__cover {
     width: 100%; height: 100%; object-fit: cover; display: block;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__name {
     margin: 16px 0 0; text-align: center;
@@ -224,6 +217,7 @@ function goOrder(o) {
   &__thumb {
     width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0;
     background: #141415;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
   }
   &__info { flex: 1; min-width: 0; }
   &__title {
