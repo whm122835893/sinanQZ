@@ -68,6 +68,19 @@ export const useCollectionStore = defineStore('collection', () => {
     { id: '8', name: '九霄环佩', coverImage: COVER[8], issueCount: '150000', circulationCount: '47200', todayCount: '17', limitPrice: '100', payment: '支付宝', orders: ['2.20', '2.10', '2.00', '1.95'] }
   ])
 
+  // ---- 藏品关注（mock 内存态，对应 user_favorites 表）----
+  const favorites = ref([])
+  function isFavorite(id) {
+    return favorites.value.includes(String(id))
+  }
+  function toggleFavorite(id) {
+    const key = String(id)
+    const idx = favorites.value.indexOf(key)
+    if (idx >= 0) favorites.value.splice(idx, 1)
+    else favorites.value.push(key)
+    return idx < 0
+  }
+
   // 市场价格排序：'price-asc' 升序 | 'price-desc' 降序
   // 价格取该藏品寄售挂单的最低价（price = min(orders)），并叠加关键词过滤（按藏品名）
   const marketSort = ref('price-asc')
@@ -405,6 +418,9 @@ export const useCollectionStore = defineStore('collection', () => {
     marketSort,
     sortedMarketCollections,
     toggleMarketSort,
+    favorites,
+    isFavorite,
+    toggleFavorite,
     fetchList,
     fetchDetail,
     fetchResale,

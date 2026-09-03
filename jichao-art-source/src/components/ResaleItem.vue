@@ -1,13 +1,23 @@
 <script setup>
 import { useRouter } from 'vue-router'
+import { showToast } from 'vant'
+import { useCollectionStore } from '@/stores/collection'
+import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps({
   item: { type: Object, required: true }
 })
 
 const router = useRouter()
+const store = useCollectionStore()
+
 function goResale() {
   router.push('/resale/' + props.item.id)
+}
+
+function onFav() {
+  const fav = store.toggleFavorite(props.item.id)
+  showToast(fav ? '已关注' : '已取消关注')
 }
 </script>
 
@@ -23,6 +33,9 @@ function goResale() {
         <span class="resale-item__stat">流通 {{ item.circulationCount }}</span>
       </div>
     </div>
+    <span class="resale-item__fav" :class="{ active: store.isFavorite(item.id) }" @click.stop="onFav">
+      <AppIcon :name="store.isFavorite(item.id) ? 'heartFill' : 'heart'" :size="16" />
+    </span>
     <div class="resale-item__right">
       <span class="resale-item__floor">地板价</span>
       <span class="resale-item__price">¥{{ item.price }}</span>
@@ -47,10 +60,16 @@ function goResale() {
   &__name { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: $color-text-primary; }
   &__stats { display: flex; gap: 16px; margin-top: auto; }
   &__stat {
-    font-size: 11px; color: $color-text-tertiary; font-weight: 500; letter-spacing: 0;
+    font-size: 10px; color: $color-text-tertiary; font-weight: 500; letter-spacing: 0;
   }
   &__right { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 3px; }
   &__floor { font-size: 11px; color: $color-text-tertiary; line-height: 1; }
   &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; }
+  &__fav {
+    align-self: center; flex: 1; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #C6C6C6; cursor: pointer; line-height: 1;
+    &.active { color: $color-primary; }
+  }
 }
 </style>

@@ -169,6 +169,12 @@ function goCalendar() { router.push('/calendar') }
 function goActivity() { router.push('/activity') }
 function goLottery() { router.push('/lottery') }
 function goDetail(id) { router.push('/collection/' + id) }
+
+// 关注/取消关注藏品
+function onFav(id) {
+  const fav = store.toggleFavorite(id)
+  showToast(fav ? '已关注' : '已取消关注')
+}
 function onSign() {
   if (!requireLogin(route.fullPath)) return
   router.push('/sign')
@@ -301,6 +307,9 @@ function onSign() {
           <div class="release-card__cover">
             <img class="release-card__img" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <span class="release-card__tag">{{ item.tag }}</span>
+            <span class="release-card__fav" :class="{ active: store.isFavorite(item.id) }" @click.stop="onFav(item.id)">
+              <AppIcon :name="store.isFavorite(item.id) ? 'heartFill' : 'heart'" :size="14" />
+            </span>
             <!-- 液态玻璃：发售时间/状态 -->
             <div class="release-card__glass">
               <span v-if="item.status === 'countdown'" class="release-card__status is-time">发售时间：{{ item.saleTimeText }}</span>
@@ -514,6 +523,14 @@ function onSign() {
     font-size: 10px; font-weight: 600; color: #fff;
     background: linear-gradient(135deg, $color-primary, #8B0000);
     padding: 2px 6px; border-radius: 4px;
+  }
+  &__fav {
+    position: absolute; top: 8px; right: 8px; z-index: 2;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex; align-items: center; justify-content: center;
+    color: #C6C6C6; cursor: pointer;
+    &.active { color: $color-primary; }
   }
   &__glass {
     position: absolute; bottom: 0; left: 0; right: 0; height: 32px; z-index: 1;
