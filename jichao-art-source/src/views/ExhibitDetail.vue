@@ -100,7 +100,8 @@ function back() { router.back() }
     width: 100%;
     aspect-ratio: 1 / 1;
     object-fit: cover;
-    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none;
+    pointer-events: none;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; user-drag: none;
   }
   &__tags {
     position: absolute;

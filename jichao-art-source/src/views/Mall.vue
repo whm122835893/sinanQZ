@@ -48,7 +48,7 @@ function openDetail(item) {
     <div v-if="filtered.length" class="exhibit-grid">
       <div v-for="item in filtered" :key="item.id" class="exhibit-card" @click="openDetail(item)">
         <div class="exhibit-card__cover">
-          <img class="exhibit-card__img" :src="item.image" :alt="item.name" draggable="false" @contextmenu.prevent @click.stop.prevent />
+          <img class="exhibit-card__img" :src="item.image" :alt="item.name" draggable="false" @contextmenu.prevent />
           <span class="exhibit-card__cat">{{ item.category }}</span>
         </div>
         <div class="exhibit-card__body">
@@ -103,7 +103,8 @@ function openDetail(item) {
   }
   &__img {
     width: 100%; height: 100%; object-fit: cover; display: block;
-    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none;
+    pointer-events: none; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none;
+    -webkit-user-select: none; user-drag: none;
   }
   &__cat {
     position: absolute; top: 8px; left: 8px; font-size: 11px; color: #f3e3c4;
