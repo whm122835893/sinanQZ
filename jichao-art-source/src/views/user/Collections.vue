@@ -4,17 +4,18 @@ import { useRouter } from 'vue-router'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 import { useUserStore } from '@/stores/user'
+import { showConfirmDialog, showToast } from 'vant'
 
 const router = useRouter()
 const user = useUserStore()
-const tabs = ['数字藏品', '盲盒', '已售出']
+const tabs = ['数字藏品', '盲盒', '寄售中']
 const active = ref('数字藏品')
 
 // 按类型筛选库存
 const list = computed(() => {
   if (active.value === '数字藏品') return user.inventory.filter(i => i.type !== 'blindbox')
   if (active.value === '盲盒') return user.inventory.filter(i => i.type === 'blindbox')
-  return []
+  return user.consignments.filter(c => c.status === 'onsale')
 })
 
 // 点击藏品卡片 → 弹出该藏品所有编号
@@ -27,15 +28,40 @@ function genSerials(it) {
 }
 const currentSerials = computed(() => (current.value ? genSerials(current.value) : []))
 
+// 编号是否处于寄售锁定中
+function isLocked(no) {
+  return !!(current.value && current.value.lockedNos && current.value.lockedNos.includes(no))
+}
+
 function openSerials(it) {
   current.value = it
   showSerials.value = true
 }
 function goDetail(it, no) {
+  if (isLocked(no)) { showToast('该藏品正在寄售中，请先取消寄售'); return }
   showSerials.value = false
   const query = { no, from: 'warehouse' }
   if (it.type === 'blindbox') query.type = 'blindbox'
   router.push({ name: 'collection-detail', params: { id: it.id }, query })
+}
+
+// 取消寄售：解除锁定，3 分钟冷却后才能重新寄售
+const canceling = ref(false)
+function onCancelConsign(c) {
+  if (canceling.value) return
+  showConfirmDialog({
+    title: '取消寄售',
+    message: `确定取消《${c.name}》（${c.no}）的寄售吗？取消后藏品将解除锁定，3 分钟内不可重新寄售。`,
+    confirmButtonText: '取消寄售',
+    cancelButtonText: '再想想'
+  })
+    .then(async () => {
+      canceling.value = true
+      await user.cancelConsign(c.id, c.no)
+      canceling.value = false
+      showToast('已取消寄售，3 分钟后可重新寄售')
+    })
+    .catch(() => {})
 }
 </script>
 
@@ -54,19 +80,34 @@ function goDetail(it, no) {
     </div>
 
     <!-- 网格列表 -->
-    <div class="collections-grid" v-if="list.length">
+    <div class="collections-grid" v-if="list.length && active !== '寄售中'">
       <div class="collections-grid__item" v-for="(it, i) in list" :key="i" @click="openSerials(it)">
         <div class="collections-grid__cover-wrap">
           <img class="collections-grid__cover" :src="it.coverImage" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
           <span v-if="it.type === 'blindbox' && it.opened" class="collections-grid__badge collections-grid__badge--opened">已开启</span>
           <span v-else-if="it.type === 'blindbox'" class="collections-grid__badge">未开启</span>
+          <span v-if="it.lockedNos && it.lockedNos.length" class="collections-grid__badge collections-grid__badge--lock">寄售中 {{ it.lockedNos.length }}</span>
         </div>
         <p class="collections-grid__name">{{ it.name }}</p>
         <p class="collections-grid__count">持有 {{ it.qty }} 件</p>
       </div>
     </div>
 
-    <AppEmpty v-else description="空空如也" />
+    <!-- 寄售中列表 -->
+    <div class="consign-list" v-if="active === '寄售中' && list.length">
+      <div class="consign-list__item" v-for="c in list" :key="c.id + c.no">
+        <img class="consign-list__thumb" :src="c.coverImage" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
+        <div class="consign-list__info">
+          <p class="consign-list__name">{{ c.name }}</p>
+          <p class="consign-list__no">编号 #{{ c.no }}</p>
+          <p class="consign-list__price">寄售价 ¥{{ Number(c.price).toFixed(2) }} · 到账 ¥{{ Number(c.actual).toFixed(2) }}</p>
+        </div>
+        <button class="consign-list__cancel" :disabled="canceling" @click="onCancelConsign(c)">取消寄售</button>
+      </div>
+    </div>
+
+    <AppEmpty v-else-if="active === '寄售中'" description="暂无寄售中的藏品" />
+    <AppEmpty v-else-if="!list.length" description="空空如也" />
 
     <!-- 编号弹窗 -->
     <van-popup v-model:show="showSerials" position="bottom" round>
@@ -79,10 +120,13 @@ function goDetail(it, no) {
         <div class="serials__grid">
           <div
             class="serials__cell"
+            :class="{ locked: isLocked(s) }"
             v-for="s in currentSerials"
             :key="s"
             @click="goDetail(current, s)"
-          >{{ s }}</div>
+          >
+            {{ s }}<em v-if="isLocked(s)">寄售中</em>
+          </div>
         </div>
       </div>
     </van-popup>
@@ -119,6 +163,33 @@ function goDetail(it, no) {
   padding: 2px 8px; border-radius: 4px;
 }
 .collections-grid__badge--opened { background: #999; }
+.collections-grid__badge--lock {
+  top: 8px; left: auto; right: 8px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+/* 寄售中列表 */
+.consign-list { padding: 0 $page-padding 16px; }
+.consign-list__item {
+  background: $color-card; border-radius: $radius-lg; padding: 12px 14px;
+  margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+}
+.consign-list__thumb {
+  width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex-shrink: 0;
+  background: #141415; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+}
+.consign-list__info { flex: 1; min-width: 0; }
+.consign-list__name {
+  margin: 0 0 4px; font-size: 15px; font-weight: 600; color: $color-text-primary;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.consign-list__no { margin: 0 0 4px; font-size: 12px; color: $color-text-tertiary; font-family: $font-price; }
+.consign-list__price { margin: 0; font-size: 12px; color: $color-primary; font-family: $font-price; }
+.consign-list__cancel {
+  flex-shrink: 0; border: 1px solid $color-primary; background: transparent; color: $color-primary;
+  font-size: 13px; height: 32px; padding: 0 14px; border-radius: $radius-pill; cursor: pointer;
+  &:disabled { opacity: 0.5; }
+}
 .collections-grid__name {
   margin: 10px 0 4px; font-size: 14px; font-weight: 600; color: $color-text-primary;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -147,6 +218,11 @@ function goDetail(it, no) {
     background: $color-surface; border: 1px solid $color-border; border-radius: 8px;
     font-family: $font-price; cursor: pointer;
     &:active { background: $color-primary; color: #fff; border-color: $color-primary; }
+    &.locked {
+      background: $color-card; color: $color-text-tertiary; border-style: dashed; cursor: not-allowed;
+      em { display: block; font-style: normal; font-size: 10px; color: $color-primary; margin-top: 2px; }
+      &:active { background: $color-card; color: $color-text-tertiary; border-color: $color-border; }
+    }
   }
 }
 </style>

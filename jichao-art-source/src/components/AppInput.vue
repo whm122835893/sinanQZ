@@ -75,7 +75,7 @@ function toggle() {
     border: none;
     outline: none;
     background: transparent;
-    font-size: 14px;
+    font-size: 16px; /* ≥16px，防止 iOS 聚焦输入框时自动放大页面 */
     color: $color-text-primary;
     &::placeholder { color: $color-text-tertiary; }
     &:disabled, &[readonly] { color: $color-text-secondary; }

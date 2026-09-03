@@ -9,11 +9,11 @@ export const useCollectionStore = defineStore('collection', () => {
   const _5h = 5 * 60 * 60 * 1000
   const _24h = 24 * 60 * 60 * 1000
   const featured = ref([
-    { id: '1', name: '龙纹罗盘', tag: '首发', price: '0.10', total: '500份', coverImage: '/images/collections/cover-1.jpg', saleTime: _now + _2h, saleEndTime: _now + _2h + _24h, soldOut: false },
-    { id: '2', name: '虎纹卡牌', tag: '首发', price: '0.10', total: '800份', coverImage: '/images/collections/cover-2.jpg', saleTime: _now + _5h, saleEndTime: _now + _5h + _24h, soldOut: false },
-    { id: '3', name: '水晶菱形', tag: '首发', price: '0.10', total: '300份', coverImage: '/images/collections/cover-3.jpg', saleTime: _now - _5h, saleEndTime: _now + _24h, soldOut: true },
-    { id: '4', name: '司南青龙', tag: '热售', price: '0.20', total: '1000份', coverImage: '/images/collections/cover-4.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false },
-    { id: 'bb1', name: '神秘盲盒', tag: '盲盒', price: '0.50', total: '200份', coverImage: '/images/collections/cover-5.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false, type: 'blindbox', reveals: { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', price: '0.20' }, items: [
+    { id: '1', name: '龙纹罗盘', tag: '首发', price: '0.10', total: '500份', coverImage: '/images/collections/cover-1.jpg', saleTime: _now + _2h, saleEndTime: _now + _2h + _24h, soldOut: false, stock: 500 },
+    { id: '2', name: '虎纹卡牌', tag: '优先购', price: '0.10', total: '800份', coverImage: '/images/collections/cover-2.jpg', saleTime: _now + _5h, saleEndTime: _now + _5h + _24h, soldOut: false, stock: 800 },
+    { id: '3', name: '水晶菱形', tag: '资格购', price: '0.10', total: '300份', coverImage: '/images/collections/cover-3.jpg', saleTime: _now - _5h, saleEndTime: _now + _24h, soldOut: true, stock: 0 },
+    { id: '4', name: '司南青龙', tag: '首发', price: '0.20', total: '1000份', coverImage: '/images/collections/cover-4.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false, stock: 1000 },
+    { id: 'bb1', name: '神秘盲盒', tag: '盲盒', price: '0.50', total: '200份', coverImage: '/images/collections/cover-5.jpg', saleTime: _now - _2h, saleEndTime: _now + _24h, soldOut: false, stock: 200, type: 'blindbox', reveals: { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', price: '0.20' }, items: [
       { id: '1', name: '龙纹罗盘', coverImage: '/images/collections/cover-1.jpg', rarity: '普通', probability: '35%' },
       { id: '2', name: '虎纹卡牌', coverImage: '/images/collections/cover-2.jpg', rarity: '普通', probability: '30%' },
       { id: '3', name: '水晶菱形', coverImage: '/images/collections/cover-3.jpg', rarity: '稀有', probability: '20%' },
@@ -95,7 +95,8 @@ export const useCollectionStore = defineStore('collection', () => {
       coverImage: meta.coverImage || `/images/collections/cover-${id}.jpg`,
       story: stories[id] || '',
       issueCount: mk ? mk.issueCount : '1000000',
-      circulationCount: mk ? mk.circulationCount : '328400',
+      // 流通量 = 基础值 + 已支付成功的增量
+      circulationCount: String(Number(mk ? mk.circulationCount : '328400') + (circulationDelta.value[id] || 0)),
       notice: [
         '藏品为数字藏品，一经购买不支持退换，请确认后再下单。',
         '本平台数字藏品仅供收藏与欣赏，不具备投资属性。',
@@ -127,10 +128,27 @@ export const useCollectionStore = defineStore('collection', () => {
   function getSaleStatus(item) {
     if (!item) return 'soldout'
     if (item.soldOut) return 'soldout'
+    // 库存售罄（待支付订单锁定库存，支付成功消耗，超时释放）
+    if (typeof item.stock === 'number' && item.stock <= 0) return 'soldout'
     const now = Date.now()
     if (item.saleTime && now < item.saleTime) return 'countdown'
     if (item.saleEndTime && now >= item.saleEndTime) return 'soldout'
     return 'selling'
+  }
+
+  // ---- 发售库存 / 流通量（mock 内存态）----
+  // 待支付订单锁定/释放库存：delta 负数为锁定，正数为释放
+  function changeStock(id, delta) {
+    const item = featured.value.find(f => String(f.id) === String(id))
+    if (!item || typeof item.stock !== 'number') return
+    item.stock = Math.max(0, item.stock + delta)
+  }
+
+  // 流通量增量：支付成功入库 +qty（挂单购买已在流通，不变化）
+  const circulationDelta = ref({})
+  function changeCirculation(id, delta) {
+    const key = String(id)
+    circulationDelta.value[key] = (circulationDelta.value[key] || 0) + delta
   }
 
   // 倒计时文案
@@ -150,5 +168,5 @@ export const useCollectionStore = defineStore('collection', () => {
     return featured.value.find(f => f.id === String(id)) || null
   }
 
-  return { featured, resaleCollection, collections, filters, detail, resaleOrders, marketViewMode, marketCollections, marketSort, sortedMarketCollections, toggleMarketSort, fetchList, fetchDetail, fetchResale, getSaleStatus, getCountdownText, getFeaturedById }
+  return { featured, resaleCollection, collections, filters, detail, resaleOrders, marketViewMode, marketCollections, marketSort, sortedMarketCollections, toggleMarketSort, fetchList, fetchDetail, fetchResale, getSaleStatus, getCountdownText, getFeaturedById, changeStock, changeCirculation }
 })

@@ -23,7 +23,7 @@ const lotteryIcon  = computed(() => iconTheme.getFeatureIcon('lottery'))
 // 发售倒计时：每秒刷新状态
 const now = ref(Date.now())
 let saleTimer = null
-const STATUS_TEXT = { countdown: '距发售', selling: '发售中', soldout: '已售罄' }
+const STATUS_TEXT = { selling: '发售中', soldout: '已售罄' }
 
 // 首发日历：动态日期，午夜自动更新
 const today = ref(new Date())
@@ -49,9 +49,17 @@ const featuredWithStatus = computed(() => {
   return store.featured.map(item => ({
     ...item,
     status: store.getSaleStatus(item),
-    countdownText: store.getCountdownText(item)
+    saleTimeText: formatSaleTime(item.saleTime)
   }))
 })
+
+// 发售时间文案：2026.12.09  17:00
+function formatSaleTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}  ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // 背景轮播：横向无缝滚动 + 手势拖动
 const slides = ['slide-1.jpg', 'slide-2.jpg', 'slide-3.jpg']
@@ -292,10 +300,10 @@ function onSign() {
         >
           <div class="release-card__cover">
             <img class="release-card__img" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
-            <span class="release-card__tag" :class="{ 'release-card__tag--blindbox': item.type === 'blindbox' }">{{ item.tag }}</span>
-            <!-- 液态玻璃：发售状态/倒计时 -->
+            <span class="release-card__tag">{{ item.tag }}</span>
+            <!-- 液态玻璃：发售时间/状态 -->
             <div class="release-card__glass">
-              <span v-if="item.status === 'countdown'" class="release-card__status">{{ STATUS_TEXT[item.status] }} {{ item.countdownText }}</span>
+              <span v-if="item.status === 'countdown'" class="release-card__status is-time">发售时间：{{ item.saleTimeText }}</span>
               <span v-else class="release-card__status" :class="{ 'is-soldout': item.status === 'soldout' }">{{ STATUS_TEXT[item.status] }}</span>
             </div>
           </div>
@@ -506,7 +514,6 @@ function onSign() {
     font-size: 10px; font-weight: 600; color: #fff;
     background: linear-gradient(135deg, $color-primary, #8B0000);
     padding: 2px 6px; border-radius: 4px;
-    &--blindbox { background: linear-gradient(135deg, #6B2DD4, #4A1B9E); }
   }
   &__glass {
     position: absolute; bottom: 0; left: 0; right: 0; height: 32px; z-index: 1;
@@ -521,6 +528,7 @@ function onSign() {
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
     letter-spacing: 1px;
     &.is-soldout { color: rgba(255, 255, 255, 0.6); }
+    &.is-time { font-size: 11px; font-weight: 500; letter-spacing: 0; font-family: $font-price; }
   }
   &__name {
     margin: 10px 0 6px;

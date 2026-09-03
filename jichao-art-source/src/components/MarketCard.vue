@@ -18,8 +18,8 @@ function goResale() {
     </div>
     <p class="market-card__name">{{ item.name }}</p>
     <div class="market-card__meta">
-      <span class="market-card__stat">发行<b>{{ item.issueCount }}</b></span>
-      <span class="market-card__stat">流通<b>{{ item.circulationCount }}</b></span>
+      <span class="market-card__stat">发行 {{ item.issueCount }}</span>
+      <span class="market-card__stat">流通 {{ item.circulationCount }}</span>
     </div>
     <div class="market-card__footer">
       <span class="market-card__floor">地板价</span>
@@ -56,9 +56,8 @@ function goResale() {
     flex-wrap: nowrap; margin-top: 6px;
   }
   &__stat {
-    font-size: 11px; color: $color-text-tertiary;
+    font-size: 11px; color: $color-text-tertiary; font-weight: 500;
     display: flex; align-items: center; gap: 4px; white-space: nowrap;
-    b { font-size: 13px; color: $color-text-primary; font-weight: 400; font-family: $font-price; line-height: 1; }
   }
   &__floor {
     font-size: 12px; color: $color-text-tertiary;

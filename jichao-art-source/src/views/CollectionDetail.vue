@@ -51,7 +51,7 @@ const countdownText = computed(() => {
 })
 
 const buyButtonText = computed(() => {
-  if (saleStatus.value === 'countdown') return countdownText.value || '即将发售'
+  if (saleStatus.value === 'countdown') return '距发售 ' + (countdownText.value || '即将发售')
   if (saleStatus.value === 'selling') return '立即购买'
   return '已售罄'
 })
@@ -80,6 +80,23 @@ const price = ref('')
 const consigning = ref(false)
 const lastActual = ref(0)
 
+// 该编号是否处于寄售锁定中（未扣库存，仅锁定）
+const isNoLockedNow = computed(() => userStore.isNoLocked(route.params.id, serialNo.value))
+// 取消寄售后的 3 分钟冷却剩余秒数
+const cooldownRemain = ref(0)
+let cooldownTimer = null
+function refreshCooldown() {
+  cooldownRemain.value = userStore.consignCooldownRemain(route.params.id, serialNo.value)
+}
+onMounted(() => {
+  refreshCooldown()
+  // 冷却剩余时间按秒刷新（页面停留时倒计时同步）
+  cooldownTimer = setInterval(() => {
+    if (cooldownRemain.value > 0) refreshCooldown()
+  }, 1000)
+})
+onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
+
 // 交易密码（与购买一致：自定义 6 位键盘，mock 密码 123456）
 const pwdStep = ref(false)       // false=填写价格  true=输入交易密码
 const payPwd = ref('')
@@ -99,6 +116,14 @@ const canSubmit = computed(() => priceNum.value > 0 && !consigning.value)
 
 function openConsign() {
   if (!requireLogin(route.fullPath)) return
+  // 已在寄售中：不可重复寄售
+  if (isNoLockedNow.value) { showToast('该藏品正在寄售中，不可重复寄售'); return }
+  // 冷却校验：取消寄售后 3 分钟内不可重新寄售
+  refreshCooldown()
+  if (cooldownRemain.value > 0) {
+    showToast(`取消寄售后 ${cooldownRemain.value} 秒内不可重新寄售`)
+    return
+  }
   price.value = ''; payPwd.value = ''; pwdStep.value = false; showConsign.value = true
 }
 function closeConsign() { showConsign.value = false; pwdStep.value = false; payPwd.value = '' }
@@ -119,7 +144,7 @@ function onPwdKey(k) {
   if (payPwd.value.length === 6) setTimeout(doConsign, 150)
 }
 
-// 校验交易密码 -> 寄售入库
+// 校验交易密码 -> 寄售入库（不扣库存，仅锁定藏品）
 async function doConsign() {
   if (!userStore.verifyPaymentPassword(payPwd.value)) {
     showToast('交易密码错误')
@@ -129,7 +154,7 @@ async function doConsign() {
   consigning.value = true
   // 模拟提交请求
   await new Promise(r => setTimeout(r, 600))
-  await userStore.consign({
+  const ok = await userStore.consign({
     id: route.params.id,
     name: detail.value.title,
     coverImage: detail.value.coverImage,
@@ -139,6 +164,10 @@ async function doConsign() {
     actual: Number(actual.value)
   })
   consigning.value = false
+  if (!ok) {
+    showToast('寄售失败：该藏品不可寄售或已在寄售中')
+    return
+  }
   lastActual.value = Number(actual.value)
   showConsign.value = false
   showSuccess.value = true
@@ -254,9 +283,11 @@ function onOpenResultDone() {
       <button class="detail-buy__btn detail-buy__btn--disabled" disabled>立即寄售</button>
       <button class="detail-buy__btn" @click="onOpenBlindbox">{{ opening ? '开启中…' : '开启盲盒' }}</button>
     </div>
-    <!-- 仓库：普通藏品 → 仅立即寄售 -->
+    <!-- 仓库：普通藏品 → 已锁定(寄售中) / 冷却中 / 立即寄售 -->
     <div class="detail-buy safe-bottom" v-else>
-      <button class="detail-buy__btn" @click="openConsign">立即寄售</button>
+      <button v-if="isNoLockedNow" class="detail-buy__btn detail-buy__btn--disabled" disabled>寄售中·已锁定</button>
+      <button v-else-if="cooldownRemain > 0" class="detail-buy__btn detail-buy__btn--disabled" disabled>冷却中 {{ cooldownRemain }}s 后可寄售</button>
+      <button v-else class="detail-buy__btn" @click="openConsign">立即寄售</button>
     </div>
 
     <!-- 寄售弹窗 -->
@@ -402,8 +433,8 @@ function onOpenResultDone() {
       width: 1px; height: 28px; background: $color-border;
     }
   }
-  &__label { font-size: 12px; color: $color-text-tertiary; }
-  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; }
+  &__label { font-size: 12px; color: $color-text-tertiary; font-family: $font-price; font-weight: 400; letter-spacing: 0; }
+  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; letter-spacing: 0; }
 }
 
 .detail-meta { background: $color-card; border-radius: $radius-lg; padding: 4px 14px; }

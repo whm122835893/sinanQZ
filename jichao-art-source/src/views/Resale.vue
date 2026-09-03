@@ -168,8 +168,8 @@ function goOrder(o) {
       width: 1px; height: 24px; background: $color-border;
     }
   }
-  &__label { font-size: 11px; color: $color-text-tertiary; }
-  &__value { font-size: 14px; font-weight: 700; color: $color-text-primary; font-family: $font-price; }
+  &__label { font-size: 11px; color: $color-text-tertiary; font-family: $font-price; font-weight: 400; letter-spacing: 0; }
+  &__value { font-size: 14px; font-weight: 700; color: $color-text-primary; font-family: $font-price; letter-spacing: 0; }
 }
 
 .resale-tabs {

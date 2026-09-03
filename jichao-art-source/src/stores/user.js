@@ -23,6 +23,9 @@ export const useUserStore = defineStore('user', () => {
   ])
   // 我的寄售挂单（mock：从仓库发起寄售后记录）
   const consignments = ref([])
+  // 取消寄售冷却：key = id|no，value = 取消时间戳（3 分钟内不可重新寄售）
+  const CONSIGN_COOLDOWN = 3 * 60 * 1000
+  const consignCooldowns = ref({})
   // 交易密码（mock：统一为 123456）
   const payPassword = ref('123456')
 
@@ -72,8 +75,9 @@ export const useUserStore = defineStore('user', () => {
       // 挂单场景：指定编号
       nos = [item.no]
     } else {
-      // 发售场景：按数量生成
-      nos = Array.from({ length: qty }, (_, i) => 'SN-' + item.id + '-' + String(i + 1).padStart(4, '0'))
+      // 发售场景：按数量生成（编号在已持有基础上递增，避免重复）
+      const owned = inventory.value.filter(i => String(i.id) === String(item.id)).reduce((s, i) => s + (i.qty || 1), 0)
+      nos = Array.from({ length: qty }, (_, i) => 'SN-' + item.id + '-' + String(owned + i + 1).padStart(4, '0'))
     }
     const entry = {
       id: item.id,
@@ -82,6 +86,7 @@ export const useUserStore = defineStore('user', () => {
       price: item.price,
       qty,
       nos,
+      lockedNos: [],
       type: item.type || 'release',
       boughtAt: Date.now()
     }
@@ -106,35 +111,59 @@ export const useUserStore = defineStore('user', () => {
     return Promise.resolve()
   }
 
-  // 发起寄售：库存减少对应数量，写入寄售挂单
+  // 发起寄售：不扣库存，仅锁定对应编号的藏品；写入寄售挂单
   function consign(payload) {
-    const idx = inventory.value.findIndex(i => String(i.id) === String(payload.id))
-    if (idx !== -1) {
-      // 从 nos 中移除指定编号
-      const item = inventory.value[idx]
-      const removedNo = payload.no
-      if (removedNo && item.nos) {
-        const ni = item.nos.indexOf(removedNo)
-        if (ni !== -1) item.nos.splice(ni, 1)
-      }
-      if (item.qty > 1) {
-        item.qty -= 1
-      } else {
-        inventory.value.splice(idx, 1)
-      }
-    }
+    const item = inventory.value.find(i => String(i.id) === String(payload.id))
+    if (!item) return Promise.resolve(false)
+    // 该编号不存在或已锁定（已在寄售中），不可重复寄售
+    const no = payload.no || item.nos?.[0] || ''
+    if (no && item.nos && !item.nos.includes(no)) return Promise.resolve(false)
+    if (!item.lockedNos) item.lockedNos = []
+    if (no && item.lockedNos.includes(no)) return Promise.resolve(false)
+    // 锁定藏品（库存数量不变）
+    if (no) item.lockedNos.push(no)
     consignments.value.unshift({
       id: payload.id,
       name: payload.name,
       coverImage: payload.coverImage,
-      no: payload.no || '',
+      no,
       price: payload.price,
       fee: payload.fee,
       actual: payload.actual,
       status: 'onsale', // onsale 寄售中 / sold 已售出
       createdAt: Date.now()
     })
-    return Promise.resolve()
+    return Promise.resolve(true)
+  }
+
+  // 取消寄售：移除挂单并解锁藏品，进入 3 分钟冷却期（冷却期内不可重新寄售）
+  function cancelConsign(id, no) {
+    const ci = consignments.value.findIndex(c => String(c.id) === String(id) && c.no === no && c.status === 'onsale')
+    if (ci === -1) return Promise.resolve(false)
+    consignments.value.splice(ci, 1)
+    const item = inventory.value.find(i => String(i.id) === String(id))
+    if (item && no) {
+      if (!item.lockedNos) item.lockedNos = []
+      const li = item.lockedNos.indexOf(no)
+      if (li !== -1) item.lockedNos.splice(li, 1)
+    }
+    // 记录取消时间，进入冷却
+    consignCooldowns.value[id + '|' + no] = Date.now()
+    return Promise.resolve(true)
+  }
+
+  // 编号是否处于寄售锁定中
+  function isNoLocked(id, no) {
+    const item = inventory.value.find(i => String(i.id) === String(id))
+    return !!(item && item.lockedNos && no && item.lockedNos.includes(no))
+  }
+
+  // 取消寄售后重新寄售的剩余冷却秒数（0 表示可寄售）
+  function consignCooldownRemain(id, no) {
+    const cancelAt = consignCooldowns.value[id + '|' + no]
+    if (!cancelAt) return 0
+    const remain = CONSIGN_COOLDOWN - (Date.now() - cancelAt)
+    return remain > 0 ? Math.ceil(remain / 1000) : 0
   }
 
   // 开启盲盒：标记为已开启，并将开启获得的藏品入库
@@ -207,6 +236,6 @@ export const useUserStore = defineStore('user', () => {
     token, userInfo, isLoggedIn, inventory, payPassword, consignments,
     signState, todaySigned, doSign,
     setUserInfo, login, logout, fetchUserInfo,
-    verifyPaymentPassword, ownedCount, addToInventory, consume, consign, openBlindbox
+    verifyPaymentPassword, ownedCount, addToInventory, consume, consign, cancelConsign, isNoLocked, consignCooldownRemain, openBlindbox
   }
 })

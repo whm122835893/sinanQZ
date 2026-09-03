@@ -19,8 +19,8 @@ function goResale() {
     <div class="resale-item__info">
       <p class="resale-item__name">{{ item.name }}</p>
       <div class="resale-item__stats">
-        <span class="resale-item__stat">发行量<b>{{ item.issueCount }}</b></span>
-        <span class="resale-item__stat">流通量<b>{{ item.circulationCount }}</b></span>
+        <span class="resale-item__stat">发行 {{ item.issueCount }}</span>
+        <span class="resale-item__stat">流通 {{ item.circulationCount }}</span>
       </div>
     </div>
     <div class="resale-item__right">
@@ -47,9 +47,7 @@ function goResale() {
   &__name { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: $color-text-primary; }
   &__stats { display: flex; gap: 16px; margin-top: auto; }
   &__stat {
-    font-size: 11px; color: $color-text-tertiary;
-    display: flex; flex-direction: column; gap: 3px;
-    b { font-size: 13px; color: $color-text-primary; font-weight: 600; font-family: $font-price; }
+    font-size: 11px; color: $color-text-tertiary; font-weight: 500; letter-spacing: 0;
   }
   &__right { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 3px; }
   &__floor { font-size: 11px; color: $color-text-tertiary; line-height: 1; }

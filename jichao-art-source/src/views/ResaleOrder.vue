@@ -146,8 +146,8 @@ function onBuy() {
       width: 1px; height: 28px; background: $color-border;
     }
   }
-  &__label { font-size: 12px; color: $color-text-tertiary; }
-  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; }
+  &__label { font-size: 12px; color: $color-text-tertiary; font-family: $font-price; font-weight: 400; letter-spacing: 0; }
+  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; letter-spacing: 0; }
 }
 
 .detail-meta { background: $color-card; border-radius: $radius-lg; padding: 4px 14px; }

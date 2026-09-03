@@ -1,8 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
+import { useOrderStore } from '@/stores/order'
 import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -13,6 +14,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
 const user = useUserStore()
+const orderStore = useOrderStore()
 const { requireLogin } = useLoginGate()
 
 // 路由区分：发售支付(mode=release) / 挂单支付(mode=order) 单路由，按 mode 决定数据源与限购
@@ -26,6 +28,9 @@ const unitPrice = ref('0')
 const orderNo = ref('')
 const payMethods = ['微信', '支付宝', '汇']
 const payMethod = ref('微信')
+
+// 发售模式：进入支付页即锁定库存并生成待支付订单（5 分钟内有效）
+const pendingOrderId = ref('')
 
 onMounted(async () => {
   if (!requireLogin(route.fullPath)) {
@@ -52,14 +57,41 @@ onMounted(async () => {
     payMethod.value = target.payment || '微信'
   }
   start()
+  // 发售购买：锁库存 + 待支付订单（超时自动取消并释放库存）
+  if (isRelease.value) {
+    store.changeStock(id, -qty.value)
+    pendingOrderId.value = orderStore.addPendingOrder({
+      id,
+      name: meta.value.name,
+      coverImage: meta.value.coverImage,
+      price: unitPrice.value,
+      qty: qty.value,
+      kind: 'release'
+    })
+  }
 })
 
-// 购买数量：发售每人限购 5 个；挂单为指定编号，固定 1 件
+// 调整购买数量：同步调整库存锁定与待支付订单数量
+// 购买数量：发售每人限购 5 个（含已持有数量，累计校验）；挂单为指定编号，固定 1 件
 const MAX = 5
 const qty = ref(1)
-function inc() { if (qty.value < MAX) qty.value++ }
+// 该藏品已持有数量（限购按累计计算）
+const owned = computed(() => user.ownedCount(id))
+const maxAllowed = computed(() => Math.max(0, MAX - owned.value))
+const limitReached = computed(() => isRelease.value && owned.value >= MAX)
+function inc() {
+  if (qty.value < maxAllowed.value) qty.value++
+  else showToast(`每个藏品限购 ${MAX} 个`)
+}
 function dec() { if (qty.value > 1) qty.value-- }
 const total = computed(() => (parseFloat(unitPrice.value) * qty.value).toFixed(2))
+
+// 调整购买数量：同步调整库存锁定与待支付订单数量
+watch(qty, (nv, ov) => {
+  if (!isRelease.value || !pendingOrderId.value) return
+  store.changeStock(id, nv - ov)
+  orderStore.updatePendingQty(pendingOrderId.value, nv)
+})
 
 // 倒计时 5 分钟
 const { remain, start, stop } = useCountdown(300)
@@ -95,6 +127,12 @@ function submit() {
     payPwd.value = ''
     return
   }
+  // 发售模式：累计限购校验（已持有 + 本次 ≤ 5）
+  if (isRelease.value && owned.value + qty.value > MAX) {
+    showToast(`每个藏品限购 ${MAX} 个`)
+    payPwd.value = ''
+    return
+  }
   const itemData = {
     id,
     name: meta.value.name,
@@ -110,14 +148,38 @@ function submit() {
     itemData.reveals = feat?.reveals || { id: id + '-r', name: meta.value.name, coverImage: meta.value.coverImage, price: unitPrice.value }
   }
   user.addToInventory(itemData)
+  if (isRelease.value) {
+    // 发售购买：流通量 +qty，待支付订单 -> 已完成（库存消耗生效）
+    store.changeCirculation(id, qty.value)
+    if (pendingOrderId.value) orderStore.completeOrder(pendingOrderId.value)
+  } else {
+    // 挂单购买：写入已完成订单（流通量不变化）
+    orderStore.addOrder({
+      id,
+      name: meta.value.name,
+      coverImage: meta.value.coverImage,
+      price: unitPrice.value,
+      qty: qty.value,
+      no: orderNo.value,
+      kind: 'resale'
+    })
+  }
   stop()
   pwdSheet.value = false
   success.value = true
   showToast('支付成功，藏品已入库')
 }
+
+// 支付超时：取消订单并释放锁定的库存
+watch(expired, (v) => {
+  if (!v || success.value) return
+  if (pendingOrderId.value) orderStore.cancelOrder(pendingOrderId.value)
+  showToast('订单已超时取消，库存已释放')
+})
 function onConfirmClick() {
   if (!meta.value) return
   if (expired.value) { showToast('支付超时，请重新下单'); return }
+  if (limitReached.value) { showToast(`每个藏品限购 ${MAX} 个`); return }
   openPwd()
 }
 
@@ -152,12 +214,12 @@ function goHome() { router.replace('/') }
       <section class="pay-section" v-if="isRelease">
         <div class="pay-section__head">
           <span>购买数量</span>
-          <span class="pay-section__limit">每人限购 {{ MAX }} 个</span>
+          <span class="pay-section__limit">每人限购 {{ MAX }} 个{{ owned > 0 ? `（已购 ${owned} 个）` : '' }}</span>
         </div>
         <div class="pay-stepper">
           <button class="pay-stepper__btn" :disabled="qty <= 1" @click="dec">−</button>
           <span class="pay-stepper__val">{{ qty }}</span>
-          <button class="pay-stepper__btn" :disabled="qty >= MAX" @click="inc">+</button>
+          <button class="pay-stepper__btn" :disabled="qty >= maxAllowed" @click="inc">+</button>
         </div>
       </section>
       <section class="pay-section" v-else>
