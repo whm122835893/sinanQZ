@@ -35,7 +35,13 @@ const routes = [
     path: '/mall',
     name: 'mall',
     component: Mall,
-    meta: { title: '商城', tabbar: true }
+    meta: { title: '文物展览区', tabbar: true }
+  },
+  {
+    path: '/mall/:id',
+    name: 'exhibit-detail',
+    component: () => import('@/views/ExhibitDetail.vue'),
+    meta: { title: '文物详情' }
   },
   {
     path: '/notice',
