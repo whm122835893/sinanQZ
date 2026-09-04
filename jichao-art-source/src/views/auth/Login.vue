@@ -13,11 +13,12 @@ const router = useRouter()
 const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
 
-const loginMode = ref('password') // 'password' | 'code'
+const loginMode = ref('code') // 'password' | 'code'（后端仅支持验证码登录）
 const phone = ref('')
 const password = ref('')
 const code = ref('')
 const agreed = ref(false)
+const submitting = ref(false)
 
 const canSubmit = computed(() => {
   if (phone.value.length < 11) return false
@@ -25,24 +26,45 @@ const canSubmit = computed(() => {
   return code.value.length >= 4
 })
 
-function sendCode() {
+// MOCK_REPLACED: 原为本地直接弹"验证码已发送"，现走后端 POST /api/auth/send-code
+async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
-  start()
-  showToast('验证码已发送')
+  try {
+    const res = await user.sendCode(phone.value, 'login')
+    start()
+    showToast('验证码已发送')
+    // 开发环境后端直接回传验证码，便于联调
+    if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+  } catch (e) {
+    showToast(e.message || '验证码发送失败')
+  }
 }
 
-function onLogin() {
+// MOCK_REPLACED: 原为本地直接置登录态，现走后端 POST /api/auth/login（验证码模式）
+async function onLogin() {
   if (!canSubmit.value) return
   if (!agreed.value) { showToast('请先阅读并同意协议'); return }
-  user.login({ phone: phone.value })
-  showToast('登录成功')
-  // 登录后回跳来源页面（从全局登录弹窗进入时携带 redirect 参数）
-  const redirect = route.query.redirect
-  if (redirect) {
-    router.replace(String(redirect))
-  } else {
-    router.replace('/')
+  if (loginMode.value === 'password') {
+    showToast('暂不支持密码登录，请使用验证码方式')
+    return
+  }
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await user.login({ phone: phone.value, code: code.value })
+    showToast('登录成功')
+    // 登录后回跳来源页面（从全局登录弹窗进入时携带 redirect 参数）
+    const redirect = route.query.redirect
+    if (redirect) {
+      router.replace(String(redirect))
+    } else {
+      router.replace('/')
+    }
+  } catch (e) {
+    showToast(e.message || '登录失败')
+  } finally {
+    submitting.value = false
   }
 }
 function onRegister() { router.push('/auth/register') }

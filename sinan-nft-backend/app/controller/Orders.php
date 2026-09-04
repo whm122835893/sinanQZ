@@ -449,19 +449,22 @@ class Orders extends BaseController
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             'o.order_no', 'o.source', 'o.status', 'o.unit_price',
             'o.quantity', 'o.total_price', 'o.created_at',
+            'o.collectible_id', 'o.expires_at',
             'c.name', 'c.image',
         ])->select()->toArray();
 
         $items = array_map(fn ($o) => [
-            'orderNo'     => $o['order_no'],
-            'source'      => $o['source'],
-            'status'      => $o['status'],
-            'name'        => $o['name'],
-            'image'       => $o['image'],
-            'price'       => (float) $o['unit_price'],
-            'qty'         => (int) $o['quantity'],
-            'totalPrice'  => (float) $o['total_price'],
-            'createdAt'   => $o['created_at'],
+            'orderNo'       => $o['order_no'],
+            'collectibleId' => (int) $o['collectible_id'],
+            'source'        => $o['source'],
+            'status'        => $o['status'],
+            'name'          => $o['name'],
+            'image'         => $o['image'],
+            'price'         => (float) $o['unit_price'],
+            'qty'           => (int) $o['quantity'],
+            'totalPrice'    => (float) $o['total_price'],
+            'createdAt'     => $o['created_at'],
+            'expiresAt'     => $o['expires_at'],
         ], $list);
 
         return $this->paginate($items, $total, $p['page'], $p['pageSize']);

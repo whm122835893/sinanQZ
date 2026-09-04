@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
@@ -19,19 +19,20 @@ const { requireLogin } = useLoginGate()
 
 // 路由区分：发售支付(mode=release) / 挂单支付(mode=order) 单路由，按 mode 决定数据源与限购
 const isRelease = computed(() => route.params.mode === 'release')
-const isBlindbox = computed(() => route.query.type === 'blindbox')
 const id = route.params.id
 const no = route.params.no
 
 const meta = ref(null)                  // { name, coverImage, issueCount, circulationCount }
 const unitPrice = ref('0')
 const orderNo = ref('')
+const listingId = ref(0)                // 挂单模式：寄售挂单 ID
 const payMethods = ['微信', '支付宝', '汇']
 const payMethod = ref('微信')
+// 支付方式展示名 → 后端 paymentMethod（balance/alipay/wechat）
+const methodMap = { 微信: 'wechat', 支付宝: 'alipay', 汇: 'balance' }
 
-// 发售模式：进入支付页即锁定库存并生成待支付订单（5 分钟内有效）
-const pendingOrderId = ref('')
-
+// MOCK_REPLACED: 原为进入页面即本地锁库存+本地待支付订单，现由后端在“创建订单”时锁定库存
+// （POST /api/orders，5 分钟超时自动释放），前端仅负责展示与提交。
 onMounted(async () => {
   if (!requireLogin(route.fullPath)) {
     // 未登录：弹出全局登录提示并返回上一页
@@ -54,24 +55,14 @@ onMounted(async () => {
     const target = res.orders.find(o => o.no === no) || res.orders[0]
     unitPrice.value = target.price
     orderNo.value = target.no
+    listingId.value = target.listingId || 0
     payMethod.value = target.payment || '微信'
   }
+  // 已持有数量（后端限购按累计计算，前端仅做前置提示）
+  await user.fetchInventory().catch(() => {})
   start()
-  // 发售购买：锁库存 + 待支付订单（超时自动取消并释放库存）
-  if (isRelease.value) {
-    store.changeStock(id, -qty.value)
-    pendingOrderId.value = orderStore.addPendingOrder({
-      id,
-      name: meta.value.name,
-      coverImage: meta.value.coverImage,
-      price: unitPrice.value,
-      qty: qty.value,
-      kind: 'release'
-    })
-  }
 })
 
-// 调整购买数量：同步调整库存锁定与待支付订单数量
 // 购买数量：发售每人限购 5 个（含已持有数量，累计校验）；挂单为指定编号，固定 1 件
 const MAX = 5
 const qty = ref(1)
@@ -86,14 +77,7 @@ function inc() {
 function dec() { if (qty.value > 1) qty.value-- }
 const total = computed(() => (parseFloat(unitPrice.value) * qty.value).toFixed(2))
 
-// 调整购买数量：同步调整库存锁定与待支付订单数量
-watch(qty, (nv, ov) => {
-  if (!isRelease.value || !pendingOrderId.value) return
-  store.changeStock(id, nv - ov)
-  orderStore.updatePendingQty(pendingOrderId.value, nv)
-})
-
-// 倒计时 5 分钟
+// 倒计时 5 分钟（页面展示；后端订单自创建起 5 分钟过期）
 const { remain, start, stop } = useCountdown(300)
 const started = ref(false)
 const expired = computed(() => started.value && remain.value <= 0)
@@ -107,6 +91,7 @@ onMounted(() => { started.value = true })
 // 支付密码：底部弹出自定义数字键盘
 const payPwd = ref('')
 const pwdSheet = ref(false)
+const paying = ref(false)
 const keypad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫']
 
 function openPwd() {
@@ -121,61 +106,45 @@ function onKey(k) {
   payPwd.value += k
   if (payPwd.value.length === 6) setTimeout(submit, 150)
 }
-function submit() {
-  if (!user.verifyPaymentPassword(payPwd.value)) {
-    showToast('支付密码错误')
-    payPwd.value = ''
-    return
-  }
-  // 发售模式：累计限购校验（已持有 + 本次 ≤ 5）
+
+// MOCK_REPLACED: 原为本地校验支付密码（123456）+ 本地库存/订单状态机，
+// 现走后端：POST /api/orders 创建订单（校验交易密码/实名/限购并锁库存）→
+// POST /api/orders/:orderNo/pay 支付（余额支付二次校验交易密码，成功后入库/过户）。
+async function submit() {
+  if (!meta.value || expired.value || paying.value) return
+  // 发售模式：累计限购校验（已持有 + 本次 ≤ 5，后端为最终校验）
   if (isRelease.value && owned.value + qty.value > MAX) {
     showToast(`每个藏品限购 ${MAX} 个`)
     payPwd.value = ''
     return
   }
-  const itemData = {
-    id,
-    name: meta.value.name,
-    coverImage: meta.value.coverImage,
-    price: unitPrice.value,
-    qty: qty.value,
-    no: orderNo.value,
-    type: isBlindbox.value ? 'blindbox' : (isRelease.value ? 'release' : 'order')
-  }
-  if (isBlindbox.value) {
-    const feat = store.getFeaturedById(id)
-    itemData.opened = false
-    itemData.reveals = feat?.reveals || { id: id + '-r', name: meta.value.name, coverImage: meta.value.coverImage, price: unitPrice.value }
-  }
-  user.addToInventory(itemData)
-  if (isRelease.value) {
-    // 发售购买：流通量 +qty，待支付订单 -> 已完成（库存消耗生效）
-    store.changeCirculation(id, qty.value)
-    if (pendingOrderId.value) orderStore.completeOrder(pendingOrderId.value)
-  } else {
-    // 挂单购买：写入已完成订单（流通量不变化）
-    orderStore.addOrder({
+  paying.value = true
+  try {
+    const order = await orderStore.createOrder({
       id,
       name: meta.value.name,
       coverImage: meta.value.coverImage,
       price: unitPrice.value,
       qty: qty.value,
       no: orderNo.value,
-      kind: 'resale'
+      resaleListingId: isRelease.value ? 0 : listingId.value
     })
+    await orderStore.payOrder(order.id, {
+      paymentMethod: methodMap[payMethod.value] || 'wechat',
+      paymentPassword: payPwd.value
+    })
+    stop()
+    pwdSheet.value = false
+    success.value = true
+    showToast('支付成功，藏品已入库')
+  } catch (e) {
+    showToast(e.message || '支付失败，请重试')
+    payPwd.value = ''
+  } finally {
+    paying.value = false
   }
-  stop()
-  pwdSheet.value = false
-  success.value = true
-  showToast('支付成功，藏品已入库')
 }
 
-// 支付超时：取消订单并释放锁定的库存
-watch(expired, (v) => {
-  if (!v || success.value) return
-  if (pendingOrderId.value) orderStore.cancelOrder(pendingOrderId.value)
-  showToast('订单已超时取消，库存已释放')
-})
 function onConfirmClick() {
   if (!meta.value) return
   if (expired.value) { showToast('支付超时，请重新下单'); return }

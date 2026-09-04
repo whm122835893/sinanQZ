@@ -1,241 +1,233 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import request from '@/utils/request'
 
 // 用户状态：token / userInfo / 登录态
+// MOCK_REPLACED: 原数据来自本文件内联 mock（inventory/consignments/payPassword/login 本地 token），
+// 现已接入真实接口：/api/auth/*、/api/user/profile、/api/user/collections、
+// /api/resale/listings(/mine)、/api/blind-boxes/open、/api/check-in、/api/user/verify-trade-password
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('jc_token') || '')
   const userInfo = ref({
-    nickname: 'OIgsRAJPTobXv8',
+    nickname: '',
     avatar: '',
-    phone: '175****1293',
-    walletAddress: '0x9e36****3f36',
-    isRealName: false
+    phone: '',
+    walletAddress: '',
+    isRealName: false,
+    inviteCode: ''
   })
 
   const isLoggedIn = computed(() => !!token.value)
 
-  // 我的藏品库存（mock：默认含部分藏品，购买成功后继续入库）
-  const inventory = ref([
-    { id: '1', name: '龙纹罗盘', coverImage: '/images/collections/cover-1.jpg', price: '0.10', qty: 3, nos: ['SN-1-0001', 'SN-1-0002', 'SN-1-0003'], type: 'release', boughtAt: Date.now() },
-    { id: '2', name: '虎纹卡牌', coverImage: '/images/collections/cover-2.jpg', price: '0.10', qty: 2, nos: ['SN-2-0001', 'SN-2-0002'], type: 'release', boughtAt: Date.now() },
-    { id: '3', name: '水晶菱形', coverImage: '/images/collections/cover-3.jpg', price: '0.10', qty: 1, nos: ['SN-3-0001'], type: 'release', boughtAt: Date.now() },
-    { id: 'bb1', name: '神秘盲盒', coverImage: '/images/collections/cover-4.jpg', price: '0.50', qty: 1, nos: ['SN-BB-0001'], type: 'blindbox', opened: false, boughtAt: Date.now(), reveals: { id: '4', name: '司南青龙', coverImage: '/images/collections/cover-4.jpg', price: '0.20' } }
-  ])
-  // 我的寄售挂单（mock：从仓库发起寄售后记录）
-  const consignments = ref([])
-  // 取消寄售冷却：key = id|no，value = 取消时间戳（3 分钟内不可重新寄售）
-  const CONSIGN_COOLDOWN = 3 * 60 * 1000
-  const consignCooldowns = ref({})
-  // 交易密码（mock：统一为 123456）
-  const payPassword = ref('123456')
+  function setToken(t) {
+    token.value = t
+    if (t) localStorage.setItem('jc_token', t)
+    else localStorage.removeItem('jc_token')
+  }
 
   function setUserInfo(info) {
     userInfo.value = { ...userInfo.value, ...info }
   }
 
-  function login(payload) {
-    // mock 登录：写入 token 与基础用户信息
-    token.value = 'mock_token_' + Date.now()
-    localStorage.setItem('jc_token', token.value)
-    if (payload?.phone) {
-      const p = String(payload.phone)
-      userInfo.value.phone = p.slice(0, 3) + '****' + p.slice(-4)
-    }
-    return Promise.resolve()
+  // ---- 登录/注册（真实接口：POST /api/auth/login，验证码模式）----
+  async function login(payload) {
+    const res = await request.post('/auth/login', {
+      phone: payload.phone,
+      code: payload.code
+    })
+    setToken(res.token)
+    setUserInfo({
+      nickname: res.userInfo.username,
+      avatar: res.userInfo.avatar || '',
+      phone: res.userInfo.phone,
+      isRealName: !!res.userInfo.isRealname,
+      inviteCode: res.userInfo.inviteCode
+    })
+    return res
+  }
+
+  // ---- 发送验证码（真实接口：POST /api/auth/send-code；开发环境返回 debugCode）----
+  async function sendCode(phone, scene = 'login') {
+    const res = await request.post('/auth/send-code', { phone, scene })
+    return res // { debugCode?: '123456' }
   }
 
   function logout() {
-    token.value = ''
-    localStorage.removeItem('jc_token')
+    setToken('')
   }
 
-  function fetchUserInfo() {
-    // mock：保持默认占位信息
-    return Promise.resolve(userInfo.value)
+  // ---- 用户信息（真实接口：GET /api/user/profile）----
+  async function fetchUserInfo() {
+    if (!token.value) return userInfo.value
+    const u = await request.get('/user/profile')
+    setUserInfo({
+      nickname: u.nickname || u.username || userInfo.value.nickname,
+      avatar: u.avatar || '',
+      phone: u.phone,
+      isRealName: !!u.isRealName,
+      inviteCode: u.inviteCode,
+      wallet: u.wallet
+    })
+    return userInfo.value
   }
 
-  // 校验交易密码
-  function verifyPaymentPassword(pwd) {
-    return String(pwd) === payPassword.value
+  // ---- 交易密码（真实接口：POST /api/user/verify-trade-password）----
+  // MOCK_REPLACED: 原为本地常量 '123456' 比对，现走后端校验
+  async function verifyPaymentPassword(pwd) {
+    try {
+      await request.post('/user/verify-trade-password', { password: String(pwd) })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // ---- 我的藏品库存（真实接口：GET /api/user/collections，按藏品聚合）----
+  const inventory = ref([])
+  async function fetchInventory() {
+    if (!token.value) return []
+    const list = await request.get('/user/collections')
+    inventory.value = (list || []).map((g) => ({
+      id: String(g.id),
+      name: g.name,
+      coverImage: g.image,
+      price: Number(g.price).toFixed(2),
+      qty: g.qty,
+      nos: g.nos || [],
+      lockedNos: g.isConsigned ? (g.nos || []).slice(0, 1) : [],
+      type: g.type === 'blindbox' ? 'blindbox' : 'release',
+      boughtAt: g.acquiredAt ? new Date(String(g.acquiredAt).replace(/-/g, '/')).getTime() : 0,
+      userCollectibleIds: g.userCollectibleIds || [],
+      // 编号 → 资产实例明细（寄售/开盒按实例操作）
+      items: (g.items || []).map((it) => ({
+        userCollectibleId: it.userCollectibleId,
+        serial: it.serial,
+        isConsigned: !!it.isConsigned
+      })),
+      isConsigned: !!g.isConsigned
+    }))
+    return inventory.value
   }
 
   // 已购数量（用于每人限购判断）
   function ownedCount(id) {
     return inventory.value
-      .filter(i => String(i.id) === String(id))
+      .filter((i) => String(i.id) === String(id))
       .reduce((sum, i) => sum + (i.qty || 1), 0)
   }
 
-  // 购买成功：藏品入库
-  function addToInventory(item) {
-    const qty = item.qty || 1
-    // 生成序列号
-    let nos = []
-    if (item.no) {
-      // 挂单场景：指定编号
-      nos = [item.no]
-    } else {
-      // 发售场景：按数量生成（编号在已持有基础上递增，避免重复）
-      const owned = inventory.value.filter(i => String(i.id) === String(item.id)).reduce((s, i) => s + (i.qty || 1), 0)
-      nos = Array.from({ length: qty }, (_, i) => 'SN-' + item.id + '-' + String(owned + i + 1).padStart(4, '0'))
-    }
-    const entry = {
-      id: item.id,
-      name: item.name,
-      coverImage: item.coverImage,
-      price: item.price,
-      qty,
-      nos,
-      lockedNos: [],
-      type: item.type || 'release',
-      boughtAt: Date.now()
-    }
-    if (item.type === 'blindbox') {
-      entry.opened = item.opened ?? false
-      entry.reveals = item.reveals || null
-    }
-    inventory.value.push(entry)
-    return Promise.resolve()
+  // 按藏品编号查资产实例 ID（寄售/开盲盒需要 userCollectibleId）
+  function findUserCollectibleId(collectibleId, serial) {
+    const item = inventory.value.find((i) => String(i.id) === String(collectibleId))
+    const hit = item?.items?.find((x) => x.serial === serial)
+    return hit?.userCollectibleId || 0
   }
 
-  // 合成消耗材料：库存中对应的藏品数量 -1（不足则忽略）
-  function consume(id, qty = 1) {
-    const idx = inventory.value.findIndex((i) => String(i.id) === String(id))
-    if (idx !== -1) {
-      if (inventory.value[idx].qty > qty) {
-        inventory.value[idx].qty -= qty
-      } else {
-        inventory.value.splice(idx, 1)
-      }
-    }
-    return Promise.resolve()
+  // ---- 我的寄售挂单（真实接口：GET /api/resale/listings/mine）----
+  const consignments = ref([])
+  async function fetchConsignments() {
+    if (!token.value) return []
+    const res = await request.get('/resale/listings/mine')
+    consignments.value = (res.list || []).map((l) => ({
+      id: String(l.userCollectibleId),
+      listingId: l.listingId,
+      name: l.name,
+      coverImage: l.image,
+      no: l.no,
+      price: Number(l.price).toFixed(2),
+      fee: Number(l.feeAmount).toFixed(2),
+      actual: Number(l.actualAmount).toFixed(2),
+      status: l.status === 'selling' ? 'onsale' : l.status, // onsale 寄售中 / sold 已售出 / cancelled 已下架
+      createdAt: l.listedAt
+    }))
+    return consignments.value
   }
 
-  // 发起寄售：不扣库存，仅锁定对应编号的藏品；写入寄售挂单
-  function consign(payload) {
-    const item = inventory.value.find(i => String(i.id) === String(payload.id))
-    if (!item) return Promise.resolve(false)
-    // 该编号不存在或已锁定（已在寄售中），不可重复寄售
-    const no = payload.no || item.nos?.[0] || ''
-    if (no && item.nos && !item.nos.includes(no)) return Promise.resolve(false)
-    if (!item.lockedNos) item.lockedNos = []
-    if (no && item.lockedNos.includes(no)) return Promise.resolve(false)
-    // 锁定藏品（库存数量不变）
-    if (no) item.lockedNos.push(no)
-    consignments.value.unshift({
-      id: payload.id,
-      name: payload.name,
-      coverImage: payload.coverImage,
-      no,
-      price: payload.price,
-      fee: payload.fee,
-      actual: payload.actual,
-      status: 'onsale', // onsale 寄售中 / sold 已售出
-      createdAt: Date.now()
+  // ---- 发起寄售（真实接口：POST /api/resale/listings，需交易密码）----
+  // MOCK_REPLACED: 原为本地锁定编号+内存挂单，现走后端（数据库状态机一致）
+  async function consign(payload) {
+    // payload: { userCollectibleId, price, paymentPassword }
+    await request.post('/resale/listings', {
+      userCollectibleId: payload.userCollectibleId,
+      price: Number(payload.price),
+      paymentPassword: String(payload.paymentPassword || '')
     })
-    return Promise.resolve(true)
+    // 拉取最新库存与挂单（后端已将资产置为 consigned）
+    await Promise.all([fetchInventory(), fetchConsignments()])
+    return true
   }
 
-  // 取消寄售：移除挂单并解锁藏品，进入 3 分钟冷却期（冷却期内不可重新寄售）
-  function cancelConsign(id, no) {
-    const ci = consignments.value.findIndex(c => String(c.id) === String(id) && c.no === no && c.status === 'onsale')
-    if (ci === -1) return Promise.resolve(false)
-    consignments.value.splice(ci, 1)
-    const item = inventory.value.find(i => String(i.id) === String(id))
-    if (item && no) {
-      if (!item.lockedNos) item.lockedNos = []
-      const li = item.lockedNos.indexOf(no)
-      if (li !== -1) item.lockedNos.splice(li, 1)
-    }
-    // 记录取消时间，进入冷却
-    consignCooldowns.value[id + '|' + no] = Date.now()
-    return Promise.resolve(true)
+  // ---- 取消寄售（真实接口：POST /api/resale/listings/:listingId/cancel）----
+  async function cancelConsign(listingId) {
+    await request.post(`/resale/listings/${listingId}/cancel`)
+    await Promise.all([fetchInventory(), fetchConsignments()])
+    return true
   }
 
-  // 编号是否处于寄售锁定中
+  // 编号是否处于寄售锁定中（后端 isConsigned 状态）
   function isNoLocked(id, no) {
-    const item = inventory.value.find(i => String(i.id) === String(id))
-    return !!(item && item.lockedNos && no && item.lockedNos.includes(no))
+    const item = inventory.value.find((i) => String(i.id) === String(id))
+    return !!(item && item.isConsigned && no && item.nos?.includes(no))
   }
 
-  // 取消寄售后重新寄售的剩余冷却秒数（0 表示可寄售）
-  function consignCooldownRemain(id, no) {
-    const cancelAt = consignCooldowns.value[id + '|' + no]
-    if (!cancelAt) return 0
-    const remain = CONSIGN_COOLDOWN - (Date.now() - cancelAt)
-    return remain > 0 ? Math.ceil(remain / 1000) : 0
+  // 冷却期由后端校验（resale_cooldown_seconds），前端仅提示
+  function consignCooldownRemain() {
+    return 0
   }
 
-  // 开启盲盒：标记为已开启，并将开启获得的藏品入库
-  function openBlindbox(id, no) {
-    const idx = inventory.value.findIndex(i => String(i.id) === String(id) && i.type === 'blindbox' && (no ? i.nos?.includes(no) : true))
-    if (idx === -1) return Promise.resolve(null)
-    const box = inventory.value[idx]
-    if (box.opened) return Promise.resolve(null)
-    box.opened = true
-    const reveal = box.reveals || { id: box.id + '-r', name: box.name, coverImage: box.coverImage, price: box.price }
-    const revealNo = box.nos?.[0] || 'SN-' + reveal.id + '-0001'
-    inventory.value.push({
-      id: reveal.id,
-      name: reveal.name,
-      coverImage: reveal.coverImage,
-      price: reveal.price,
-      qty: 1,
-      nos: [revealNo],
-      type: 'release',
-      boughtAt: Date.now()
+  // ---- 开启盲盒（真实接口：POST /api/blind-boxes/open）----
+  // MOCK_REPLACED: 原为本地 reveals 常量随机，现由后端 random_int 加权抽取
+  async function openBlindbox(userCollectibleId, paymentPassword) {
+    const res = await request.post('/blind-boxes/open', {
+      userCollectibleId,
+      paymentPassword: String(paymentPassword || '')
     })
-    return Promise.resolve(reveal)
+    await fetchInventory()
+    return res // { prize: { id, name, image, price } } 结构以实际返回为准
   }
 
-  // ---- 每日签到 ----
-  // 纯打卡签到：不发放奖励，奖励由管理员后台后期配置
-  const signStore = JSON.parse(localStorage.getItem('jc_sign') || '{}')
+  // ---- 每日签到（真实接口：POST /api/check-in；记录 GET /api/check-in/records）----
   const signState = ref({
-    day: signStore.day || 0, // 已连续签到天数
-    lastSignDate: signStore.lastSignDate || '',
-    records: signStore.records || [] // [{ date: 'YYYY-MM-DD' }]
+    day: 0,
+    lastSignDate: '',
+    records: [] // [{ date: 'YYYY-MM-DD' }]
   })
 
-  const pad2 = (n) => String(n).padStart(2, '0')
-  const fmtSignDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-  const todayStr = () => fmtSignDate(new Date())
-
-  function persistSign() {
-    localStorage.setItem('jc_sign', JSON.stringify({
-      day: signState.value.day,
-      lastSignDate: signState.value.lastSignDate,
-      records: signState.value.records
-    }))
+  async function fetchSignCalendar() {
+    if (!token.value) return signState.value
+    const now = new Date()
+    const p = (n) => String(n).padStart(2, '0')
+    const res = await request.get('/check-in/records', {
+      params: { month: `${now.getFullYear()}-${p(now.getMonth() + 1)}` }
+    })
+    signState.value.day = res.currentStreak || 0
+    signState.value.records = (res.records || []).map((r) => ({ date: r.date }))
+    signState.value.lastSignDate = signState.value.records[0]?.date || ''
+    return signState.value
   }
 
-  // 今日是否已签到
-  const todaySigned = computed(() => signState.value.lastSignDate === todayStr())
-
-  // 本次签到后的连续天数：昨天连续则 +1，断签则回到 1
-  function nextStreak() {
-    const s = signState.value
-    if (!s.day || !s.lastSignDate) return 1
-    const last = new Date(s.lastSignDate.replace(/-/g, '/')).toDateString()
-    const diff = Math.round((new Date(new Date().toDateString()) - new Date(last)) / 86400000)
-    return diff === 1 ? s.day + 1 : 1
-  }
+  const todaySigned = computed(() => {
+    const now = new Date()
+    const p = (n) => String(n).padStart(2, '0')
+    const today = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
+    return signState.value.records.some((r) => r.date === today)
+  })
 
   // 执行签到：成功返回 { ok: true, day }，今日已签返回 { already: true }
-  function doSign() {
-    if (todaySigned.value) return Promise.resolve({ already: true })
-    const day = nextStreak()
-    signState.value.day = day
-    signState.value.lastSignDate = todayStr()
-    signState.value.records.unshift({ date: todayStr() })
-    persistSign()
-    return Promise.resolve({ ok: true, day })
+  async function doSign() {
+    if (todaySigned.value) return { already: true }
+    const res = await request.post('/check-in')
+    await fetchSignCalendar()
+    if (res.already) return { already: true }
+    return { ok: true, day: res.day, reward: res.reward }
   }
 
   return {
-    token, userInfo, isLoggedIn, inventory, payPassword, consignments,
-    signState, todaySigned, doSign,
-    setUserInfo, login, logout, fetchUserInfo,
-    verifyPaymentPassword, ownedCount, addToInventory, consume, consign, cancelConsign, isNoLocked, consignCooldownRemain, openBlindbox
+    token, userInfo, isLoggedIn, inventory, consignments,
+    signState, todaySigned,
+    setUserInfo, login, sendCode, logout, fetchUserInfo,
+    verifyPaymentPassword, ownedCount, fetchInventory, findUserCollectibleId,
+    fetchConsignments, consign, cancelConsign, isNoLocked, consignCooldownRemain,
+    openBlindbox, fetchSignCalendar, doSign
   }
 })

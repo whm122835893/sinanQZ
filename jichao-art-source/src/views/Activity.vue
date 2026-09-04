@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -10,6 +10,11 @@ const router = useRouter()
 const activityStore = useActivityStore()
 const { synthesisActivities } = storeToRefs(activityStore)
 
+// MOCK_REPLACED: 原为内联 mock 合成活动列表，现从后端拉取（GET /api/synthesis/activities）
+onMounted(() => {
+  activityStore.fetchSynthesisActivities().catch(() => {})
+})
+
 const tabs = ['活动', '置换']
 const active = ref('活动')
 
@@ -19,6 +24,8 @@ function goSynthesis(id) {
 
 const now = Date.now()
 function statusOf(a) {
+  // permanent 类型活动常驻，不按时间窗判定
+  if (a.type === 'permanent') return { text: '进行中', cls: 'ing' }
   const s = new Date(String(a.startTime).replace(/-/g, '/')).getTime()
   const e = new Date(String(a.endTime).replace(/-/g, '/')).getTime()
   if (now < s) return { text: '未开始', cls: 'wait' }

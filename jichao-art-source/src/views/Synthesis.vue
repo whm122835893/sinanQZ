@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { useActivityStore } from '@/stores/activity'
@@ -12,11 +13,17 @@ const route = useRoute()
 const activityStore = useActivityStore()
 const user = useUserStore()
 const { requireLogin } = useLoginGate()
-const { synthesisActivities } = storeToRefs(activityStore)
 // 仓库藏品来自用户库存
 const { inventory: userInventory } = storeToRefs(user)
 
-const act = computed(() => synthesisActivities.value.find((a) => a.id === route.params.id) || null)
+// MOCK_REPLACED: 原为本地 mock 活动数据 + 本地消耗/入库，
+// 现从后端拉取活动详情（GET /api/synthesis/activities/:id，含材料与我持有数量），
+// 提交走 POST /api/synthesis/submit（后端事务消耗材料并生成产物）。
+const act = ref(null)
+onMounted(async () => {
+  act.value = await activityStore.fetchSynthesisDetail(route.params.id).catch(() => null)
+  user.fetchInventory().catch(() => {})
+})
 
 // 选中的材料：相同藏品只保留一条，按 qty 累加（不重复占位）
 const selected = ref([])
@@ -44,25 +51,26 @@ function unpick(s) {
 const synthesizing = ref(false)
 const showSuccess = ref(false)
 
-function startSynthesis() {
+async function startSynthesis() {
   if (synthesizing.value || !selected.value.length || !act.value) return
   if (!requireLogin(route.fullPath)) return
+  // 材料充足性前置校验（后端事务内为最终校验）
+  const missing = (act.value.materials || []).find((m) => (m.myAvailable || 0) < m.count)
+  if (missing) {
+    showToast(`材料不足：《${missing.name}》需 ${missing.count} 件`)
+    return
+  }
   synthesizing.value = true
-  setTimeout(() => {
-    // 按数量消耗所选材料
-    selected.value.forEach((s) => user.consume(s.id, s.qty))
-    // 合成新藏品入库
-    user.addToInventory({
-      id: act.value.result.id,
-      name: act.value.result.name,
-      coverImage: act.value.result.coverImage,
-      price: '0',
-      qty: 1,
-      type: 'synthesis'
-    })
+  try {
+    await activityStore.submitSynthesis(route.params.id)
+    // 刷新库存（材料已消耗、产物已入库）
+    await user.fetchInventory().catch(() => {})
     synthesizing.value = false
     showSuccess.value = true
-  }, 900)
+  } catch (e) {
+    synthesizing.value = false
+    showToast(e.message || '合成失败，请重试')
+  }
 }
 
 function closeSuccess() {

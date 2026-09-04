@@ -1,4 +1,5 @@
 <script setup>
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNoticeStore } from '@/stores/notice'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -7,6 +8,11 @@ import AppTag from '@/components/AppTag.vue'
 
 const router = useRouter()
 const store = useNoticeStore()
+
+// MOCK_REPLACED: 原为内联 mock 公告，现从后端拉取（GET /api/announcements）
+onMounted(() => {
+  store.fetchNotices().catch(() => {})
+})
 
 function setCategory(key) {
   store.activeCategory = key

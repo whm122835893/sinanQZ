@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
@@ -10,6 +10,13 @@ const router = useRouter()
 const user = useUserStore()
 const tabs = ['数字藏品', '盲盒', '寄售中']
 const active = ref('数字藏品')
+
+// MOCK_REPLACED: 原为进入页面直接读本地内存库存，现从后端拉取
+// （GET /api/user/collections 聚合库存 + GET /api/resale/listings/mine 我的挂单）
+onMounted(() => {
+  user.fetchInventory().catch(() => {})
+  user.fetchConsignments().catch(() => {})
+})
 
 // 按类型筛选库存
 const list = computed(() => {
@@ -45,7 +52,7 @@ function goDetail(it, no) {
   router.push({ name: 'collection-detail', params: { id: it.id }, query })
 }
 
-// 取消寄售：解除锁定，3 分钟冷却后才能重新寄售
+// 取消寄售：解除锁定，3 分钟冷却后才能重新寄售（后端为最终校验）
 const canceling = ref(false)
 function onCancelConsign(c) {
   if (canceling.value) return
@@ -57,9 +64,15 @@ function onCancelConsign(c) {
   })
     .then(async () => {
       canceling.value = true
-      await user.cancelConsign(c.id, c.no)
-      canceling.value = false
-      showToast('已取消寄售，3 分钟后可重新寄售')
+      try {
+        // MOCK_REPLACED: 原为本地解除锁定，现走后端 POST /api/resale/listings/:listingId/cancel
+        await user.cancelConsign(c.listingId)
+        showToast('已取消寄售，3 分钟后可重新寄售')
+      } catch (e) {
+        showToast(e.message || '取消寄售失败')
+      } finally {
+        canceling.value = false
+      }
     })
     .catch(() => {})
 }

@@ -225,13 +225,15 @@ class Resale extends BaseController
         $total = $query->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             'l.id as listing_id', 'l.price', 'l.user_collectible_id', 'l.listed_at',
-            'u.phone as seller_phone',
-        ])->select()->toArray();
+            'u.phone as seller_phone', 'uc.serial',
+        ])->leftJoin('user_collectibles uc', 'uc.id = l.user_collectible_id')
+            ->select()->toArray();
 
         $items = array_map(function ($l) {
             return [
                 'listingId'    => (int) $l['listing_id'],
                 'userCollectibleId' => (int) $l['user_collectible_id'],
+                'no'           => $l['serial'] ?? '',
                 'price'        => (float) $l['price'],
                 'listedAt'     => $l['listed_at'],
                 'sellerPhone'  => mask_phone($l['seller_phone']),

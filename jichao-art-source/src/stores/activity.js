@@ -1,41 +1,72 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import request from '@/utils/request'
 
-// 活动中心：合成活动数据（mock）
+// 活动中心：合成活动数据
+// MOCK_REPLACED: 原数据来自本文件内联 mock 合成活动列表，
+// 现已接入真实接口：GET /api/synthesis/activities（列表）、
+// GET /api/synthesis/activities/:id（详情，含材料与我持有数量）、POST /api/synthesis/submit（提交合成）
 export const useActivityStore = defineStore('activity', () => {
   // 合成活动列表
-  const synthesisActivities = ref([
-    {
-      id: '1',
-      title: '龙虎合璧',
-      coverImage: '/images/collections/cover-1.jpg',
-      desc: '集齐「龙纹罗盘」与「虎纹卡牌」，合成稀有藏品「龙虎合璧」，限量发行。',
-      startTime: '2026-08-20 10:00',
-      endTime: '2026-08-31 23:59',
-      materials: [
-        { id: '1', name: '龙纹罗盘', coverImage: '/images/collections/cover-1.jpg' },
-        { id: '2', name: '虎纹卡牌', coverImage: '/images/collections/cover-2.jpg' }
-      ],
-      result: { id: '101', name: '龙虎合璧', coverImage: '/images/collections/cover-4.jpg' }
-    },
-    {
-      id: '2',
-      title: '飞天面具',
-      coverImage: '/images/collections/cover-3.jpg',
-      desc: '集齐「敦煌飞天」与「青铜面具」，合成稀有藏品「飞天面具」。',
-      startTime: '2026-08-25 10:00',
-      endTime: '2026-09-10 23:59',
-      materials: [
-        { id: '6', name: '敦煌飞天', coverImage: '/images/collections/cover-1.jpg' },
-        { id: '7', name: '青铜面具', coverImage: '/images/collections/cover-2.jpg' }
-      ],
-      result: { id: '102', name: '飞天面具', coverImage: '/images/collections/cover-5.jpg' }
-    }
-  ])
+  const synthesisActivities = ref([])
 
-  function getSynthesis(id) {
-    return synthesisActivities.value.find((a) => a.id === id) || null
+  async function fetchSynthesisActivities() {
+    const res = await request.get('/synthesis/activities')
+    synthesisActivities.value = (res.list || []).map((a) => ({
+      id: String(a.activityId),
+      title: a.title,
+      coverImage: a.image || a.resultCollectible?.image || '',
+      desc: a.rules || '',
+      startTime: (a.startTime || '').slice(0, 16),
+      endTime: (a.endTime || '').slice(0, 16),
+      type: a.type,
+      result: {
+        id: String(a.resultCollectible?.id || ''),
+        name: a.resultCollectible?.name || '',
+        coverImage: a.resultCollectible?.image || ''
+      },
+      raw: a
+    }))
+    return synthesisActivities.value
   }
 
-  return { synthesisActivities, getSynthesis }
+  // 合成活动详情（含材料配置与我持有数量）
+  async function fetchSynthesisDetail(id) {
+    const d = await request.get(`/synthesis/activities/${id}`)
+    return {
+      id: String(d.activityId),
+      title: d.title,
+      coverImage: d.resultCollectible?.image || '',
+      desc: d.rules || '',
+      startTime: (d.startTime || '').slice(0, 16),
+      endTime: (d.endTime || '').slice(0, 16),
+      type: d.type,
+      myCount: d.myCount || 0,
+      materials: (d.materials || []).map((m) => ({
+        id: String(m.collectibleId),
+        name: m.name,
+        coverImage: m.image,
+        count: m.count,
+        myAvailable: m.myAvailable
+      })),
+      result: {
+        id: String(d.resultCollectible?.id || ''),
+        name: d.resultCollectible?.name || '',
+        coverImage: d.resultCollectible?.image || ''
+      },
+      raw: d
+    }
+  }
+
+  // 提交合成（真实接口：POST /api/synthesis/submit，后端事务消耗材料并生成产物）
+  async function submitSynthesis(activityId) {
+    const res = await request.post('/synthesis/submit', { activityId: Number(activityId) })
+    return res // { recordId, resultCollectible: { id, name, image, no } }
+  }
+
+  function getSynthesis(id) {
+    return synthesisActivities.value.find((a) => a.id === String(id)) || null
+  }
+
+  return { synthesisActivities, fetchSynthesisActivities, fetchSynthesisDetail, submitSynthesis, getSynthesis }
 })

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useNoticeStore } from '@/stores/notice'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -10,9 +10,18 @@ const route = useRoute()
 const router = useRouter()
 const store = useNoticeStore()
 
-const notice = computed(() => {
-  const id = Number(route.params.id)
-  return store.notices.find((n) => n.id === id) || null
+// MOCK_REPLACED: 原为从本地 mock 数组查找，现走后端详情接口（GET /api/announcements/:id）
+const notice = ref(null)
+const loading = ref(true)
+
+onMounted(async () => {
+  try {
+    notice.value = await store.fetchNotice(route.params.id)
+  } catch {
+    notice.value = null
+  } finally {
+    loading.value = false
+  }
 })
 
 function back() { router.back() }
@@ -63,7 +72,7 @@ function back() { router.back() }
       </div>
     </template>
 
-    <div v-else class="notice-detail__empty">公告不存在或已下架</div>
+    <div v-else-if="!loading" class="notice-detail__empty">公告不存在或已下架</div>
   </div>
 </template>
 

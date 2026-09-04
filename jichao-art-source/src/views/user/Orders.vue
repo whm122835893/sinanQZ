@@ -22,17 +22,16 @@ const tabs = [
 ]
 const active = ref('all')
 
-// 每秒刷新：待支付倒计时 + 超时订单自动取消（释放锁定的库存）
+// 每秒刷新：待支付倒计时（订单超时由后端自动失效，前端仅展示）
 const now = ref(Date.now())
 let timer = null
 onMounted(() => {
   // 未登录统一弹全局登录提示
   requireLogin(route.fullPath)
-  orderStore.fetchOrders()
-  orderStore.expireOrders()
+  // MOCK_REPLACED: 原为本地内存订单，现从后端拉取（GET /api/orders）
+  orderStore.fetchOrders().catch(() => {})
   timer = setInterval(() => {
     now.value = Date.now()
-    orderStore.expireOrders()
   }, 1000)
 })
 onUnmounted(() => { if (timer) clearInterval(timer) })

@@ -254,6 +254,12 @@ class Collections extends BaseController
                 ];
             }
             $grouped[$cid]['qty']++;
+            $grouped[$cid]['userCollectibleIds'][] = (int) $row['user_collectible_id'];
+            $grouped[$cid]['items'][] = [
+                'userCollectibleId' => (int) $row['user_collectible_id'],
+                'serial'            => $row['serial'],
+                'isConsigned'       => (int) $row['is_consigned'] === 1,
+            ];
             if (count($grouped[$cid]['nos']) < 5) {
                 $grouped[$cid]['nos'][] = $row['serial'];
             }

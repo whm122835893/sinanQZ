@@ -97,10 +97,12 @@ onMounted(() => {
 })
 onUnmounted(() => { if (cooldownTimer) clearInterval(cooldownTimer) })
 
-// 交易密码（与购买一致：自定义 6 位键盘，mock 密码 123456）
+// 交易密码（与购买一致：自定义 6 位键盘；密码由后端校验）
 const pwdStep = ref(false)       // false=填写价格  true=输入交易密码
 const payPwd = ref('')
 const keypad = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫']
+// 密码弹窗用途：consign 寄售 / open 开启盲盒
+const pwdFlow = ref('consign')
 
 const priceNum = computed(() => {
   const n = parseFloat(price.value)
@@ -118,12 +120,13 @@ function openConsign() {
   if (!requireLogin(route.fullPath)) return
   // 已在寄售中：不可重复寄售
   if (isNoLockedNow.value) { showToast('该藏品正在寄售中，不可重复寄售'); return }
-  // 冷却校验：取消寄售后 3 分钟内不可重新寄售
+  // 冷却校验：取消寄售后 3 分钟内不可重新寄售（后端为最终校验）
   refreshCooldown()
   if (cooldownRemain.value > 0) {
     showToast(`取消寄售后 ${cooldownRemain.value} 秒内不可重新寄售`)
     return
   }
+  pwdFlow.value = 'consign'
   price.value = ''; payPwd.value = ''; pwdStep.value = false; showConsign.value = true
 }
 function closeConsign() { showConsign.value = false; pwdStep.value = false; payPwd.value = '' }
@@ -141,36 +144,28 @@ function onPwdKey(k) {
   if (k === '⌫') { payPwd.value = payPwd.value.slice(0, -1); return }
   if (payPwd.value.length >= 6) return
   payPwd.value += k
-  if (payPwd.value.length === 6) setTimeout(doConsign, 150)
+  if (payPwd.value.length === 6) setTimeout(pwdFlow.value === 'open' ? doOpenBlindbox : doConsign, 150)
 }
 
-// 校验交易密码 -> 寄售入库（不扣库存，仅锁定藏品）
+// MOCK_REPLACED: 原为本地校验交易密码（123456）+ 本地锁定编号，
+// 现走后端 POST /api/resale/listings（校验交易密码，资产置 consigned 并生成挂单）
 async function doConsign() {
-  if (!userStore.verifyPaymentPassword(payPwd.value)) {
-    showToast('交易密码错误')
-    payPwd.value = ''
-    return
-  }
   consigning.value = true
-  // 模拟提交请求
-  await new Promise(r => setTimeout(r, 600))
-  const ok = await userStore.consign({
-    id: route.params.id,
-    name: detail.value.title,
-    coverImage: detail.value.coverImage,
-    no: serialNo.value,
-    price: priceNum.value,
-    fee: Number(fee.value),
-    actual: Number(actual.value)
-  })
-  consigning.value = false
-  if (!ok) {
-    showToast('寄售失败：该藏品不可寄售或已在寄售中')
-    return
+  try {
+    await userStore.consign({
+      userCollectibleId: userStore.findUserCollectibleId(route.params.id, serialNo.value),
+      price: priceNum.value,
+      paymentPassword: payPwd.value
+    })
+    lastActual.value = Number(actual.value)
+    showConsign.value = false
+    showSuccess.value = true
+  } catch (e) {
+    showToast(e.message || '寄售失败：该藏品不可寄售或已在寄售中')
+    payPwd.value = ''
+  } finally {
+    consigning.value = false
   }
-  lastActual.value = Number(actual.value)
-  showConsign.value = false
-  showSuccess.value = true
 }
 
 function onSuccessDone() {
@@ -183,15 +178,33 @@ const showOpenResult = ref(false)
 const revealItem = ref(null)
 const opening = ref(false)
 
-async function onOpenBlindbox() {
+// MOCK_REPLACED: 原为本地 reveals 常量随机开盒，现走后端 POST /api/blind-boxes/open
+// （后端校验交易密码并以 random_int 加权抽取），此处先弹交易密码键盘
+function onOpenBlindbox() {
   if (opening.value) return
+  if (!requireLogin(route.fullPath)) return
+  pwdFlow.value = 'open'
+  payPwd.value = ''
+  pwdStep.value = true
+  showConsign.value = true
+}
+
+async function doOpenBlindbox() {
   opening.value = true
-  await new Promise(r => setTimeout(r, 800))
-  const reveal = await userStore.openBlindbox(route.params.id, serialNo.value)
-  opening.value = false
-  if (reveal) {
-    revealItem.value = reveal
+  try {
+    const res = await userStore.openBlindbox(
+      userStore.findUserCollectibleId(route.params.id, serialNo.value),
+      payPwd.value
+    )
+    const prize = res?.prize || {}
+    revealItem.value = { name: prize.name, coverImage: prize.image, no: prize.no }
+    showConsign.value = false
     showOpenResult.value = true
+  } catch (e) {
+    showToast(e.message || '开盒失败，请重试')
+    payPwd.value = ''
+  } finally {
+    opening.value = false
   }
 }
 
@@ -342,8 +355,8 @@ function onOpenResultDone() {
 
         <!-- 步骤二：交易密码 -->
         <template v-else>
-          <p class="consign__amount">¥{{ priceNum.toFixed(2) }}</p>
-          <p class="consign__hint">请输入 6 位交易密码以完成寄售</p>
+          <p class="consign__amount" v-if="pwdFlow === 'consign'">¥{{ priceNum.toFixed(2) }}</p>
+          <p class="consign__hint">{{ pwdFlow === 'open' ? '请输入 6 位交易密码以开启盲盒' : '请输入 6 位交易密码以完成寄售' }}</p>
           <div class="consign__dots">
             <i v-for="n in 6" :key="n" :class="{ filled: n <= payPwd.length }"></i>
           </div>
@@ -356,7 +369,7 @@ function onOpenResultDone() {
               @click="onPwdKey(k)"
             >{{ k === '⌫' ? '⌫' : k }}</button>
           </div>
-          <button class="consign__back" @click="pwdStep = false">返回修改价格</button>
+          <button class="consign__back" v-if="pwdFlow === 'consign'" @click="pwdStep = false">返回修改价格</button>
         </template>
       </div>
     </van-popup>
