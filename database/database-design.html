@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>司南数字藏品平台 · 数据库实体模型设计 v2.0</title>
+<style>
+:root{--bg:#f5f6fa;--card:#fff;--ink:#1c1e27;--muted:#6b7080;--brand:#6a4cff;--brand-weak:#efecff;--border:#e6e8f0;--side:#171a24;--side-ink:#c6cad8;--ok:#0f9d58;--new:#e8a300;--patch:#e5484d;--radius:12px;--shadow:0 1px 3px rgba(16,20,40,.06)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.7}
+.layout{display:flex;min-height:100vh}
+aside{width:240px;flex-shrink:0;background:var(--side);color:var(--side-ink);padding:20px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.logo{padding:0 20px 16px;color:#fff;font-size:16px;font-weight:600;border-bottom:1px solid #262a38}
+.logo small{display:block;font-size:11px;font-weight:400;color:#7c8296;margin-top:2px}
+.nav-group{margin:14px 0 4px;padding:0 20px;font-size:11px;letter-spacing:1px;color:#6a7086}
+aside a{display:block;padding:5px 20px;color:var(--side-ink);text-decoration:none;font-size:13px;border-left:2px solid transparent}
+aside a:hover{color:#fff;background:#20242f;border-left-color:var(--brand)}
+main{flex:1;min-width:0;padding:28px 32px 60px;max-width:1180px}
+h1{font-size:24px;margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+h2{font-size:18px;margin:36px 0 14px;padding-left:10px;border-left:4px solid var(--brand)}
+h3{font-size:15px;margin:22px 0 10px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--card)}
+th{background:#f0f1f7;text-align:left;padding:7px 10px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)}
+td{padding:6px 10px;border-bottom:1px solid #eef0f5;vertical-align:top}
+tr:hover td{background:#fafbff}
+code,.mono{font-family:"SF Mono",Consolas,Menlo,monospace;font-size:12px}
+td code{color:#3730a3;background:#f1efff;padding:1px 5px;border-radius:4px}
+.badge{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:500;margin-left:6px;vertical-align:1px}
+.b-base{background:#e8f5ee;color:var(--ok)}
+.b-new{background:#fff4d6;color:var(--new)}
+.b-patch{background:#fdeaea;color:var(--patch)}
+.tbl-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.tbl-head .tname{font-size:16px;font-weight:600;font-family:Consolas,Menlo,monospace}
+.tbl-head .cn{color:var(--muted);font-size:13px}
+.desc{font-size:12.5px;color:var(--muted);margin-bottom:10px}
+.idx{font-size:12px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
+.idx code{background:#f4f5f9;color:#444;padding:1px 6px;border-radius:4px;margin:2px 2px 2px 0;display:inline-block}
+.tag-base{color:var(--ok)}.tag-new{color:var(--new)}.tag-patch{color:var(--patch)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.con-card{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--brand);border-radius:8px;padding:10px 14px;font-size:12.5px}
+.con-card b{color:var(--brand)}
+pre{background:#14161f;color:#c9d1e0;padding:14px;border-radius:10px;overflow-x:auto;font-size:12px;line-height:1.8}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:14px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center}
+.stat .num{font-size:22px;font-weight:700;color:var(--brand)}
+.stat .lbl{font-size:12px;color:var(--muted)}
+.note{background:var(--brand-weak);border:1px solid #d9d2ff;border-radius:8px;padding:10px 14px;font-size:12.5px;margin:10px 0}
+#btnSide{display:none;position:fixed;top:12px;left:12px;z-index:99;background:var(--side);color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:16px;cursor:pointer}
+@media(max-width:920px){
+ #btnSide{display:block}
+ aside{position:fixed;left:-260px;transition:left .25s;z-index:98;box-shadow:4px 0 20px rgba(0,0,0,.3)}
+ aside.open{left:0}
+ main{padding:52px 14px 40px}
+ .grid2{grid-template-columns:1fr}
+ table{font-size:11.5px}
+ th,td{padding:5px 6px}
+}
+</style>
+</head>
+<body>
+<button id="btnSide">☰</button>
+<div class="layout">
+<aside id="side">
+  <div class="logo">司南数字藏品平台<small>数据库实体模型设计 v2.0 · 2026-09-03</small></div>
+  <nav id="nav"></nav>
+</aside>
+<main>
+<h1>数据库实体模型设计文档</h1>
+<p class="sub">数字藏品 H5 平台 · 前端 Mock 数据 → 数据库建模 · 合并版（28 张规范表 + 5 张查缺补漏表，共 33 张）· v2.2 删除 user_addresses，新增 verification_codes</p>
+
+<h2 id="sec1">一、设计决策汇总</h2>
+<div class="card"><table>
+<tr><th style="width:44px">#</th><th>决策</th><th style="width:120px">属性</th></tr>
+<tr><td>1</td><td>sold_out 与 status 合并为 status 枚举（upcoming/onsale/soldout）</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>2</td><td>is_lucky 替换为 source 枚举（purchase/blindbox/transfer/airdrop/synthesis/lucky_draw）</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>3</td><td>user_collectibles 不加 quantity，每份藏品一行（数字藏品非同质化）</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>4</td><td>挂单快照字段全部移除，通过 collectible_id JOIN 取实时数据</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>5</td><td>公告与新闻合并为 announcements 表，type 字段区分</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>6</td><td>建立 system_configs 存储运营参数，禁止硬编码（限购/超时/冷却/签到奖励）</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>7</td><td>is_consigned 保留为反规范化标记，便于快速查询寄售状态</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>8</td><td>acquired_price 非购买来源（抽奖/合成/转赠/空投）存 0</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>9</td><td>不加 order_items 子表，每笔挂单生成独立订单</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>10</td><td>lucky_draw_prizes 独立建表管理奖品池</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>11</td><td>transfers 必须包含 to_user_id，支持双向查询</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>12</td><td>artifacts.tags 使用 JSON 数组存储</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>13</td><td>空投藏品 source='airdrop'，通过 airdrop_record_id 溯源</td><td><span class="tag-base">规范确认</span></td></tr>
+<tr><td>14</td><td>钱包独立建模：payments.payment_method='balance' 依赖 wallets 表；司南币以 points 字段单独记账（补回 Wallet.vue 钱包资产与流水）</td><td><span class="tag-patch">查缺补漏</span></td></tr>
+<tr><td>15</td><td>寄售手续费与 3 分钟冷却落库：fee_rate / fee_amount / actual_amount / cooldown_until（补回 consign.fee/actual + CONSIGN_COOLDOWN）</td><td><span class="tag-patch">查缺补漏</span></td></tr>
+<tr><td>16</td><td>盲盒开启即消耗：开盒将原 user_collectibles 置 consumed，同时生成新资产 source='blindbox'（替代 opened 布尔标记）</td><td><span class="tag-patch">查缺补漏</span></td></tr>
+<tr><td>17</td><td>抽奖奖品类型化：prize_type(collectible/points/none) + coin_amount；lucky_draw_records.user_collectible_id 可空（谢谢参与无资产）</td><td><span class="tag-patch">查缺补漏</span></td></tr>
+<tr><td>18</td><td>邀请关系独立 invite_records 表：注册链接 ?code= 绑定邀请人，一人仅能被邀请一次（空投业务逻辑已引用该表但清单缺失，补回）</td><td><span class="tag-patch">查缺补漏</span></td></tr>
+<tr><td>19</td><td>纯日志/明细表（wallet_transactions、synthesis_record_items、lucky_draw_records、user_favorites、airdrop_snapshots）省略 updated_at</td><td><span class="tag-patch">查缺补漏</span></td></tr>
+</table></div>
+
+<h2 id="sec2">二、实体总览（33 张表）</h2>
+<div class="note">
+图例：<span class="tag-base">● 规范表</span> 新规范 29 张中既有设计整合（18 张）；<span class="tag-new">● 规范新增</span> 相对上一版设计新增的 10 张；<span class="tag-patch">● 补充表</span> 新规范遗漏、由 Mock 数据补回的 5 张。
+</div>
+<div class="card"><table id="ovTable">
+<tr><th>#</th><th>域</th><th>表名</th><th>中文名</th><th>类型</th><th>数据来源（Mock）</th><th>标记</th></tr>
+</table></div>
+
+<h2 id="sec3">三、表结构详细定义</h2>
+<div id="tables"></div>
+
+<h2 id="sec4">四、实体关系说明</h2>
+<div class="card">
+<pre>users ─1:1─ wallets                     users ─1:N─ wallet_transactions（纯流水）
+users ─1:N─ user_collectibles ─N:1─ collectibles ─N:1─ categories
+user_collectibles ─1:1─ resale_listings（在售期间唯一）        挂单不复制快照（决策4）
+user_collectibles ─1:1─ transfers（转赠中冻结 frozen）
+users ─1:N─ orders ─1:1─ payments       orders.resale_listing_id → resale_listings（市场单）
+resale_listings ─N:1─ collectibles      地板价 = MIN(price) WHERE status='selling'
+collectibles ─1:1─ blind_boxes ─1:N─ blind_box_items ─N:1─ collectibles（奖品，自关联 M:N）
+synthesis_activities ─1:N─ synthesis_materials ─N:1─ collectibles（材料 M:N）
+synthesis_activities ─N:1─ collectibles（result 产物）
+synthesis_records ─1:N─ synthesis_record_items ─N:1─ user_collectibles（消耗明细）
+lucky_draw_prizes ─1:N─ lucky_draw_records ─N:1─ users
+check_in_records ─N:1─ users（uk_user_date 每天一次）
+airdrop_activities ─1:N─ airdrop_records / airdrop_eligibilities / airdrop_snapshots
+airdrop_records ─1:N─ user_collectibles（source='airdrop' 溯源，决策13）
+invite_activities ─1:N─ invite_records（inviter_id / invitee_id 双向）
+invite_records ─1:1─ airdrop_records（邀请双方奖励经空投落账）
+artifacts（文物）、announcements（公告/新闻）、banners、community_groups 为独立内容域
+system_configs / site_settings 为全局 KV 配置，无外键</pre>
+</div>
+
+<h2 id="sec5">五、业务约束</h2>
+<div class="grid2" id="conGrid"></div>
+
+<h2 id="sec6">六、索引建议</h2>
+<div class="card"><table id="idxTable">
+<tr><th>表</th><th>索引</th></tr>
+</table></div>
+
+<h2 id="sec7">七、统计信息</h2>
+<div class="stats" id="statBox"></div>
+<p class="sub" style="margin-top:18px;text-align:center">司南数字藏品平台 · 数据库实体模型设计文档 v2.0 · 由前端 Mock 数据逆向建模合并生成 · 2026-09-03</p>
+</main>
+</div>
+<script>
+const DOMS=[
+ {k:'U',n:'用户域'},{k:'C',n:'藏品域'},{k:'T',n:'资产与交易域'},{k:'A',n:'运营活动域'},{k:'R',n:'空投域'},{k:'N',n:'内容域'},{k:'S',n:'系统配置域'}
+];
+// fields: [字段名, 类型, 必填, 默认值, 注释, 来源]
+const T=[
+/* ============ U 用户域 ============ */
+{d:'U',t:'users',cn:'用户表',tag:'base',ty:'主数据',src:'user.js userInfo / Realname.vue / Register.vue',
+ desc:'平台账户主表：登录手机号、实名信息（加密）、交易密码（哈希）、邀请码与软删除。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['phone','VARCHAR(11)','必填','—','手机号，登录账号','Mock·login(phone)'],
+ ['username','VARCHAR(50)','必填','—','用户名/昵称','Mock·userInfo.nickname'],
+ ['avatar','VARCHAR(255)','必填','默认头像URL','头像','Mock·userInfo.avatar'],
+ ['uid','VARCHAR(10)','必填','—','站内展示UID','业务补充'],
+ ['invite_code','VARCHAR(16)','必填','—','我的邀请码，注册链接 ?code= 绑定','Mock·Invite.vue jKet17636'],
+ ['is_realname','TINYINT(1)','必填','0','实名标志（购买/寄售/转赠前置）','Mock·userInfo.isRealName'],
+ ['real_name','VARCHAR(255)','可空','NULL','真实姓名，AES-256/SM4 加密','Mock·Realname.vue realName'],
+ ['id_card','VARCHAR(255)','可空','NULL','身份证号，加密存储','Mock·Realname.vue idCard'],
+ ['transaction_password','VARCHAR(255)','可空','NULL','交易密码，bcrypt/scrypt 哈希（禁止明文）','Mock·payPassword 123456'],
+ ['status','TINYINT','必填','1','1正常 0禁用','业务补充（注销/封禁）'],
+ ['last_login_at','DATETIME(3)','可空','NULL','最后登录时间','业务补充（登录空投依赖）'],
+ ['login_count','INT UNSIGNED','必填','0','累计登录次数','业务补充'],
+ ['deleted_at','DATETIME','可空','NULL','软删除时间','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_phone(phone)','UNIQUE uk_uid(uid)','UNIQUE uk_invite_code(invite_code)']},
+
+{d:'U',t:'wallets',cn:'钱包表',tag:'patch',ty:'主数据',src:'Wallet.vue（新规范遗漏，补回）',
+ desc:'与 users 1:1。payments.payment_method=\'balance\' 的扣款依据；司南币以 points 记账。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id，唯一','Wallet.vue 页面主体'],
+ ['balance','DECIMAL(12,2)','必填','0','总资产（元）','Mock·balance 12,860.00'],
+ ['available','DECIMAL(12,2)','必填','0','可用余额','Mock·available 11,580.00'],
+ ['frozen','DECIMAL(12,2)','必填','0','冻结金额（待支付占用）','业务补充（差值推导）'],
+ ['points','DECIMAL(12,2)','必填','0','司南币余额','Mock·coin 1,280.00'],
+ ['brand','VARCHAR(16)','必填','汇付','第三方支付品牌','Mock·Wallet.vue 汇付'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_user(user_id)']},
+
+{d:'U',t:'wallet_transactions',cn:'钱包流水表',tag:'patch',ty:'流水/日志',src:'Wallet.vue 交易明细（补回）',
+ desc:'纯日志表（无 updated_at）。充值/消费/提现/奖励四类，记录余额快照便于对账。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','—'],
+ ['trans_type','ENUM(recharge,buy,withdraw,reward)','必填','—','充值/消费/提现/奖励','Mock·type recharge/buy/withdraw'],
+ ['title','VARCHAR(64)','必填','—','明细标题','Mock·title 账户充值/购买《司南·青铜纹样》'],
+ ['direction','TINYINT','必填','—','1收入 2支出','Mock·amount +2,000.00 符号拆分'],
+ ['amount','DECIMAL(12,2)','必填','—','金额（绝对值）','Mock·amount'],
+ ['balance_after','DECIMAL(12,2)','可空','NULL','交易后余额快照','业务补充（对账）'],
+ ['biz_no','VARCHAR(64)','可空','NULL','关联业务单号（订单号/空投ID）','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范']],
+ ix:['INDEX idx_user_created(user_id, created_at DESC)','INDEX idx_biz_no(biz_no)']},
+
+{d:'U',t:'user_favorites',cn:'用户关注表',tag:'new',ty:'关系表',src:'Market.vue「关注」tab（原 mock 空态）',
+ desc:'用户对藏品的关注（收藏）关系，用于市场「关注」视图。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','—'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id','—'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','关注时间','规范']],
+ ix:['UNIQUE uk_user_collectible(user_id, collectible_id)']},
+
+{d:'U',t:'verification_codes',cn:'短信验证码表',tag:'patch',ty:'日志',src:'Register.vue sendCode / Forgot.vue（假发送，补回）',
+ desc:'登录/注册/找回密码短信验证码：5 分钟有效、60 秒重发频控、一次性核销。纯日志表（无 updated_at）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['phone','VARCHAR(11)','必填','—','接收手机号','Mock·Register.vue phone'],
+ ['scene','ENUM(register,login,reset_password)','必填','—','使用场景','Mock·Register/Forgot 页面'],
+ ['code','VARCHAR(6)','必填','—','验证码（建议哈希存储）','Mock·code 输入框'],
+ ['expires_at','DATETIME(3)','必填','—','过期时间（发送时刻+5分钟）','业务补充'],
+ ['used_at','DATETIME(3)','可空','NULL','核销时间（一次性，用过即失效）','业务补充'],
+ ['ip','VARCHAR(45)','可空','NULL','请求IP（风控/频控）','业务补充'],
+ ['sent_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','发送时间（60s 内禁止重发）','Mock·useCountdown(60)'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范']],
+ ix:['INDEX idx_phone_scene(phone, scene)','INDEX idx_expires(expires_at)']},
+
+{d:'U',t:'invite_records',cn:'邀请关系记录表',tag:'patch',ty:'关系表',src:'Register.vue invite（空投逻辑引用但清单缺失，补回）',
+ desc:'用户A邀请用户B 的绑定关系。注册携带 ?code= 时写入；奖励经 airdrop_records 落账。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['inviter_id','BIGINT UNSIGNED','必填','—','邀请人 FK→users.id','Mock·Invite.vue 邀请'],
+ ['invitee_id','BIGINT UNSIGNED','必填','—','被邀请人 FK→users.id，唯一（一人仅被邀请一次）','Mock·注册绑定'],
+ ['invite_code','VARCHAR(16)','必填','—','注册时使用的邀请码','Mock·?code=jKet17636'],
+ ['status','ENUM(pending,registered)','必填','pending','pending=已邀请 registered=已注册','空投业务逻辑引用'],
+ ['inviter_airdrop_record_id','BIGINT UNSIGNED','可空','NULL','邀请人奖励 FK→airdrop_records.id','业务补充'],
+ ['invitee_airdrop_record_id','BIGINT UNSIGNED','可空','NULL','被邀请人奖励 FK→airdrop_records.id','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_invitee(invitee_id)','INDEX idx_inviter(inviter_id)']},
+
+/* ============ C 藏品域 ============ */
+{d:'C',t:'categories',cn:'藏品分类表',tag:'base',ty:'配置',src:'Market.vue 分类枚举',
+ desc:'藏品分类：code 英文标识（painting/blindbox…），前端 tab 筛选依据。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['name','VARCHAR(20)','必填','—','分类名','Mock·全部/水墨/国潮/盲盒/实物/联名'],
+ ['code','VARCHAR(20)','必填','—','分类编码，唯一','业务补充（英文化）'],
+ ['sort_order','INT','必填','0','排序','业务补充'],
+ ['icon','VARCHAR(50)','可空','NULL','分类图标','业务补充'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_code(code)']},
+
+{d:'C',t:'collectibles',cn:'藏品主表',tag:'base',ty:'主数据',src:'collection.js featured/marketCollections/resaleCollection 三处合并',
+ desc:'发售、盲盒、市场、合成产物统一主表（原 Mock 三处重复定义合并）。发售状态落库（决策1），高并发库存用 locked_quantity（决策与规范8）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['category_id','INT UNSIGNED','必填','—','FK→categories.id','Mock·Market.vue 分类'],
+ ['name','VARCHAR(100)','必填','—','藏品名','Mock·featured.name 龙纹罗盘'],
+ ['subtitle','VARCHAR(100)','可空','NULL','副标题/系列名','业务补充'],
+ ['image','VARCHAR(255)','必填','—','封面图','Mock·COVER cover-collection-N.jpg'],
+ ['gradient','VARCHAR(100)','可空','NULL','卡片渐变兜底色','业务补充'],
+ ['icon','VARCHAR(50)','可空','NULL','列表小图标','业务补充'],
+ ['price','DECIMAL(10,2)','必填','—','发售价','Mock·featured.price 0.10'],
+ ['edition','INT UNSIGNED','必填','0','发行总量','Mock·total 500份 / issueCount 1000000'],
+ ['circulate','INT UNSIGNED','必填','0','流通量（支付成功累加）','Mock·circulationCount 328400'],
+ ['sold','INT UNSIGNED','必填','0','累计已售','Mock·changeCirculation 语义'],
+ ['locked_quantity','INT UNSIGNED','必填','0','待支付锁定数量（规范8：禁止仅应用层计数）','Mock·changeStock(-qty) 状态化'],
+ ['vol','INT UNSIGNED','必填','0','今日成交量','Mock·todayCount 128'],
+ ['status','ENUM(upcoming,onsale,soldout)','必填','upcoming','发售状态（决策1：与 sold_out 合并）','Mock·getSaleStatus()'],
+ ['issuer','VARCHAR(50)','必填','数和文创','发行方','Mock·页面发行方文案'],
+ ['creator','VARCHAR(50)','必填','数和文创','创作方','业务补充'],
+ ['brand','VARCHAR(50)','必填','数和文创','品牌','业务补充'],
+ ['album','VARCHAR(50)','可空','NULL','所属系列/专辑','业务补充'],
+ ['contract','VARCHAR(100)','可空','NULL','链上合约地址','业务补充'],
+ ['chain_type','VARCHAR(20)','可空','NULL','ethereum/polygon/联盟链','业务补充'],
+ ['token_standard','VARCHAR(20)','可空','NULL','ERC-721/ERC-1155','业务补充'],
+ ['cert_id','VARCHAR(50)','可空','NULL','认证证书编号','业务补充'],
+ ['serial_no','VARCHAR(50)','可空','NULL','编号规则模板（SN-{id}-{seq}）','Mock·nos SN-1-0001'],
+ ['release_date','DATETIME(3)','可空','NULL','发售日期展示','Mock·saleTime'],
+ ['onsale_at','DATETIME(3)','可空','NULL','开售时间','Mock·saleTime'],
+ ['off_sale_at','DATETIME(3)','可空','NULL','发售结束时间','Mock·saleEndTime'],
+ ['tag','VARCHAR(50)','可空','NULL','发售方式标签：首发/优先购/资格购/盲盒','Mock·featured.tag'],
+ ['is_release','TINYINT(1)','必填','0','是否首页发售位','Mock·featured 列表'],
+ ['featured','TINYINT(1)','必填','0','是否推荐位','业务补充'],
+ ['market_tag','VARCHAR(50)','可空','NULL','市场标签','Mock·resaleCollection.tag 寄售'],
+ ['description','TEXT','可空','NULL','藏品故事/购买须知（合并存储）','Mock·stories + notice 3条'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_status_release(status, is_release)','INDEX idx_category(category_id)']},
+
+{d:'C',t:'blind_boxes',cn:'盲盒表',tag:'new',ty:'扩展(1:1)',src:'featured.type=blindbox 抽出',
+ desc:'盲盒配置（collectibles 1:1 扩展表）。开启即消耗原资产（决策16）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id，唯一','Mock·featured bb1 神秘盲盒'],
+ ['description','VARCHAR(500)','可空','NULL','盲盒说明','Mock·盲盒文案'],
+ ['is_openable','TINYINT(1)','必填','1','是否可开启（下架开启入口）','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_collectible(collectible_id)']},
+
+{d:'C',t:'blind_box_items',cn:'盲盒奖品池配置表',tag:'base',ty:'配置',src:'featured[bb1].items',
+ desc:'盲盒奖池：概率 DECIMAL(5,4)（合计=1），限量与已发放计数控制稀有度。逻辑删除禁止物理删除（规范6）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['blind_box_id','INT UNSIGNED','必填','—','FK→blind_boxes.id','Mock·bb1'],
+ ['prize_collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id 奖品藏品','Mock·items[].id'],
+ ['probability','DECIMAL(5,4)','必填','0.0000','出货概率','Mock·probability 35%/30%/20%/10%/5%'],
+ ['quantity_limit','INT UNSIGNED','可空','NULL','限量（NULL 不限）','Mock·qty 语义'],
+ ['quantity_distributed','INT UNSIGNED','必填','0','已发放数量','业务补充'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除，禁止物理删除','规范6'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_blind_box(blind_box_id)']},
+
+/* ============ T 资产与交易域 ============ */
+{d:'T',t:'user_collectibles',cn:'用户藏品表',tag:'base',ty:'流水',src:'user.js inventory（nos/lockedNos 拆行）',
+ desc:'每份藏品一行（决策3）。编号全局唯一；来源枚举（决策2）；is_consigned 反规范化（决策7）；盲盒开启/合成消耗置 consumed。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','Mock·inventory 归属'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id','Mock·inventory.id'],
+ ['order_id','BIGINT UNSIGNED','可空','NULL','FK→orders.id，purchase 来源','Mock·boughtAt 订单'],
+ ['blind_box_item_id','INT UNSIGNED','可空','NULL','FK→blind_box_items.id，blindbox 来源','Mock·openBlindbox'],
+ ['airdrop_record_id','BIGINT UNSIGNED','可空','NULL','FK→airdrop_records.id，airdrop 溯源（决策13）','业务补充'],
+ ['serial','VARCHAR(20)','必填','—','藏品编号 SN-1-0001','Mock·nos 数组拆行'],
+ ['source','ENUM(purchase,blindbox,transfer,airdrop,synthesis,lucky_draw)','必填','—','来源（决策2，替代 is_lucky）','Mock·type release + 各玩法'],
+ ['acquired_price','DECIMAL(10,2)','必填','0','入手价（决策8：非购买来源存0）','Mock·inventory.price 0.10'],
+ ['acquired_at','DATETIME(3)','必填','—','入库时间','Mock·boughtAt'],
+ ['is_consigned','TINYINT(1)','必填','0','寄售反规范化标记（决策7）','Mock·lockedNos 语义'],
+ ['status','ENUM(held,consigned,frozen,transferred,consumed)','必填','held','持有/寄售中/冻结(转赠)/已转出/已消耗','Mock·lockedNos + 合成/开盒消耗'],
+ ['tx_hash','VARCHAR(100)','可空','NULL','链上交易哈希','业务补充'],
+ ['block_number','BIGINT UNSIGNED','可空','NULL','区块高度','业务补充'],
+ ['token_id','VARCHAR(100)','可空','NULL','链上 token id','业务补充'],
+ ['mint_status','ENUM(pending,minting,minted,failed)','可空','pending','铸造状态','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_collectible_serial(collectible_id, serial)','INDEX idx_user_status(user_id, status)','INDEX idx_user_collectible(user_id, collectible_id)','INDEX idx_order_id(order_id)','INDEX idx_airdrop_record(airdrop_record_id)']},
+
+{d:'T',t:'orders',cn:'订单表',tag:'base',ty:'流水',src:'order.js（内存态持久化）',
+ desc:'发售购买与市场挂单购买统一订单（决策9：不加 order_items）。待支付 5 分钟超时取消（system_configs.order_pay_timeout_seconds）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['order_no','VARCHAR(20)','必填','—','订单号，唯一','Mock·genOrderNo JC+日期+随机'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id 买家','Mock·order'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id','Mock·payload.id'],
+ ['resale_listing_id','BIGINT UNSIGNED','可空','NULL','FK→resale_listings.id，市场单关联','Mock·payload.no 语义'],
+ ['unit_price','DECIMAL(10,2)','必填','—','单价','Mock·order.price'],
+ ['quantity','INT UNSIGNED','必填','1','数量','Mock·order.qty'],
+ ['total_price','DECIMAL(10,2)','必填','—','总金额','Mock·Pay.vue total'],
+ ['status','ENUM(pending,completed,cancelled)','必填','pending','待支付/已完成/已取消','Mock·status pending/done/cancelled'],
+ ['source','ENUM(release,market)','必填','—','发售购买/市场挂单购买','Mock·kind release/resale'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','下单时间','规范'],
+ ['paid_at','DATETIME(3)','可空','NULL','支付时间','业务补充'],
+ ['completed_at','DATETIME(3)','可空','NULL','完成时间','业务补充'],
+ ['cancelled_at','DATETIME(3)','可空','NULL','取消时间','业务补充'],
+ ['cancel_reason','VARCHAR(100)','可空','NULL','取消原因（超时/手动）','业务补充'],
+ ['expires_at','DATETIME(3)','必填','—','待支付截止（+5分钟）','Mock·PAY_TIMEOUT + expiresAt'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_order_no(order_no)','INDEX idx_user_status(user_id, status)','INDEX idx_user_created(user_id, created_at DESC)','INDEX idx_resale_listing(resale_listing_id)','INDEX idx_expires(expires_at)']},
+
+{d:'T',t:'payments',cn:'支付记录表',tag:'base',ty:'流水',src:'Pay.vue',
+ desc:'与 orders 1:1。balance 支付依赖 wallets 表扣款（决策14）；需校验交易密码后创建。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['order_id','BIGINT UNSIGNED','必填','—','FK→orders.id，唯一','Mock·Pay.vue 一单一支付'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','—'],
+ ['amount','DECIMAL(10,2)','必填','—','实付金额','Mock·total'],
+ ['payment_method','ENUM(balance,alipay,wechat)','必填','—','余额/支付宝/微信','Mock·payMethods 微信/支付宝/汇'],
+ ['transaction_no','VARCHAR(64)','可空','NULL','第三方支付流水号','业务补充'],
+ ['status','ENUM(pending,success,failed,refunded)','必填','pending','支付状态','业务补充'],
+ ['paid_at','DATETIME(3)','可空','NULL','支付成功时间','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_user_status(user_id, status)']},
+
+{d:'T',t:'resale_listings',cn:'寄售挂单表',tag:'base',ty:'流水',src:'user.js consignments + marketCollections.orders',
+ desc:'市场寄售挂单（原 consignments 与 orders 价格池合并）。挂单不复制藏品快照（决策4）；寄售锁定资产不扣库存；取消后 3 分钟冷却（决策15）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['seller_id','BIGINT UNSIGNED','必填','—','FK→users.id 卖家','Mock·user consign'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id','Mock·consign.name'],
+ ['user_collectible_id','BIGINT UNSIGNED','必填','—','FK→user_collectibles.id，在售期间唯一','Mock·consign(no) 锁定编号'],
+ ['price','DECIMAL(10,2)','必填','—','寄售价（地板价=MIN selling）','Mock·consign.price / orders 价格池'],
+ ['fee_rate','DECIMAL(5,2)','可空','NULL','手续费率 %（查缺补漏）','Mock·fee 计算'],
+ ['fee_amount','DECIMAL(10,2)','必填','0','手续费（查缺补漏）','Mock·consign.fee'],
+ ['actual_amount','DECIMAL(10,2)','必填','0','预计到账（查缺补漏）','Mock·consign.actual'],
+ ['status','ENUM(selling,sold,cancelled)','必填','selling','在售/已售/已取消','Mock·status onsale/sold'],
+ ['listed_at','DATETIME(3)','必填','—','挂单时间','Mock·createdAt'],
+ ['cooldown_until','DATETIME(3)','可空','NULL','取消后冷却截止（默认3分钟，查缺补漏）','Mock·CONSIGN_COOLDOWN'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_collectible_status(collectible_id, status)','INDEX idx_seller_status(seller_id, status)']},
+
+{d:'T',t:'transfers',cn:'转赠记录表',tag:'base',ty:'流水',src:'Purchase.vue orders',
+ desc:'藏品转赠，必须含 to_user_id（决策11）双向可查。状态机：发起冻结 frozen → 接受/拒绝/取消。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['from_user_id','BIGINT UNSIGNED','必填','—','FK→users.id 转出方','Mock·转赠发起'],
+ ['to_user_id','BIGINT UNSIGNED','必填','—','FK→users.id 受赠方（决策11）','业务补充（对方确认）'],
+ ['to_phone','VARCHAR(11)','必填','—','受赠手机号','业务补充'],
+ ['to_nickname','VARCHAR(50)','可空','NULL','受赠人昵称快照','业务补充'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id','Mock·Purchase.vue'],
+ ['user_collectible_id','BIGINT UNSIGNED','必填','—','FK→user_collectibles.id 转赠资产','业务补充'],
+ ['status','ENUM(pending,accepted,rejected,cancelled)','必填','pending','待确认/已接受/已拒绝/已取消','Mock·pending/ongoing/canceled 映射'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','发起时间','规范'],
+ ['confirmed_at','DATETIME(3)','可空','NULL','对方确认时间','业务补充'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_from_user(from_user_id)','INDEX idx_to_user(to_user_id)','INDEX idx_status_created(status, created_at)']},
+
+/* ============ A 运营活动域 ============ */
+{d:'A',t:'synthesis_activities',cn:'合成活动表',tag:'base',ty:'配置',src:'activity.js synthesisActivities',
+ desc:'合成活动：限时/永久两类，产出 result_collectible_id；防死循环见业务约束3。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['type','ENUM(limit,permanent)','必填','—','限时/永久','Mock·活动语义'],
+ ['title','VARCHAR(100)','必填','—','活动名','Mock·龙虎合璧'],
+ ['start_time','DATETIME(3)','可空','NULL','开始时间','Mock·startTime 2026-08-20 10:00'],
+ ['end_time','DATETIME(3)','可空','NULL','结束时间','Mock·endTime 2026-08-31 23:59'],
+ ['rules','TEXT','必填','—','活动规则文案','Mock·desc'],
+ ['result_collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id 产物','Mock·result.id 101'],
+ ['per_user_limit','INT','必填','0','每人限合成次数（0不限）','业务补充'],
+ ['total_limit','INT UNSIGNED','可空','NULL','总份数限制','Mock·公告 888份'],
+ ['used_count','INT UNSIGNED','必填','0','已合成次数','业务补充'],
+ ['image','VARCHAR(255)','可空','NULL','活动封面','Mock·coverImage'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_status_time(start_time, end_time)']},
+
+{d:'A',t:'synthesis_materials',cn:'合成材料子表',tag:'base',ty:'配置',src:'activity.js materials',
+ desc:'合成所需材料（M:N 中间表）。补 count 需求量字段（原 Mock 未定义数量）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['activity_id','INT UNSIGNED','必填','—','FK→synthesis_activities.id','Mock·materials'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id 材料藏品','Mock·materials[].id'],
+ ['count','INT UNSIGNED','必填','1','需要数量','业务补充（罗盘*1+虎符*1）'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范']],
+ ix:['INDEX idx_activity_id(activity_id)']},
+
+{d:'A',t:'synthesis_records',cn:'合成记录表',tag:'base',ty:'流水',src:'Synthesis.vue（内存行为持久化）',
+ desc:'一次合成一条记录，产物挂在 user_collectibles（source=synthesis）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','Mock·startSynthesis'],
+ ['activity_id','INT UNSIGNED','必填','—','FK→synthesis_activities.id','—'],
+ ['result_user_collectible_id','BIGINT UNSIGNED','必填','—','FK→user_collectibles.id 产物','Mock·addToInventory(result)'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','合成时间','规范']],
+ ix:['INDEX idx_user_activity(user_id, activity_id)']},
+
+{d:'A',t:'synthesis_record_items',cn:'合成消耗明细表',tag:'new',ty:'明细',src:'Synthesis.vue 消耗逻辑',
+ desc:'合成消耗的具体资产实例明细（每行一份，与决策3一致），保证消耗可审计、可回溯。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['synthesis_record_id','BIGINT UNSIGNED','必填','—','FK→synthesis_records.id','业务补充'],
+ ['user_collectible_id','BIGINT UNSIGNED','必填','—','FK→user_collectibles.id 被消耗资产（置 consumed）','Mock·user.consume(s.id, s.qty)'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范']],
+ ix:['INDEX idx_record(synthesis_record_id)','INDEX idx_user_collectible(user_collectible_id)']},
+
+{d:'A',t:'lucky_draw_prizes',cn:'抽奖奖品池表',tag:'base',ty:'配置',src:'Lottery.vue prizes',
+ desc:'抽奖奖品池（决策10 独立表）。查缺补漏：补 prize_type/coin_amount 支持「司南币」「谢谢参与」，collectible_id 放宽为可空。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['activity_id','INT UNSIGNED','必填','—','抽奖活动/期数ID','业务补充'],
+ ['tier_name','VARCHAR(20)','必填','—','奖档名','Mock·rarity 语义（普/稀/史/传）'],
+ ['prize_type','ENUM(collectible,points,none)','必填','collectible','藏品/司南币/谢谢参与（查缺补漏）','Mock·100司南币、谢谢参与'],
+ ['collectible_id','INT UNSIGNED','可空','NULL','FK→collectibles.id，藏品奖（查缺补漏放宽可空）','Mock·龙纹罗盘/云端法器'],
+ ['coin_amount','DECIMAL(12,2)','可空','NULL','司南币奖金额（查缺补漏）','Mock·100司南币/5司南币'],
+ ['total','INT UNSIGNED','必填','—','奖品总量','Mock·qty 5/20/3/50/8/100'],
+ ['won','INT UNSIGNED','必填','0','已被抽中数','业务补充'],
+ ['sort_order','INT','必填','0','转盘顺序','Mock·prizes 数组顺序'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除，禁止物理删除','规范6'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_activity(activity_id)']},
+
+{d:'A',t:'lucky_draw_records',cn:'抽奖记录表',tag:'base',ty:'流水',src:'Lottery.vue records',
+ desc:'抽奖流水。查缺补漏：user_collectible_id 放宽可空（谢谢参与无资产）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','Mock·records'],
+ ['prize_id','INT UNSIGNED','必填','—','FK→lucky_draw_prizes.id','—'],
+ ['user_collectible_id','BIGINT UNSIGNED','可空','NULL','FK→user_collectibles.id 获得资产（none 时为空，查缺补漏）','Mock·奖品入库'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','抽奖时间','Mock·time 8月23日 14:05']],
+ ix:['INDEX idx_user_created(user_id, created_at DESC)']},
+
+{d:'A',t:'check_in_records',cn:'签到记录表',tag:'base',ty:'流水',src:'user.js signState（localStorage 迁库）',
+ desc:'每天一次（uk_user_date）。连续签到天数随行记录；奖励配置存 system_configs.checkin_rewards。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','Mock·signState'],
+ ['check_in_date','DATE','必填','—','签到日期','Mock·records[].date YYYY-MM-DD'],
+ ['consecutive_days','INT UNSIGNED','必填','1','签到时连续天数','Mock·signState.day'],
+ ['reward_type','ENUM(none,collectible,points,draw_chance)','必填','none','奖励类型','Mock·规则文案（后台配置）'],
+ ['reward_amount','INT','必填','0','奖励数量','业务补充'],
+ ['reward_related_id','BIGINT UNSIGNED','可空','NULL','关联藏品ID等','业务补充'],
+ ['reward_description','VARCHAR(255)','可空','NULL','奖励描述','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范']],
+ ix:['UNIQUE uk_user_date(user_id, check_in_date)','INDEX idx_user_created(user_id, created_at DESC)']},
+
+{d:'A',t:'invite_activities',cn:'邀请活动配置表',tag:'new',ty:'配置',src:'Invite.vue（活动化）',
+ desc:'邀请奖励活动配置：开关/时间窗/双方奖励藏品与数量，奖励经 airdrop_records 落账（source=airdrop）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['name','VARCHAR(100)','必填','—','活动名称','业务补充'],
+ ['status','ENUM(disabled,enabled)','必填','disabled','总开关','Mock·邀请页开关语义'],
+ ['start_time','DATETIME(3)','可空','NULL','开始时间','业务补充'],
+ ['end_time','DATETIME(3)','可空','NULL','结束时间','业务补充'],
+ ['inviter_collectible_id','INT UNSIGNED','可空','NULL','FK→collectibles.id 邀请人奖励','业务补充'],
+ ['inviter_quantity','INT UNSIGNED','必填','1','邀请人奖励数量','业务补充'],
+ ['invitee_collectible_id','INT UNSIGNED','可空','NULL','FK→collectibles.id 被邀请人奖励','业务补充'],
+ ['invitee_quantity','INT UNSIGNED','必填','1','被邀请人奖励数量','业务补充'],
+ ['airdrop_mode','ENUM(realtime,batch)','必填','realtime','奖励发放模式','空投规范'],
+ ['total_limit','INT UNSIGNED','可空','NULL','总邀请奖励上限','业务补充'],
+ ['used_count','INT UNSIGNED','必填','0','已使用数量','业务补充'],
+ ['description','TEXT','可空','NULL','活动说明','Mock·邀请页文案'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_status(status)']},
+
+/* ============ R 空投域 ============ */
+{d:'R',t:'airdrop_activities',cn:'空投活动表',tag:'new',ty:'配置',src:'业务新增（空投体系）',
+ desc:'六种空投类型（direct/hold/checkin/register/login/invite），双发放模式（realtime 直发 / batch 记资格后台统一发）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['name','VARCHAR(100)','必填','—','活动名称','业务新增'],
+ ['type','ENUM(direct,hold,checkin,register,login,invite)','必填','—','空投类型','业务新增'],
+ ['status','ENUM(draft,active,paused,ended)','必填','draft','状态机 draft→active→paused/ended','业务新增'],
+ ['airdrop_mode','ENUM(realtime,batch)','必填','realtime','实时发放/批量发放','业务新增'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id 空投目标藏品','业务新增'],
+ ['quantity_per_user','INT UNSIGNED','必填','1','每人数量','业务新增'],
+ ['total_limit','INT UNSIGNED','可空','NULL','总限量（NULL 不限）','业务新增'],
+ ['issued_count','INT UNSIGNED','必填','0','已发放数量','业务新增'],
+ ['start_time','DATETIME(3)','可空','NULL','开始时间','业务新增'],
+ ['end_time','DATETIME(3)','可空','NULL','结束时间','业务新增'],
+ ['snapshot_at','DATETIME(3)','可空','NULL','快照时间（仅 hold）','业务新增'],
+ ['snapshot_collectible_id','INT UNSIGNED','可空','NULL','FK→collectibles.id 快照目标（仅 hold）','业务新增'],
+ ['checkin_days','INT UNSIGNED','可空','NULL','要求连续签到天数（仅 checkin，1/3/7）','业务新增'],
+ ['condition_config','JSON','可空','NULL','扩展条件配置','业务新增'],
+ ['description','TEXT','可空','NULL','活动说明','业务新增'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除，禁止物理删除','规范6'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_type_status(type, status)','INDEX idx_start_end(start_time, end_time)']},
+
+{d:'R',t:'airdrop_snapshots',cn:'持有藏品快照表',tag:'new',ty:'明细',src:'业务新增（hold 空投）',
+ desc:'hold 空投先快照后发放：扫描持有目标藏品的所有 user_collectibles 写入本表。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['activity_id','INT UNSIGNED','必填','—','FK→airdrop_activities.id','业务新增'],
+ ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','业务新增'],
+ ['collectible_id','INT UNSIGNED','必填','—','快照时持有的藏品','业务新增'],
+ ['user_collectible_id','BIGINT UNSIGNED','必填','—','FK→user_collectibles.id 具体实例','业务新增'],
+ ['snapshot_at','DATETIME(3)','必填','—','快照时间','业务新增'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范']],
+ ix:['UNIQUE uk_activity_user_collectible(activity_id, user_id, user_collectible_id)','INDEX idx_activity(activity_id)']},
+
+{d:'R',t:'airdrop_records',cn:'空投记录表',tag:'new',ty:'流水',src:'业务新增（空投体系）',
+ desc:'空投发放流水：发放后回填 user_collectible_id；user_collectibles.airdrop_record_id 指向本表溯源（决策13）。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['activity_id','INT UNSIGNED','必填','—','FK→airdrop_activities.id','业务新增'],
+ ['user_id','BIGINT UNSIGNED','可空','NULL','FK→users.id（直投可先手机号后注册）','业务新增'],
+ ['phone','VARCHAR(11)','必填','—','接收手机号','业务新增'],
+ ['collectible_id','INT UNSIGNED','必填','—','FK→collectibles.id 空投藏品','业务新增'],
+ ['user_collectible_id','BIGINT UNSIGNED','可空','NULL','FK→user_collectibles.id 发放后回填','业务新增'],
+ ['quantity','INT UNSIGNED','必填','1','数量','业务新增'],
+ ['status','ENUM(pending,issued,failed)','必填','pending','待发放/已发放/失败','业务新增'],
+ ['issued_at','DATETIME(3)','可空','NULL','实际发放时间','业务新增'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_activity_phone(activity_id, phone)','INDEX idx_user(user_id)','INDEX idx_status(status)']},
+
+{d:'R',t:'airdrop_eligibilities',cn:'空投资格记录表',tag:'new',ty:'明细',src:'业务新增（batch 模式）',
+ desc:'批量空投模式：完成任务只记资格（uk_activity_phone 去重），后台统一执行后生成 airdrop_records 与资产。',
+ f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
+ ['activity_id','INT UNSIGNED','必填','—','FK→airdrop_activities.id','业务新增'],
+ ['user_id','BIGINT UNSIGNED','可空','NULL','FK→users.id','业务新增'],
+ ['phone','VARCHAR(11)','必填','—','完成任务时手机号','业务新增'],
+ ['task_type','ENUM(hold,checkin,register,login,invite)','必填','—','完成的任务类型','业务新增'],
+ ['task_completed_at','DATETIME(3)','必填','—','任务完成时间','业务新增'],
+ ['status','ENUM(eligible,issued)','必填','eligible','待发放/已发放','业务新增'],
+ ['airdrop_record_id','BIGINT UNSIGNED','可空','NULL','FK→airdrop_records.id 关联空投记录','业务新增'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_activity_phone(activity_id, phone)','INDEX idx_activity_status(activity_id, status)']},
+
+/* ============ N 内容域 ============ */
+{d:'N',t:'artifacts',cn:'文物表',tag:'base',ty:'主数据',src:'collection.js exhibits（8 件文物）',
+ desc:'文物展览区（Mall.vue 列表 + ExhibitDetail 详情）。查缺补漏：补 museum/level/specs（馆藏地点/文物等级/规格档案）。分类筛选经 tags JSON。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['name','VARCHAR(100)','必填','—','文物名','Mock·西周青铜鼎'],
+ ['dynasty','VARCHAR(50)','必填','—','朝代','Mock·dynasty 西周'],
+ ['image','VARCHAR(255)','必填','—','文物图','Mock·EXHIBIT(id) exhibit-N.jpg'],
+ ['img_height','INT','必填','150','瀑布流图片高度','业务补充'],
+ ['material','VARCHAR(50)','必填','—','材质','Mock·material 青铜'],
+ ['period','VARCHAR(100)','必填','—','年代','Mock·age 约公元前1046年－前771年'],
+ ['size','VARCHAR(100)','可空','NULL','尺寸概述','Mock·specs 通高/腹深'],
+ ['origin','VARCHAR(100)','可空','NULL','出土/来源地','业务补充'],
+ ['museum','VARCHAR(100)','可空','NULL','馆藏地点（查缺补漏）','Mock·location 中国国家博物馆'],
+ ['level','VARCHAR(20)','可空','NULL','文物等级（查缺补漏）','Mock·level 国家一级文物'],
+ ['specs','JSON','可空','NULL','规格档案键值对（查缺补漏）','Mock·specs 器型/通高/重量…'],
+ ['story','TEXT','必填','—','详细介绍（分段）','Mock·detail[] 3段 + desc'],
+ ['tags','JSON','可空','NULL','标签数组（青铜/陶瓷/书画/玉器…）','Mock·category + Mall 分类'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_dynasty(dynasty)','INDEX idx_status(deleted_at)']},
+
+{d:'N',t:'announcements',cn:'公告/新闻合并表',tag:'base',ty:'主数据',src:'notice.js notices + 公告分类合并（决策5）',
+ desc:'公告与新闻合并（决策5）。subtype 承接原分类：activity/compose/operation；富文本内容存 content（含图片以 HTML 引用）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['title','VARCHAR(200)','必填','—','标题','Mock·title 生态星推官'],
+ ['summary','VARCHAR(500)','可空','NULL','摘要（首页轮播同源）','Mock·summary + Home.vue 3条'],
+ ['content','TEXT','可空','NULL','正文/富文本 HTML（含图）','Mock·content[] + richContent[]'],
+ ['cover_image','VARCHAR(255)','可空','NULL','封面图','业务补充'],
+ ['type','ENUM(notice,news)','必填','—','公告/新闻（决策5）','Mock·公告体系'],
+ ['subtype','VARCHAR(20)','可空','NULL','子分类：activity/compose/operation','Mock·notice.js categories'],
+ ['tag_color','VARCHAR(20)','可空','NULL','标签色','Mock·样式'],
+ ['is_top','TINYINT(1)','必填','0','置顶','业务补充'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','发布时间','Mock·time 2026-07-03 18:18:18'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_type_created(type, created_at)']},
+
+{d:'N',t:'banners',cn:'轮播图表',tag:'base',ty:'配置',src:'Home.vue slides',
+ desc:'首页背景轮播（slide-1/2/3.jpg），支持排序与上下架。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['image','VARCHAR(255)','必填','—','轮播图','Mock·slides'],
+ ['description','VARCHAR(100)','可空','NULL','描述/alt','业务补充'],
+ ['sort_order','INT','必填','0','排序','Mock·数组顺序'],
+ ['is_active','TINYINT(1)','必填','1','是否启用','业务补充'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_sort_active(sort_order, is_active)']},
+
+{d:'N',t:'community_groups',cn:'社区群表',tag:'patch',ty:'配置',src:'Community.vue groups（低优先级，补回）',
+ desc:'社区交流群入口配置（图标/名称/简介/二维码）。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['icon','VARCHAR(255)','必填','—','群图标','Mock·groups.icon'],
+ ['name','VARCHAR(50)','必填','—','群名称','Mock·groups.name'],
+ ['description','VARCHAR(255)','可空','NULL','群简介','Mock·groups.desc'],
+ ['qr_code','VARCHAR(255)','可空','NULL','二维码图','业务补充'],
+ ['sort_order','INT','必填','0','排序','业务补充'],
+ ['is_active','TINYINT(1)','必填','1','是否启用','业务补充'],
+ ['deleted_at','DATETIME','可空','NULL','逻辑删除','规范'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['INDEX idx_sort(sort_order)']},
+
+/* ============ S 系统配置域 ============ */
+{d:'S',t:'system_configs',cn:'系统参数表',tag:'new',ty:'配置',src:'决策6（禁硬编码）',
+ desc:'运营参数 KV。预设键：purchase_limit_per_user(限购5)、order_pay_timeout_seconds(待支付300s)、resale_cooldown_seconds(寄售冷却180s)、resale_fee_rate(寄售费率)、checkin_rewards(连续签到奖励JSON)。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['config_key','VARCHAR(50)','必填','—','参数键，唯一','Mock·MAX=5/PAY_TIMEOUT/COOLDOWN'],
+ ['config_value','TEXT','必填','—','参数值','同上'],
+ ['description','VARCHAR(200)','可空','NULL','说明','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间','规范'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_config_key(config_key)']},
+
+{d:'S',t:'site_settings',cn:'网站全局配置表',tag:'new',ty:'配置',src:'决策（主题按钮色可配）',
+ desc:'站点级配置（分组 basic/theme/button/seo）。查缺补漏：补 created_at 以满足规范1。预设键：site_name、site_logo、button_purchase_color、button_order_color、button_login_color、button_auth_color。',
+ f:[['id','INT UNSIGNED AI','PK','—','主键','规范'],
+ ['setting_key','VARCHAR(50)','必填','—','配置键，唯一','Mock·iconTheme 主题切换语义'],
+ ['setting_value','TEXT','必填','—','配置值','Mock·主题包配置'],
+ ['setting_group','ENUM(basic,theme,button,seo)','必填','basic','配置分组','业务补充'],
+ ['description','VARCHAR(200)','可空','NULL','说明','业务补充'],
+ ['created_at','DATETIME(3)','必填','CURRENT_TIMESTAMP(3)','创建时间（查缺补漏补回）','规范1'],
+ ['updated_at','DATETIME(3)','必填','ON UPDATE','更新时间','规范']],
+ ix:['UNIQUE uk_setting_key(setting_key)']}
+];
+
+const CONS=[
+'<b>实名前置</b>：购买/寄售/转赠前校验 users.is_realname=1',
+'<b>交易密码</b>：支付/转赠时验证 transaction_password（bcrypt 哈希比对）',
+'<b>合成防死循环</b>：result_collectible_id 不得出现在同活动 materials 中',
+'<b>签到唯一</b>：每人每天一次（check_in_records.uk_user_date）',
+'<b>盲盒随机</b>：按 probability 加权随机，且 quantity_distributed &lt; quantity_limit',
+'<b>转赠状态机</b>：发起→资产 frozen→accepted/rejected/cancelled，严格流转',
+'<b>订单状态机</b>：pending→completed/cancelled，超时（expires_at）自动取消并释放库存',
+'<b>库存锁定</b>：下单 locked_quantity+=qty；支付成功 sold+=qty 且 locked-=qty；取消 locked-=qty（数据库原子操作）',
+'<b>限购</b>：每藏品每用户限购 system_configs.purchase_limit_per_user（Mock 为 5）',
+'<b>空投状态机</b>：draft→active→paused/ended，仅 active 产生新资格/发放',
+'<b>持有空投先快照</b>：type=hold 必须先写 airdrop_snapshots 再基于快照发放（仅 batch）',
+'<b>注册/登录空投窗口</b>：时间须落在 start_time~end_time 内，逾期不再产生资格',
+'<b>签到空投判定</b>：check_in_records.consecutive_days ≥ airdrop_activities.checkin_days 时产生资格',
+'<b>邀请开关</b>：invite_activities.status=disabled 时禁止产生新邀请关系与奖励',
+'<b>批量空投</b>：airdrop_mode=batch 只写 airdrop_eligibilities，后台统一生成 airdrop_records + 资产',
+'<b>实时空投</b>：airdrop_mode=realtime 直接生成 airdrop_records + user_collectibles，不经过资格表',
+'<b>空投溯源</b>：user_collectibles.source=airdrop 且 airdrop_record_id 关联活动',
+'<b>钱包余额支付</b>：payment_method=balance 时校验 wallets.available≥amount，事务扣减并写流水',
+'<b>寄售冷却</b>：取消挂单后 cooldown_until=now+resale_cooldown_seconds（默认180秒）内禁止重新挂单',
+'<b>寄售手续费</b>：fee_amount=price×fee_rate，actual_amount=price−fee_amount',
+'<b>邀请唯一绑定</b>：一人仅能被邀请一次（invite_records.uk_invitee）；注册 ?code= 时绑定',
+'<b>盲盒开启即消耗</b>：原资产置 consumed，新资产 source=blindbox；is_openable=0 时禁止开启',
+'<b>审计日志</b>：修改库存/下架/调配置/执行空投等敏感操作必须记录审计日志',
+'<b>安全存储</b>：real_name/id_card AES-256/SM4 加密；transaction_password 哈希；全站 HTTPS'
+];
+
+/* ============ 渲染 ============ */
+const TAGCLS={base:['b-base','规范表'],new:['b-new','规范新增'],patch:['b-patch','补充表']};
+const nav=document.getElementById('nav');
+const ovTable=document.getElementById('ovTable');
+const tables=document.getElementById('tables');
+let fieldCount=0;
+DOMS.forEach(d=>{
+ const h=document.createElement('div');h.className='nav-group';h.textContent=d.n;nav.appendChild(h);
+ T.filter(t=>t.d===d.k).forEach(t=>{
+  const a=document.createElement('a');a.href='#tbl-'+t.t;a.textContent=t.t+' '+t.cn;nav.appendChild(a);
+ });
+});
+T.forEach((t,i)=>{
+ const [cls,txt]=TAGCLS[t.tag];
+ const tr=document.createElement('tr');
+ tr.innerHTML=`<td>${i+1}</td><td>${DOMS.find(d=>d.k===t.d).n}</td><td><code>${t.t}</code></td><td>${t.cn}</td><td>${t.ty}</td><td>${t.src}</td><td><span class="badge ${cls}">${txt}</span></td>`;
+ ovTable.appendChild(tr);
+ const sec=document.createElement('div');sec.className='card';sec.id='tbl-'+t.t;
+ let rows=t.f.map(f=>`<tr><td><code>${f[0]}</code></td><td>${f[1]}</td><td>${f[2]}</td><td>${f[3]}</td><td>${f[4]}</td><td>${f[5]}</td></tr>`).join('');
+ fieldCount+=t.f.length;
+ sec.innerHTML=`<div class="tbl-head"><span class="tname">${t.t}</span><span class="cn">${t.cn}</span><span class="badge ${cls}">${txt}</span></div>
+ <div class="desc">${t.desc}</div>
+ <table><tr><th>字段</th><th>类型</th><th>必填</th><th>默认值</th><th>注释</th><th>数据来源</th></tr>${rows}</table>
+ <div class="idx">索引：${t.ix.map(x=>`<code>${x}</code>`).join('')}</div>`;
+ tables.appendChild(sec);
+});
+const cg=document.getElementById('conGrid');
+CONS.forEach((c,i)=>{const d=document.createElement('div');d.className='con-card';d.innerHTML=`<b>#${i+1}</b> ${c}`;cg.appendChild(d);});
+const it=document.getElementById('idxTable');
+T.forEach(t=>{const tr=document.createElement('tr');tr.innerHTML=`<td><code>${t.t}</code></td><td>${t.ix.map(x=>`<code>${x}</code>`).join(' ')}</td>`;it.appendChild(tr);});
+document.getElementById('statBox').innerHTML=
+`<div class="stat"><div class="num">${T.length}</div><div class="lbl">数据表总数</div></div>
+<div class="stat"><div class="num">${DOMS.length}</div><div class="lbl">业务域</div></div>
+<div class="stat"><div class="num">${fieldCount}</div><div class="lbl">字段总数</div></div>
+<div class="stat"><div class="num">${T.filter(t=>t.tag==='new').length}</div><div class="lbl">规范新增表</div></div>
+<div class="stat"><div class="num">${T.filter(t=>t.tag==='patch').length}</div><div class="lbl">查缺补漏表</div></div>
+<div class="stat"><div class="num">${CONS.length}</div><div class="lbl">业务约束</div></div>`;
+document.getElementById('btnSide').onclick=()=>document.getElementById('side').classList.toggle('open');
+document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>document.getElementById('side').classList.remove('open'));
+</script>
+</body>
+</html>
