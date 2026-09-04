@@ -1,3 +1,8 @@
+# IDE
+.trae-html-share-packages/
+.idea/
+.vscode/
+
 # Dependencies
 node_modules/
 .pnp
