@@ -59,11 +59,13 @@ function aes_encrypt(string $data): string
 
 /**
  * AES-256 解密
+ * 存储结构：base64( iv(16) . base64(ct) )，最短密文块 16 字节 → base64 后 24 字符
+ * 故合法解码长度下限为 16 + 24 = 40（此前 48 会误杀 ≤11 字节明文的短实名）
  */
 function aes_decrypt(string $encoded): ?string
 {
     $decoded = base64_decode($encoded);
-    if (strlen($decoded) < 48) return null;
+    if (strlen($decoded) < 40) return null;
     $key = hash('sha256', env('APP_KEY', 'sinan-nft-secret-key-2026'), true);
     $iv  = substr($decoded, 0, 16);
     $ct  = substr($decoded, 16);

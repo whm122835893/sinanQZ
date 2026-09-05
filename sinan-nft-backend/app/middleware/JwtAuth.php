@@ -43,6 +43,15 @@ class JwtAuth
             return json(['code' => 2001, 'message' => 'token无效', 'data' => null]);
         }
 
+        // 管理端强制登出黑名单（TTL=JWT有效期；缓存不可用时跳过，保持向后兼容）
+        try {
+            if (cache('force_logout_' . $request->userId)) {
+                return json(['code' => 2001, 'message' => '账号已被强制登出，请重新登录', 'data' => null]);
+            }
+        } catch (\Throwable $e) {
+            // 缓存异常时跳过踢出检查
+        }
+
         return $next($request);
     }
 }

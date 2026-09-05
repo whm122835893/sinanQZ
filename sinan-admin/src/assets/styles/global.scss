@@ -1,0 +1,120 @@
+// ============================================================================
+// 全局样式：Element Plus 司南红主题覆盖 + 基础排版
+// 通过 CSS 变量级替换（不 fork 组件库），文档 3.2
+// ============================================================================
+
+:root {
+  // Element Plus 主色系列（司南红 #C00000 的明暗阶）
+  --el-color-primary: #c00000;
+  --el-color-primary-dark-2: #9a0000;
+  --el-color-primary-light-3: #d34d4d;
+  --el-color-primary-light-5: #e08080;
+  --el-color-primary-light-7: #ecb3b3;
+  --el-color-primary-light-8: #f2cccc;
+  --el-color-primary-light-9: #f9e6e6;
+
+  // 司南红体系令牌（与 variables.scss 同名对应）
+  --sn-primary: #c00000;
+  --sn-primary-dark: #a00000;
+  --sn-gold: #d4a574;
+  --sn-gold-dark: #b08d55;
+  --sn-bg: #f7f8fa;
+  --sn-card: #ffffff;
+  --sn-surface: #f2f3f5;
+  --sn-border: #ebedf0;
+  --sn-text-main: #1a1a1a;
+  --sn-text-sub: #6b7280;
+  --sn-shadow-card: 0 2px 12px rgba(26, 26, 26, 0.06);
+  --sn-shadow-pop: 0 8px 24px rgba(26, 26, 26, 0.12);
+
+  // 圆角
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 4px;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans CJK SC', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  color: var(--sn-text-main);
+  background: var(--sn-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+// 金额/指标数字 DIN 字体
+.din {
+  font-family: 'DIN Alternate', 'Bahnschrift', 'Arial Narrow', sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+// 统一卡片
+.sn-card {
+  background: var(--sn-card);
+  border-radius: 12px;
+  box-shadow: var(--sn-shadow-card);
+  padding: 16px;
+}
+
+// 指标卡渐变文字
+.sn-gradient-text-primary {
+  background: linear-gradient(135deg, #d00000 0%, #b00000 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+// 滚动条
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+// 表格分页容器
+.table-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+// 页面通用布局
+.page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+// 路由切换动画
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+
+// <1366px 窄屏适配
+@media (max-width: 1365px) {
+  .el-table {
+    font-size: 13px;
+  }
+}

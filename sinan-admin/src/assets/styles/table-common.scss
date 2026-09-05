@@ -1,0 +1,101 @@
+// ============================================================================
+// 表格页公共样式（文档 3.3 表格规范：表头/行高/操作列/分页右对齐）
+// scoped 内 @use 引入；:deep() 由 SFC 编译期处理
+// ============================================================================
+@use '@/assets/styles/variables.scss' as *;
+
+@mixin ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// 检索表单
+.query-form {
+  :deep(.el-form-item) {
+    margin-bottom: 0;
+    margin-right: 16px;
+  }
+
+  :deep(.el-form-item__label) {
+    font-size: 13px;
+    color: $sn-text-sub;
+  }
+}
+
+// 工具条（标题 + 主操作）
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+
+  .toolbar-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: $sn-text-main;
+    position: relative;
+    padding-left: 11px;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 14px;
+      border-radius: 2px;
+      background: $sn-primary;
+    }
+  }
+}
+
+// 分页（右对齐）
+.table-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
+}
+
+// 表格基础（Element 主题变量已全局覆盖，此处补行高/hover）
+:deep(.el-table) {
+  --el-table-header-bg-color: #{$sn-bg};
+  --el-table-header-text-color: #{$sn-text-sub};
+
+  th.el-table__cell {
+    font-size: 12px;
+    font-weight: 500;
+  }
+}
+
+// 金额列
+.amount {
+  font-weight: 600;
+  color: $sn-text-main;
+}
+
+// 页面头（返回 + 标题）
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  .head-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .head-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    color: $sn-text-main;
+  }
+
+  .head-sub {
+    font-size: 12px;
+    color: $sn-text-muted;
+  }
+}
