@@ -1,8 +1,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { showSuccessToast } from 'vant'
+import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { getBanners, saveBanner } from '@/api'
-import DetailSheet from '@/components/DetailSheet.vue'
+import { fmtNumber } from '@/utils/format'
 
 const loading = ref(true)
 const banners = ref([])
@@ -26,6 +27,12 @@ async function load() {
   loading.value = false
 }
 
+function openCreate() {
+  editing.value = null
+  form.value = { title: '', image: imageOptions[0], link: '', sort: banners.value.length + 1, status: 1 }
+  editShow.value = true
+}
+
 function openEdit(b) {
   editing.value = b
   form.value = { title: b.title, image: b.image, link: b.link, sort: b.sort, status: b.status }
@@ -33,55 +40,88 @@ function openEdit(b) {
 }
 
 async function onSave() {
-  const res = await saveBanner({ id: editing.value?.id, ...form.value })
+  const f = form.value
+  if (!f.title.trim()) return ElMessage.warning('请输入标题')
+  if (!f.image) return ElMessage.warning('请选择轮播图')
+  const res = await saveBanner({ id: editing.value?.id, ...f })
   if (res.code === 0) {
-    showSuccessToast('已保存')
+    ElMessage.success('已保存')
     editShow.value = false
     load()
   }
 }
 
 async function onToggle(b) {
-  const res = await saveBanner({ id: b.id, status: b.status === 1 ? 0 : 1 })
+  const enabling = b.status !== 1
+  const res = await saveBanner({ id: b.id, status: enabling ? 1 : 0 })
   if (res.code === 0) {
-    b.status = b.status === 1 ? 0 : 1
-    showSuccessToast(b.status === 1 ? '已上架' : '已下架')
+    b.status = enabling ? 1 : 0
+    ElMessage.success(enabling ? '已上架' : '已下架')
   }
 }
 </script>
 
 <template>
   <div class="adm-page bn">
-    <div class="adm-toolbar">
-      <div class="t-secondary" style="font-size: 12px">C 端首页轮播图（按 sort 升序播放）</div>
-    </div>
+    <el-skeleton v-if="loading" :rows="6" animated style="padding: 20px" />
 
-    <van-skeleton v-if="loading" title :row="4" style="padding: 16px" />
-    <div v-else class="adm-card" v-for="b in banners" :key="b.id">
-      <div class="bn__main">
-        <img class="bn__img" :src="b.image" :alt="b.title" />
-        <div class="adm-item__body">
-          <div class="adm-item__title">
-            {{ b.title }}
-            <van-tag v-if="b.status === 1" type="success" plain round size="medium">上架中</van-tag>
-            <van-tag v-else type="default" plain round size="medium">已下架</van-tag>
-          </div>
-          <div class="adm-item__desc">跳转：{{ b.link }}</div>
-          <div class="adm-item__desc">排序 #{{ b.sort }}</div>
+    <div v-else class="adm-card">
+      <div class="adm-card__title">
+        首页轮播图（{{ fmtNumber(banners.length) }} 张，按排序升序播放）
+        <div class="bn__extra">
+          <el-button type="primary" :icon="Plus" @click="openCreate">新增轮播</el-button>
         </div>
-        <van-switch :model-value="b.status === 1" size="22px" @click="onToggle(b)" />
       </div>
-      <div class="bn__ops">
-        <van-button size="small" round plain type="primary" @click="openEdit(b)">编辑</van-button>
-      </div>
+
+      <el-table :data="banners">
+        <el-table-column label="预览" width="150">
+          <template #default="{ row }">
+            <img class="bn__img" :src="row.image" :alt="row.title" />
+          </template>
+        </el-table-column>
+        <el-table-column label="标题" prop="title" min-width="160" show-overflow-tooltip />
+        <el-table-column label="跳转链接" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="t-secondary">{{ row.link || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="排序" width="80" align="center">
+          <template #default="{ row }">#{{ row.sort }}</template>
+        </el-table-column>
+        <el-table-column label="上架状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="plain" size="small">
+              {{ row.status === 1 ? '上架中' : '已下架' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="快捷启停" width="100" align="center">
+          <template #default="{ row }">
+            <el-switch :model-value="row.status === 1" @change="onToggle(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
-    <DetailSheet v-model:show="editShow" :title="editing ? '编辑轮播图' : '新增轮播图'">
-      <van-field v-model="form.title" label="标题" placeholder="轮播图标题" required />
-      <van-field v-model="form.link" label="跳转链接" placeholder="如 /collection/9001 或 /lottery" />
-      <van-field v-model="form.sort" type="digit" label="排序" placeholder="数字越小越靠前" />
-      <van-field name="image" label="轮播图">
-        <template #input>
+    <!-- 编辑弹窗 -->
+    <el-dialog v-model="editShow" :title="editing ? '编辑轮播图' : '新增轮播图'" width="520px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="标题" required>
+          <el-input v-model="form.title" placeholder="轮播图标题" maxlength="30" show-word-limit />
+        </el-form-item>
+        <el-form-item label="跳转链接">
+          <el-input v-model="form.link" placeholder="如 /collection/9001 或 /lottery" />
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="form.sort" :min="1" :max="99" />
+          <span class="t-tertiary" style="margin-left: 10px; font-size: 12px">数字越小越靠前</span>
+        </el-form-item>
+        <el-form-item label="轮播图">
           <div class="bn__opts">
             <img
               v-for="img in imageOptions"
@@ -91,55 +131,47 @@ async function onToggle(b) {
               @click="form.image = img"
             />
           </div>
-        </template>
-      </van-field>
-      <van-field name="status" label="上架状态">
-        <template #input>
-          <van-switch v-model="form.status" :active-value="1" :inactive-value="0" size="20px" />
-        </template>
-      </van-field>
-      <template #actions>
-        <van-button block round type="primary" @click="onSave">保存</van-button>
+        </el-form-item>
+        <el-form-item label="上架状态">
+          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editShow = false">取消</el-button>
+        <el-button type="primary" @click="onSave">保存</el-button>
       </template>
-    </DetailSheet>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped lang="scss">
-.bn__main {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+.bn__extra {
+  margin-left: auto;
 }
 
 .bn__img {
   width: 110px;
   height: 56px;
-  border-radius: $radius-md;
+  border-radius: 6px;
   object-fit: cover;
-  flex-shrink: 0;
   background: $color-surface;
-}
-
-.bn__ops {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
 }
 
 .bn__opts {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
 
   img {
-    width: 64px;
-    height: 40px;
+    width: 96px;
+    height: 54px;
     object-fit: cover;
     border-radius: 6px;
     border: 2px solid transparent;
     cursor: pointer;
+    transition: border-color 0.2s;
 
+    &:hover { border-color: $color-primary-light; }
     &.is-active { border-color: $color-primary; }
   }
 }

@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getDashboard } from '@/api'
 import StatCard from '@/components/StatCard.vue'
-import MiniChart from '@/components/MiniChart.vue'
+import EChart from '@/components/EChart.vue'
 import { fmtMoney, fmtNumber } from '@/utils/format'
 
 const router = useRouter()
@@ -20,11 +20,82 @@ const stat = computed(() => data.value ? {
 } : {})
 
 const todos = computed(() => data.value ? [
-  { label: '实名待审核', value: data.value.pendingRealname, to: '/user/realname', icon: 'shield-o', tone: 'gold' },
-  { label: '退款待审批', value: data.value.pendingRefunds, to: '/order/refunds', icon: 'refund-o', tone: 'primary' },
-  { label: '转赠待处理', value: data.value.pendingTransfers, to: '/transfer', icon: 'logistics', tone: 'blue' },
-  { label: '异常订单', value: data.value.abnormalOrders, to: '/order', icon: 'warning-o', tone: 'green' }
+  { label: '实名待审核', value: data.value.pendingRealname, to: '/user/realname', tone: 'gold' },
+  { label: '退款待审批', value: data.value.pendingRefunds, to: '/order/refunds', tone: 'primary' },
+  { label: '转赠待处理', value: data.value.pendingTransfers, to: '/transfer', tone: 'blue' },
+  { label: '异常订单', value: data.value.abnormalOrders, to: '/order', tone: 'green' }
 ] : [])
+
+// ---- ECharts 配置 ----
+const gmvOption = computed(() => ({
+  tooltip: { trigger: 'axis' },
+  grid: { left: 50, right: 16, top: 20, bottom: 24 },
+  xAxis: {
+    type: 'category',
+    data: data.value?.trend.map((t) => t.date) || [],
+    axisLine: { lineStyle: { color: '#ddd' } },
+    axisLabel: { color: '#999' }
+  },
+  yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f2f3f5' } }, axisLabel: { color: '#999' } },
+  series: [{
+    name: 'GMV',
+    type: 'line',
+    smooth: true,
+    data: data.value?.trend.map((t) => t.gmv) || [],
+    symbolSize: 6,
+    lineStyle: { width: 2.5, color: '#C00000' },
+    itemStyle: { color: '#C00000' },
+    areaStyle: {
+      color: {
+        type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+        colorStops: [
+          { offset: 0, color: 'rgba(192,0,0,0.22)' },
+          { offset: 1, color: 'rgba(192,0,0,0.02)' }
+        ]
+      }
+    }
+  }]
+}))
+
+const categoryOption = computed(() => ({
+  tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
+  legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { color: '#666', fontSize: 11 } },
+  series: [{
+    type: 'pie',
+    radius: ['48%', '72%'],
+    center: ['50%', '44%'],
+    avoidLabelOverlap: true,
+    label: { show: false },
+    data: (data.value?.categoryShare || []).map((s, i) => ({
+      ...s,
+      itemStyle: { color: ['#C00000', '#D4A574', '#1989fa', '#07c160', '#ff976a'][i % 5] }
+    }))
+  }]
+}))
+
+const orderOption = computed(() => ({
+  tooltip: { trigger: 'axis' },
+  grid: { left: 40, right: 16, top: 20, bottom: 24 },
+  xAxis: {
+    type: 'category',
+    data: data.value?.trend.map((t) => t.date) || [],
+    axisLine: { lineStyle: { color: '#ddd' } },
+    axisLabel: { color: '#999' }
+  },
+  yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f2f3f5' } }, axisLabel: { color: '#999' } },
+  series: [{
+    name: '订单量',
+    type: 'bar',
+    barWidth: 16,
+    data: data.value?.trend.map((t) => t.orders) || [],
+    itemStyle: {
+      borderRadius: [4, 4, 0, 0],
+      color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [
+        { offset: 0, color: '#D4A574' }, { offset: 1, color: 'rgba(212,165,116,0.45)' }
+      ] }
+    }
+  }]
+}))
 
 onMounted(async () => {
   const res = await getDashboard()
@@ -35,18 +106,20 @@ onMounted(async () => {
 
 <template>
   <div class="adm-page dash">
-    <van-skeleton v-if="loading" title :row="6" style="padding: 16px" />
+    <template v-if="loading">
+      <el-skeleton :rows="6" animated style="padding: 20px" />
+    </template>
     <template v-else-if="data">
       <!-- 核心指标 -->
-      <div class="adm-grid adm-grid--desktop-4 dash__stats">
-        <StatCard icon="gold-coin-o" label="今日 GMV" :value="fmtMoney(data.todayGmv)" unit="元" :trend="stat.gmvTrend" tone="primary" />
-        <StatCard icon="orders-o" label="今日订单" :value="fmtNumber(data.todayOrders)" unit="单" :trend="stat.orderTrend" tone="gold" />
-        <StatCard icon="user-o" label="今日新增用户" :value="fmtNumber(data.todayNewUsers)" unit="人" :trend="stat.userTrend" tone="blue" />
-        <StatCard icon="friends-o" label="累计用户" :value="fmtNumber(data.totalUsers)" unit="人" tone="green" />
+      <div class="adm-grid">
+        <StatCard icon="Coin" label="今日 GMV" :value="fmtMoney(data.todayGmv)" unit="元" :trend="stat.gmvTrend" tone="primary" />
+        <StatCard icon="List" label="今日订单" :value="fmtNumber(data.todayOrders)" unit="单" :trend="stat.orderTrend" tone="gold" />
+        <StatCard icon="User" label="今日新增用户" :value="fmtNumber(data.todayNewUsers)" unit="人" :trend="stat.userTrend" tone="blue" />
+        <StatCard icon="UserFilled" label="累计用户" :value="fmtNumber(data.totalUsers)" unit="人" tone="green" />
       </div>
 
       <!-- 待办事项 -->
-      <div class="adm-card dash__todos">
+      <div class="adm-card">
         <div class="adm-card__title">待办事项</div>
         <div class="dash__todo-grid">
           <div
@@ -56,57 +129,45 @@ onMounted(async () => {
             :class="`is-${t.tone}`"
             @click="router.push(t.to)"
           >
-            <van-icon :name="t.icon" size="20" />
-            <div class="dash__todo-num price">{{ t.value }}</div>
-            <div class="dash__todo-label">{{ t.label }}</div>
+            <div class="dash__todo-num">{{ t.value }}</div>
+            <div class="dash__todo-label">{{ t.label }}<el-icon class="dash__todo-arrow"><ArrowRight /></el-icon></div>
           </div>
         </div>
       </div>
 
-      <div class="adm-split">
+      <div class="dash__split">
         <div class="adm-card">
-          <div class="adm-card__title">近 7 日 GMV 趋势<span class="t-tertiary" style="font-size:12px;font-weight:400">（元）</span></div>
-          <MiniChart
-            type="line"
-            :labels="data.trend.map(t => t.date)"
-            :values="data.trend.map(t => t.gmv)"
-            :height="160"
-          />
+          <div class="adm-card__title">近 7 日 GMV 趋势（元）</div>
+          <EChart :option="gmvOption" :height="280" />
         </div>
         <div class="adm-card">
           <div class="adm-card__title">藏品分类销售占比</div>
-          <MiniChart type="donut" :series="data.categoryShare" :height="160" />
+          <EChart :option="categoryOption" :height="280" />
         </div>
       </div>
 
-      <div class="adm-split">
+      <div class="dash__split">
         <div class="adm-card">
           <div class="adm-card__title">近 7 日订单量</div>
-          <MiniChart
-            type="bar"
-            :labels="data.trend.map(t => t.date)"
-            :values="data.trend.map(t => t.orders)"
-            color="#D4A574"
-            :height="160"
-          />
+          <EChart :option="orderOption" :height="280" />
         </div>
         <div class="adm-card">
           <div class="adm-card__title">热销榜 TOP5</div>
-          <div v-for="(t, i) in data.topCollectibles" :key="t.name" class="adm-item">
-            <div class="dash__rank" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</div>
-            <img class="adm-item__thumb" :src="t.cover" :alt="t.name" />
-            <div class="adm-item__body">
-              <div class="adm-item__title">{{ t.name }}</div>
-              <div class="adm-item__desc">已售 {{ t.sold }} 份</div>
-            </div>
-            <div class="adm-item__side">
-              <div class="price" style="font-size:14px">¥{{ fmtNumber(t.amount) }}</div>
+          <div class="dash__rank-list">
+            <div v-for="(t, i) in data.topCollectibles" :key="t.name" class="dash__rank-item">
+              <div class="dash__rank-no" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</div>
+              <img class="adm-thumb" :src="t.cover" :alt="t.name" />
+              <div class="adm-cell__body">
+                <div class="adm-cell__title">{{ t.name }}</div>
+                <div class="adm-cell__desc">已售 {{ fmtNumber(t.sold) }} 份</div>
+              </div>
+              <div class="dash__rank-amount price">¥{{ fmtNumber(t.amount) }}</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 累计数据 -->
+      <!-- 平台累计 -->
       <div class="adm-card">
         <div class="adm-card__title">平台累计</div>
         <div class="dash__total">
@@ -132,50 +193,89 @@ onMounted(async () => {
 .dash__todo-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 12px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .dash__todo {
-  border-radius: $radius-md;
-  padding: 12px 6px;
+  border-radius: 8px;
+  padding: 16px;
   text-align: center;
   cursor: pointer;
   transition: transform 0.15s ease;
 
-  &:active { transform: scale(0.96); }
+  &:hover { transform: translateY(-2px); }
 
   &.is-primary { background: rgba(192, 0, 0, 0.06); color: $color-primary; }
-  &.is-gold { background: rgba(212, 165, 116, 0.12); color: $color-gold-dark; }
-  &.is-blue { background: rgba(25, 137, 250, 0.06); color: var(--color-blue); }
-  &.is-green { background: rgba(7, 193, 96, 0.06); color: var(--color-success); }
+  &.is-gold { background: rgba(212, 165, 116, 0.14); color: $color-gold-dark; }
+  &.is-blue { background: rgba(25, 137, 250, 0.07); color: var(--color-blue); }
+  &.is-green { background: rgba(7, 193, 96, 0.07); color: var(--color-success); }
 }
 
 .dash__todo-num {
-  font-size: 20px;
-  margin-top: 4px;
+  font-size: 26px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', 'DIN Condensed', Arial, sans-serif;
 }
 
 .dash__todo-label {
-  font-size: 11px;
-  color: $color-text-secondary;
-  margin-top: 2px;
+  font-size: 12px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
 }
 
-.dash__rank {
-  width: 20px;
-  height: 20px;
+.dash__todo-arrow { font-size: 11px; }
+
+.dash__split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+
+  @media (max-width: 992px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dash__rank-list { display: flex; flex-direction: column; }
+
+.dash__rank-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid $color-border;
+
+  &:last-child { border-bottom: none; }
+}
+
+.dash__rank-no {
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   background: $color-surface;
   color: $color-text-tertiary;
   font-size: 11px;
   font-weight: 700;
-  @include flex-center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 
   &.is-top {
     background: var(--color-primary-bg);
     color: $color-primary;
   }
+}
+
+.dash__rank-amount {
+  font-size: 14px;
+  margin-left: auto;
 }
 
 .dash__total {
@@ -185,15 +285,10 @@ onMounted(async () => {
   text-align: center;
 }
 
-.dash__total-value { font-size: 18px; }
-
+.dash__total-value { font-size: 22px; }
 .dash__total-label {
-  font-size: 11px;
+  font-size: 12px;
   color: $color-text-tertiary;
-  margin-top: 3px;
-}
-
-@media (max-width: 480px) {
-  .dash__todo-grid { grid-template-columns: repeat(2, 1fr); }
+  margin-top: 4px;
 }
 </style>

@@ -11,9 +11,9 @@ const router = useRouter()
       <div class="nf__code calligraphy">肆零肆</div>
       <div class="nf__title">页面不存在</div>
       <div class="nf__desc">您访问的页面已下架或地址有误</div>
-      <van-button round type="primary" block style="margin-top: 24px" @click="router.replace('/dashboard')">
+      <el-button type="primary" round style="margin-top: 24px; width: 100%" @click="router.replace('/dashboard')">
         返回数据看板
-      </van-button>
+      </el-button>
     </div>
   </div>
 </template>

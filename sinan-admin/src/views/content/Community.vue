@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { showSuccessToast } from 'vant'
+import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { getCommunityGroups, saveCommunityGroup } from '@/api'
-import DetailSheet from '@/components/DetailSheet.vue'
 import { fmtNumber } from '@/utils/format'
 
 const loading = ref(true)
@@ -23,6 +23,12 @@ async function load() {
   loading.value = false
 }
 
+function openCreate() {
+  editing.value = null
+  form.value = { name: '', description: '', icon: iconOptions[0], qrCode: '', members: 0, isActive: 1, sort: groups.value.length + 1 }
+  editShow.value = true
+}
+
 function openEdit(g) {
   editing.value = g
   form.value = { ...g }
@@ -30,50 +36,85 @@ function openEdit(g) {
 }
 
 async function onSave() {
-  if (!form.value.name.trim()) return
+  if (!form.value.name.trim()) return ElMessage.warning('请输入社群名称')
   const res = await saveCommunityGroup({ id: editing.value?.id, ...form.value })
   if (res.code === 0) {
-    showSuccessToast('已保存')
+    ElMessage.success('已保存')
     editShow.value = false
     load()
+  }
+}
+
+async function onToggle(g) {
+  const enabling = g.isActive !== 1
+  const res = await saveCommunityGroup({ id: g.id, isActive: enabling ? 1 : 0 })
+  if (res.code === 0) {
+    g.isActive = enabling ? 1 : 0
+    ElMessage.success(enabling ? '已展示' : '已隐藏')
   }
 }
 </script>
 
 <template>
   <div class="adm-page cm">
-    <div class="adm-toolbar">
-      <div class="t-secondary" style="font-size: 12px">C 端「社区」页展示的官方社群入口</div>
-    </div>
+    <el-skeleton v-if="loading" :rows="6" animated style="padding: 20px" />
 
-    <van-skeleton v-if="loading" title :row="4" style="padding: 16px" />
-    <div v-else v-for="g in groups" :key="g.id" class="adm-card">
-      <div class="adm-item" style="padding: 0" @click="openEdit(g)">
-        <img class="cm__icon" :src="g.icon" :alt="g.name" />
-        <div class="adm-item__body">
-          <div class="adm-item__title">
-            {{ g.name }}
-            <van-tag v-if="g.isActive === 1" type="success" plain round size="medium">展示中</van-tag>
-            <van-tag v-else type="default" plain round size="medium">已隐藏</van-tag>
-          </div>
-          <div class="adm-item__desc">{{ g.description }}</div>
-          <div class="adm-item__desc">{{ fmtNumber(g.members) }} 成员 · 排序 #{{ g.sort }}</div>
+    <div v-else class="adm-card">
+      <div class="adm-card__title">
+        官方社群入口（C 端「社区」页展示）
+        <div class="cm__extra">
+          <el-button type="primary" :icon="Plus" @click="openCreate">新增社群</el-button>
         </div>
-        <van-icon name="arrow" color="#999" />
       </div>
-      <div class="cm__qr" v-if="g.qrCode">
-        <img :src="g.qrCode" alt="群二维码" />
-        <span class="t-tertiary" style="font-size: 11px">群二维码</span>
-      </div>
+
+      <el-table :data="groups">
+        <el-table-column label="社群" min-width="220">
+          <template #default="{ row }">
+            <div class="cm__cell">
+              <img class="cm__icon" :src="row.icon" :alt="row.name" />
+              <div>
+                <div class="cm__name">{{ row.name }}</div>
+                <div class="t-tertiary" style="font-size: 12px">{{ row.description }}</div>
+              </div>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="成员数" width="100" align="right">
+          <template #default="{ row }">{{ fmtNumber(row.members) }}</template>
+        </el-table-column>
+        <el-table-column label="排序" width="80" align="center">
+          <template #default="{ row }">#{{ row.sort }}</template>
+        </el-table-column>
+        <el-table-column label="展示状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.isActive === 1 ? 'success' : 'info'" effect="plain" size="small">
+              {{ row.isActive === 1 ? '展示中' : '已隐藏' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="快捷启停" width="100" align="center">
+          <template #default="{ row }">
+            <el-switch :model-value="row.isActive === 1" @change="onToggle(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
-    <DetailSheet v-model:show="editShow" :title="editing ? '编辑社群' : '新增社群'">
-      <van-field v-model="form.name" label="社群名称" placeholder="如：司南官方社群" required />
-      <van-field v-model="form.description" label="社群描述" placeholder="C 端展示的一句话简介" />
-      <van-field v-model="form.members" type="digit" label="成员数" placeholder="展示用成员数量" />
-      <van-field v-model="form.sort" type="digit" label="排序" placeholder="数字越小越靠前" />
-      <van-field name="icon" label="社群图标">
-        <template #input>
+    <!-- 编辑弹窗 -->
+    <el-dialog v-model="editShow" :title="editing ? '编辑社群' : '新增社群'" width="520px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="社群名称" required>
+          <el-input v-model="form.name" placeholder="如：司南官方社群" maxlength="20" show-word-limit />
+        </el-form-item>
+        <el-form-item label="社群描述">
+          <el-input v-model="form.description" type="textarea" :rows="2" maxlength="60" show-word-limit placeholder="C 端展示的一句话简介" />
+        </el-form-item>
+        <el-form-item label="社群图标">
           <div class="cm__icons">
             <img
               v-for="i in iconOptions"
@@ -83,65 +124,80 @@ async function onSave() {
               @click="form.icon = i"
             />
           </div>
-        </template>
-      </van-field>
-      <van-field
-        v-model="form.qrCode"
-        label="二维码"
-        placeholder="二维码图片地址，留空则不展示"
-      />
-      <van-field name="isActive" label="展示状态">
-        <template #input>
-          <van-switch v-model="form.isActive" :active-value="1" :inactive-value="0" size="20px" />
-        </template>
-      </van-field>
-      <template #actions>
-        <van-button block round type="primary" @click="onSave">保存</van-button>
+        </el-form-item>
+        <el-form-item label="群二维码">
+          <el-input v-model="form.qrCode" placeholder="二维码图片地址（可留空）" />
+          <img v-if="form.qrCode" class="cm__qr-preview" :src="form.qrCode" alt="群二维码" />
+        </el-form-item>
+        <el-form-item label="成员数">
+          <el-input-number v-model="form.members" :min="0" />
+          <span class="t-tertiary" style="margin-left: 10px; font-size: 12px">展示用数量</span>
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="form.sort" :min="1" :max="99" />
+        </el-form-item>
+        <el-form-item label="展示状态">
+          <el-switch v-model="form.isActive" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editShow = false">取消</el-button>
+        <el-button type="primary" @click="onSave">保存</el-button>
       </template>
-    </DetailSheet>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped lang="scss">
-.cm__icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  object-fit: cover;
-  flex-shrink: 0;
-  background: $color-surface;
+.cm__extra {
+  margin-left: auto;
 }
 
-.cm__qr {
+.cm__cell {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed $color-border;
+  gap: 10px;
+}
 
-  img {
-    width: 52px;
-    height: 52px;
-    border-radius: 8px;
-    border: 1px solid $color-border;
-    object-fit: cover;
-  }
+.cm__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: $color-surface;
+  flex-shrink: 0;
+}
+
+.cm__name {
+  font-weight: 600;
+  color: $color-text-primary;
 }
 
 .cm__icons {
   display: flex;
   gap: 10px;
+  width: 100%;
 
   img {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    object-fit: cover;
     border: 2px solid transparent;
     cursor: pointer;
-    object-fit: cover;
+    transition: border-color 0.2s;
 
+    &:hover { border-color: $color-primary-light; }
     &.is-active { border-color: $color-primary; }
   }
+}
+
+.cm__qr-preview {
+  margin-top: 8px;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  border: 1px solid $color-border;
+  object-fit: cover;
 }
 </style>

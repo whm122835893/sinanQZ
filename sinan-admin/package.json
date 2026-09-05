@@ -10,7 +10,12 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.7.2",
+    "dayjs": "^1.11.23",
+    "decimal.js": "^10.6.0",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.14.5",
     "pinia": "^2.1.7",
     "vant": "^4.9.0",
     "vue": "^3.4.27",

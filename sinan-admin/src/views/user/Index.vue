@@ -1,16 +1,13 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { showSuccessToast, showConfirmDialog } from 'vant'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUserList, getUserDetail, freezeUser, resetTradePwd } from '@/api'
-import AdminListPage from '@/components/AdminListPage.vue'
-import DetailSheet from '@/components/DetailSheet.vue'
+import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { USER_STATUS, REALNAME_STATUS } from '@/utils/maps'
-import { fmtMoney, fmtDateTime } from '@/utils/format'
+import { fmtMoney } from '@/utils/format'
 
-const router = useRouter()
-const sheetShow = ref(false)
+const drawerShow = ref(false)
 const detail = ref(null)
 
 const filters = [
@@ -37,71 +34,97 @@ const filters = [
 async function openDetail(u) {
   const res = await getUserDetail(u.id)
   detail.value = res.data
-  sheetShow.value = true
+  drawerShow.value = true
 }
 
 async function onFreeze() {
   const u = detail.value
   const freezing = u.status === 'normal'
-  await showConfirmDialog({
-    title: freezing ? '冻结账号' : '解冻账号',
-    message: freezing
+  await ElMessageBox.confirm(
+    freezing
       ? `确认冻结「${u.nickname}」？冻结后该用户无法登录与交易。`
-      : `确认解冻「${u.nickname}」？`
-  })
+      : `确认解冻「${u.nickname}」？`,
+    freezing ? '冻结账号' : '解冻账号',
+    { type: 'warning', confirmButtonText: freezing ? '确认冻结' : '确认解冻' }
+  )
   const res = await freezeUser(u.id)
   if (res.code === 0) {
     u.status = res.data
-    showSuccessToast(res.data === 'normal' ? '已解冻' : '已冻结')
+    ElMessage.success(res.data === 'normal' ? '已解冻' : '已冻结')
   }
 }
 
 async function onResetPwd() {
-  await showConfirmDialog({
-    title: '重置交易密码',
-    message: `确认重置「${detail.value.nickname}」的交易密码？重置后用户可重新设置。`
-  })
+  await ElMessageBox.confirm(
+    `确认重置「${detail.value.nickname}」的交易密码？重置后用户可重新设置。`,
+    '重置交易密码',
+    { type: 'warning' }
+  )
   const res = await resetTradePwd(detail.value.id)
-  if (res.code === 0) showSuccessToast('已重置')
+  if (res.code === 0) ElMessage.success('已重置')
 }
 </script>
 
 <template>
   <div class="adm-page">
-    <AdminListPage :fetch="getUserList" :filters="filters" search-placeholder="搜索昵称 / 手机号">
+    <AdminTablePage :fetch="getUserList" :filters="filters" search-placeholder="搜索昵称 / 手机号 / UID">
       <template #default="{ items }">
-        <div class="adm-card" style="padding: 0">
-          <div
-            v-for="u in items"
-            :key="u.id"
-            class="adm-item"
-            style="padding: 12px 14px"
-            @click="openDetail(u)"
-          >
-            <img class="user__avatar" :src="u.avatar" :alt="u.nickname" />
-            <div class="adm-item__body">
-              <div class="adm-item__title">
-                {{ u.nickname }}
-                <StatusTag :value="u.status" :map="USER_STATUS" />
-              </div>
-              <div class="adm-item__desc">{{ u.phone }} · 注册于 {{ u.registerTime.slice(0, 10) }}</div>
-              <div class="adm-item__desc">
-                余额 <span class="price">{{ fmtMoney(u.balance) }}</span> · {{ u.collectibleCount }} 件藏品 · {{ u.orderCount }} 笔订单
+        <el-table-column label="用户" min-width="200" fixed="left">
+          <template #default="{ row }">
+            <div class="u-cell" @click="openDetail(row)">
+              <img class="u-avatar" :src="row.avatar" :alt="row.nickname" />
+              <div>
+                <div class="u-name">{{ row.nickname }}</div>
+                <div class="u-sub">UID {{ row.id }} · {{ row.phone }}</div>
               </div>
             </div>
-            <div class="adm-item__side">
-              <StatusTag :value="u.realnameStatus" :map="REALNAME_STATUS" />
-              <div class="t-tertiary" style="font-size: 11px; margin-top: 6px">{{ u.lastLoginTime }}</div>
-            </div>
-          </div>
-        </div>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <StatusTag :value="row.status" :map="USER_STATUS" />
+          </template>
+        </el-table-column>
+
+        <el-table-column label="实名" width="90">
+          <template #default="{ row }">
+            <StatusTag :value="row.realnameStatus" :map="REALNAME_STATUS" />
+          </template>
+        </el-table-column>
+
+        <el-table-column label="余额（元）" width="110" align="right">
+          <template #default="{ row }">
+            <span class="price">{{ fmtMoney(row.balance) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="藏品" width="70" align="center">
+          <template #default="{ row }">{{ row.collectibleCount }}</template>
+        </el-table-column>
+
+        <el-table-column label="订单" width="70" align="center">
+          <template #default="{ row }">{{ row.orderCount }}</template>
+        </el-table-column>
+
+        <el-table-column label="注册时间" width="110">
+          <template #default="{ row }">{{ row.registerTime.slice(0, 10) }}</template>
+        </el-table-column>
+
+        <el-table-column label="最近登录" width="150" prop="lastLoginTime" />
+
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
+          </template>
+        </el-table-column>
       </template>
-    </AdminListPage>
+    </AdminTablePage>
 
     <!-- 用户详情抽屉 -->
-    <DetailSheet v-model:show="sheetShow" :title="detail?.nickname">
+    <el-drawer v-model="drawerShow" :title="detail?.nickname || '用户详情'" size="420px">
       <template v-if="detail">
-        <div class="adm-card" style="margin-bottom: 10px">
+        <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
           <div class="adm-card__title">基础信息</div>
           <div class="adm-kv"><span class="k">用户 ID</span><span class="v">{{ detail.id }}</span></div>
           <div class="adm-kv"><span class="k">手机号</span><span class="v">{{ detail.phone }}</span></div>
@@ -112,7 +135,7 @@ async function onResetPwd() {
           <div class="adm-kv"><span class="k">账号状态</span><span class="v"><StatusTag :value="detail.status" :map="USER_STATUS" /></span></div>
         </div>
 
-        <div class="adm-card" style="margin-bottom: 10px">
+        <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
           <div class="adm-card__title">资产概况</div>
           <div class="user__assets">
             <div class="user__asset">
@@ -130,16 +153,16 @@ async function onResetPwd() {
           </div>
         </div>
 
-        <div class="adm-card" style="margin-bottom: 10px">
+        <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
           <div class="adm-card__title">最近订单</div>
           <div v-for="o in detail.orders" :key="o.id" class="adm-kv">
             <span class="k" style="max-width: 60%">{{ o.collectibleName }} ×{{ o.quantity }}</span>
             <span class="v">¥{{ o.amount }} · {{ o.createTime.slice(5, 16) }}</span>
           </div>
-          <van-empty v-if="!detail.orders.length" description="暂无订单" image-size="60" />
+          <el-empty v-if="!detail.orders.length" description="暂无订单" :image-size="60" />
         </div>
 
-        <div class="adm-card">
+        <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
           <div class="adm-card__title">最近钱包流水</div>
           <div v-for="t in detail.transfers" :key="t.id" class="adm-kv">
             <span class="k" style="max-width: 60%">{{ t.title }}</span>
@@ -147,29 +170,39 @@ async function onResetPwd() {
               {{ t.direction > 0 ? '+' : '-' }}{{ t.amount }}
             </span>
           </div>
-          <van-empty v-if="!detail.transfers.length" description="暂无流水" image-size="60" />
+          <el-empty v-if="!detail.transfers.length" description="暂无流水" :image-size="60" />
+        </div>
+
+        <div class="user__actions">
+          <el-button type="warning" plain @click="onResetPwd">重置交易密码</el-button>
+          <el-button :type="detail.status === 'normal' ? 'danger' : 'primary'" @click="onFreeze">
+            {{ detail.status === 'normal' ? '冻结账号' : '解冻账号' }}
+          </el-button>
         </div>
       </template>
-
-      <template #actions>
-        <van-button block round plain type="warning" @click="onResetPwd">重置交易密码</van-button>
-        <van-button block round :type="detail?.status === 'normal' ? 'danger' : 'primary'" @click="onFreeze">
-          {{ detail?.status === 'normal' ? '冻结账号' : '解冻账号' }}
-        </van-button>
-      </template>
-    </DetailSheet>
+    </el-drawer>
   </div>
 </template>
 
 <style scoped lang="scss">
-.user__avatar {
-  width: 42px;
-  height: 42px;
+.u-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.u-avatar {
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
   border: 1px solid $color-border;
 }
+
+.u-name { font-size: 13px; font-weight: 600; color: $color-text-primary; }
+.u-sub { font-size: 12px; color: $color-text-tertiary; margin-top: 2px; }
 
 .user__assets {
   display: grid;
@@ -180,4 +213,11 @@ async function onResetPwd() {
 
 .user__asset .price { font-size: 17px; }
 .user__asset .t-tertiary { font-size: 11px; margin-top: 3px; }
+
+.user__actions {
+  display: flex;
+  gap: 10px;
+
+  .el-button { flex: 1; }
+}
 </style>

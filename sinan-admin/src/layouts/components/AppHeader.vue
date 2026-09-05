@@ -1,149 +1,208 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showConfirmDialog, showToast } from 'vant'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAppStore } from '@/stores/app'
 import { useAdminStore } from '@/stores/admin'
+import { logout } from '@/api'
 import { menuGroups } from '@/router/menu'
 
+// ============================================================
+// 顶部 Header：折叠按钮 + 面包屑 + 全局搜索 + 全屏 + 用户下拉
+// ============================================================
+
+const app = useAppStore()
+const admin = useAdminStore()
 const route = useRoute()
 const router = useRouter()
-const admin = useAdminStore()
-const showUser = ref(false)
 
-const crumb = computed(() => {
+// ---- 面包屑（顶级分组 / 当前页）----
+const breadcrumb = computed(() => {
   for (const g of menuGroups) {
-    const hit = g.items.find((i) => route.path === i.path || route.path.startsWith(i.path + '/'))
-    if (hit) return { group: g.group, title: route.meta.title || hit.title }
+    const hit = g.items.find((i) => i.path === route.path)
+    if (hit) return [{ title: g.group }, { title: hit.title }]
   }
-  return { group: '', title: route.meta.title || '' }
+  return [{ title: '控制台' }]
 })
 
-const displayName = computed(() => admin.displayName)
-const roleLabel = computed(() => admin.roleLabel)
+// ---- 全局搜索（菜单跳转）----
+const searchKey = ref('')
+const searchOptions = computed(() =>
+  menuGroups.flatMap((g) =>
+    g.items.map((i) => ({
+      value: i.path,
+      label: `${g.group} / ${i.title}`
+    }))
+  )
+)
+function onSearch(path) {
+  if (path) router.push(path)
+  searchKey.value = ''
+}
 
+// ---- 全屏 ----
+const isFullscreen = ref(false)
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen()
+    isFullscreen.value = true
+  } else {
+    document.exitFullscreen()
+    isFullscreen.value = false
+  }
+}
+
+// ---- 退出登录 ----
 async function onLogout() {
-  try {
-    await showConfirmDialog({ title: '提示', message: '确定退出登录吗？' })
-    admin.clearSession()
-    showToast('已退出登录')
-    router.replace('/login')
-  } catch { /* 取消 */ }
+  await ElMessageBox.confirm('确认退出当前账号？', '退出登录', { type: 'warning' })
+  await logout()
+  admin.clearSession()
+  ElMessage.success('已退出登录')
+  router.replace('/login')
 }
 </script>
 
 <template>
-  <header class="header">
-    <div class="header__crumb">
-      <span class="g">{{ crumb.group }}</span>
-      <van-icon name="arrow" size="12" color="#999" />
-      <span class="t">{{ crumb.title }}</span>
+  <header class="app-header">
+    <!-- 左：折叠 / 抽屉触发 + 面包屑 -->
+    <div class="app-header__left">
+      <el-icon class="app-header__fold" :size="18" @click="app.isMobile ? app.toggleDrawer() : app.toggleSidebar()">
+        <Fold v-if="!app.sidebarCollapsed && !app.isMobile" />
+        <Expand v-else />
+      </el-icon>
+      <el-breadcrumb separator="/">
+        <el-breadcrumb-item v-for="(b, i) in breadcrumb" :key="i">{{ b.title }}</el-breadcrumb-item>
+      </el-breadcrumb>
     </div>
 
-    <div class="header__right">
-      <div class="header__env">
-        <van-tag plain color="#D4A574">演示数据 · 未联调</van-tag>
-      </div>
-      <div class="header__user" @click="showUser = !showUser">
-        <img class="avatar" :src="admin.info?.avatar || '/images/platform-logo.png'" alt="avatar" />
-        <span class="name">{{ displayName }}</span>
-        <van-icon name="arrow-down" size="12" color="#999" />
-      </div>
+    <!-- 右：搜索 + 全屏 + 用户 -->
+    <div class="app-header__right">
+      <el-select
+        v-model="searchKey"
+        filterable
+        placeholder="搜索菜单..."
+        class="app-header__search"
+        @change="onSearch"
+      >
+        <el-option v-for="o in searchOptions" :key="o.value" :label="o.label" :value="o.value" />
+      </el-select>
 
-      <transition name="fade">
-        <div v-if="showUser" class="header__dropdown" @click.stop>
-          <div class="header__dropdown-head">
-            <div class="row1">{{ displayName }}</div>
-            <div class="row2">{{ roleLabel }} · {{ admin.info?.username }}</div>
-          </div>
-          <div class="header__dropdown-item" @click="$router.push('/mine')">
-            <van-icon name="user-o" size="15" /> 个人中心
-          </div>
-          <div class="header__dropdown-item is-danger" @click="onLogout">
-            <van-icon name="replay" size="15" /> 退出登录
+      <el-tooltip content="全屏切换" placement="bottom">
+        <el-icon class="app-header__action" :size="17" @click="toggleFullscreen">
+          <FullScreen />
+        </el-icon>
+      </el-tooltip>
+
+      <el-dropdown trigger="click">
+        <div class="app-header__user">
+          <img class="app-header__avatar" :src="admin.info?.avatar || '/images/avatar-new.png'" alt="avatar" />
+          <div class="app-header__user-info">
+            <div class="app-header__name">{{ admin.displayName }}</div>
+            <div class="app-header__role">{{ admin.roleLabel }}</div>
           </div>
         </div>
-      </transition>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item disabled>
+              <el-icon><User /></el-icon>{{ admin.info?.username || 'admin' }}
+            </el-dropdown-item>
+            <el-dropdown-item divided @click="onLogout">
+              <el-icon><SwitchButton /></el-icon>退出登录
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
   </header>
 </template>
 
 <style scoped lang="scss">
-.header {
-  position: sticky;
-  top: 0;
-  z-index: 90;
-  height: $header-height;
+.app-header {
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid $color-border;
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  flex-shrink: 0;
 }
 
-.header__crumb {
+.app-header__left {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
-
-  .g { color: $color-text-tertiary; }
-  .t { color: $color-text-primary; font-weight: 600; font-size: 14px; }
+  gap: 14px;
+  min-width: 0;
 }
 
-.header__right {
+.app-header__fold {
+  cursor: pointer;
+  color: $color-text-secondary;
+  flex-shrink: 0;
+
+  &:hover { color: $color-primary; }
+}
+
+.app-header__right {
   display: flex;
   align-items: center;
   gap: 16px;
-  position: relative;
 }
 
-.header__user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
+.app-header__search {
+  width: 180px;
 
-  .avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1.5px solid rgba(192, 0, 0, 0.2);
+  @media (max-width: 768px) {
+    display: none;
   }
-  .name { font-size: 13px; color: $color-text-primary; }
 }
 
-.header__dropdown {
-  position: absolute;
-  top: 42px;
-  right: 0;
-  width: 200px;
-  background: #fff;
-  border-radius: $radius-lg;
-  box-shadow: 0 8px 28px rgba(26, 26, 26, 0.12);
-  overflow: hidden;
+.app-header__action {
+  cursor: pointer;
+  color: $color-text-secondary;
+
+  &:hover { color: $color-primary; }
 }
 
-.header__dropdown-head {
-  padding: 12px 14px;
-  background: linear-gradient(135deg, rgba(192, 0, 0, 0.06), rgba(212, 165, 116, 0.08));
-
-  .row1 { font-size: 14px; font-weight: 600; }
-  .row2 { font-size: 11px; color: $color-text-tertiary; margin-top: 2px; }
-}
-
-.header__dropdown-item {
+.app-header__user {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 14px;
-  font-size: 13px;
   cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
 
-  &:hover { background: $color-surface; }
-  &.is-danger { color: $color-primary; }
+  &:hover { background: $color-bg; }
+}
+
+.app-header__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(192, 0, 0, 0.25);
+}
+
+.app-header__user-info {
+  line-height: 1.25;
+
+  @media (max-width: 768px) {
+    display: none;
+  }
+}
+
+.app-header__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: $color-text-primary;
+}
+
+.app-header__role {
+  font-size: 11px;
+  color: $color-text-tertiary;
 }
 </style>

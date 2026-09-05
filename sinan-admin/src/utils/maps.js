@@ -36,13 +36,15 @@ export const RESALE_STATUS = {
   onsale:   { label: '挂单中', type: 'primary' },
   frozen:   { label: '已冻结', type: 'warning' },
   sold:     { label: '已成交', type: 'success' },
-  cancelled:{ label: '已取消', type: 'default' }
+  cancelled:{ label: '已取消', type: 'default' },
+  system_delisted: { label: '系统下架', type: 'danger' }
 }
 
 export const TRANSFER_STATUS = {
   pending:   { label: '待接收', type: 'warning' },
   completed: { label: '已完成', type: 'success' },
-  rejected:  { label: '已拒绝', type: 'default' }
+  rejected:  { label: '已拒绝', type: 'default' },
+  revoked:   { label: '已撤销', type: 'danger' }
 }
 
 export const REFUND_STATUS = {
@@ -85,9 +87,117 @@ export const QUOTA_TYPES = {
   7: '其他'
 }
 
-// 角色映射
+// 订单来源（发售 / 市场 / 优先购 / 资格购 / 盲盒）
+export const ORDER_SOURCE = {
+  release:     { label: '公售', type: 'primary' },
+  priority:    { label: '优先购', type: 'warning' },
+  eligibility: { label: '资格购', type: 'success' },
+  market:      { label: '市场', type: 'info' },
+  blindbox:    { label: '盲盒', type: 'danger' }
+}
+
+// 寄售价格管控模式
+export const RESALE_PRICE_MODE = {
+  limit: { label: '限价模式', type: 'warning' },
+  free:  { label: '不限价', type: 'info' }
+}
+
+// 风控告警
+export const RISK_LEVEL = {
+  high:   { label: '高风险', type: 'danger' },
+  medium: { label: '中风险', type: 'warning' },
+  low:    { label: '低风险', type: 'info' }
+}
+
+export const RISK_STATUS = {
+  pending:    { label: '待处理', type: 'warning' },
+  processing: { label: '处理中', type: 'primary' },
+  resolved:   { label: '已处理', type: 'success' }
+}
+
+export const RISK_TYPE = {
+  abnormal_trade:    '异常交易',
+  bulk_refund:       '批量退款',
+  bulk_register:     '批量注册',
+  price_manipulation: '价格操纵'
+}
+
+// 客服工单
+export const TICKET_STATUS = {
+  pending:    { label: '待处理', type: 'warning' },
+  processing: { label: '处理中', type: 'primary' },
+  closed:     { label: '已关闭', type: 'success' }
+}
+
+export const TICKET_PRIORITY = {
+  urgent: { label: '紧急', type: 'danger' },
+  high:   { label: '高', type: 'warning' },
+  normal: { label: '普通', type: 'info' }
+}
+
+export const TICKET_TYPE = {
+  order: '订单问题',
+  refund: '退款问题',
+  account: '账号问题',
+  other: '其他'
+}
+
+// 区块链
+export const CHAIN_TX_TYPE = {
+  Mint: { label: '铸造', type: 'primary' },
+  Transfer: { label: '转账', type: 'warning' },
+  Sale: { label: '交易', type: 'success' }
+}
+
+export const CHAIN_TX_STATUS = {
+  success: { label: '成功', type: 'success' },
+  pending: { label: '上链中', type: 'warning' },
+  failed: { label: '失败', type: 'danger' }
+}
+
+// 内容审核
+export const AUDIT_STATUS = {
+  pending:  { label: '待审核', type: 'warning' },
+  approved: { label: '已通过', type: 'success' },
+  rejected: { label: '已驳回', type: 'danger' }
+}
+
+export const CONTENT_AUDIT_TYPE = {
+  ugc_collectible: '用户自建藏品',
+  community_post: '社区帖子'
+}
+
+// 审批工作流
+export const APPROVAL_STATUS = {
+  pending:  { label: '待审批', type: 'warning' },
+  approved: { label: '已通过', type: 'success' },
+  rejected: { label: '已驳回', type: 'danger' }
+}
+
+export const APPROVAL_TYPE = {
+  large_refund:   '大额退款',
+  asset_modify:   '强制修改资产',
+  config_modify:  '修改支付配置',
+  platform_cleanup: '平台清库'
+}
+
+// 求购市场
+export const BUY_REQUEST_STATUS = {
+  active:   { label: '求购中', type: 'primary' },
+  delisted: { label: '已下架', type: 'info' }
+}
+
+// 资格购条件组合方式
+export const QUALIFY_CONDITION_TYPE = {
+  1: '满足任一',
+  2: '满足全部'
+}
+
+// 角色映射（5 角色）
 export const ROLE_MAP = {
-  super: { label: '超级管理员', type: 'danger' },
+  super:    { label: '超级管理员', type: 'danger' },
   operator: { label: '运营专员', type: 'primary' },
-  auditor: { label: '审核专员', type: 'warning' }
+  finance:  { label: '财务专员', type: 'success' },
+  risk:     { label: '风控专员', type: 'warning' },
+  support:  { label: '客服专员', type: 'info' }
 }

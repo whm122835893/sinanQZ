@@ -26,15 +26,20 @@ const dOnly = (t) => {
 
 // ---------------- 管理员 ----------------
 export const admins = [
-  { id: 1, username: 'admin', name: '超级管理员', role: 'super', avatar: '/images/platform-logo.png', status: 'enabled', lastLoginTime: dt(ts(0, 1)), phone: '13800000001' },
-  { id: 2, username: 'wangyun', name: '王运营', role: 'operator', avatar: '/images/avatar-new.png', status: 'enabled', lastLoginTime: dt(ts(0, 5)), phone: '13800000002' },
-  { id: 3, username: 'lisheg', name: '李审核', role: 'auditor', status: 'disabled', lastLoginTime: dt(ts(12)), phone: '13800000003' }
+  { id: 1, username: 'admin', name: '超级管理员', role: 'super', avatar: '/images/platform-logo.png', status: 'enabled', lastLoginTime: dt(ts(0, 1)), phone: '13800000001', twofaEnabled: 1, ipWhitelist: '192.168.1.100' },
+  { id: 2, username: 'wangyun', name: '王运营', role: 'operator', avatar: '/images/avatar-new.png', status: 'enabled', lastLoginTime: dt(ts(0, 5)), phone: '13800000002', twofaEnabled: 0, ipWhitelist: '' },
+  { id: 3, username: 'lisheg', name: '李风控', role: 'risk', avatar: '/images/avatar-new.png', status: 'enabled', lastLoginTime: dt(ts(1, 2)), phone: '13800000003', twofaEnabled: 1, ipWhitelist: '' },
+  { id: 4, username: 'qiancai', name: '钱财务', role: 'finance', avatar: '/images/avatar-new.png', status: 'enabled', lastLoginTime: dt(ts(0, 8)), phone: '13800000004', twofaEnabled: 1, ipWhitelist: '' },
+  { id: 5, username: 'sukefu', name: '苏客服', role: 'support', avatar: '/images/avatar-new.png', status: 'disabled', lastLoginTime: dt(ts(12)), phone: '13800000005', twofaEnabled: 0, ipWhitelist: '' }
 ]
 
+// 5 角色权限体系（与 stores/admin.js ROLE_PERMISSIONS 同构）
 export const roles = [
-  { id: 1, key: 'super', name: '超级管理员', desc: '拥有全部权限，不可删除', members: 1, permissions: ['*'] },
-  { id: 2, key: 'operator', name: '运营专员', desc: '藏品/盲盒/营销活动配置', members: 1, permissions: ['dashboard', 'collectible', 'blindbox', 'marketing', 'content'] },
-  { id: 3, key: 'auditor', name: '审核专员', desc: '实名/寄售/转赠/退款审核', members: 1, permissions: ['user.realname', 'resale', 'transfer', 'order.refund'] }
+  { id: 1, key: 'super', name: '超级管理员', desc: '全部功能，含平台清库、完整实名查看、所有高风险操作', members: 1, permissions: ['*'] },
+  { id: 2, key: 'operator', name: '运营专员', desc: '藏品/盲盒/活动/CMS/基础用户管理/订单查看', members: 1, permissions: ['dashboard', 'statistics', 'user', 'user.freeze', 'collectible', 'blindbox', 'order', 'resale', 'transfer', 'marketing', 'content'] },
+  { id: 3, key: 'finance', name: '财务专员', desc: '订单/钱包流水/财务报表/手续费统计/收支导出', members: 1, permissions: ['dashboard', 'statistics', 'order', 'refund', 'wallet'] },
+  { id: 4, key: 'risk', name: '风控专员', desc: '黑名单/异常交易审批/风控告警/实名完整查看', members: 1, permissions: ['dashboard', 'user', 'user.blacklist', 'user.recover', 'realname', 'realname.full', 'risk', 'resale', 'transfer'] },
+  { id: 5, key: 'support', name: '客服专员', desc: '工单处理/基础用户查询（仅脱敏）/用户资产查看', members: 1, permissions: ['dashboard', 'tickets', 'user'] }
 ]
 
 export const permissionTree = [
@@ -119,22 +124,22 @@ export const blindBoxes = [
 
 // ---------------- 订单 ----------------
 export const orders = [
-  { id: 1, orderNo: 'SN20260905153201', userId: 1001, userName: '罗盘先生', userPhone: '13812340001', collectibleId: 9007, collectibleName: '千里江山·数字长卷', cover: '/images/collections/cover-collection-1.jpg', quantity: 1, unitPrice: 499, amount: 499, status: 'paid', payType: 'wallet', createTime: dt(ts(0, 1)), payTime: dt(ts(0, 1)) },
-  { id: 2, orderNo: 'SN20260905140918', userId: 1006, userName: '织锦护膊', userPhone: '13812340006', collectibleId: 9004, collectibleName: '司南秘宝盲盒', cover: '/images/collections/cover-collection-bb1.jpg', quantity: 5, unitPrice: 99, amount: 495, status: 'paid', payType: 'wallet', createTime: dt(ts(0, 2)), payTime: dt(ts(0, 2)) },
-  { id: 3, orderNo: 'SN20260905112235', userId: 1003, userName: '司南藏友8823', userPhone: '13812340003', collectibleId: 9006, collectibleName: '山海经·异兽图', cover: '/images/collections/cover-5.jpg', quantity: 1, unitPrice: 169, amount: 169, status: 'pending', payType: 'wallet', createTime: dt(ts(0, 5)), payTime: null },
-  { id: 4, orderNo: 'SN20260904213944', userId: 1004, userName: '山海经考据党', userPhone: '13812340004', collectibleId: 9001, collectibleName: '龙纹罗盘', cover: '/images/collections/cover-1.jpg', quantity: 1, unitPrice: 399, amount: 399, status: 'completed', payType: 'wallet', createTime: dt(ts(1, 3)), payTime: dt(ts(1, 3)) },
-  { id: 5, orderNo: 'SN20260904200916', userId: 1008, userName: '虎符将军', userPhone: '13812340008', collectibleId: 9009, collectibleName: '战国错金铭文虎符', cover: '/images/collections/cover-collection-3.jpg', quantity: 1, unitPrice: 899, amount: 899, status: 'refunding', payType: 'wallet', createTime: dt(ts(1, 6)), payTime: dt(ts(1, 6)) },
-  { id: 6, orderNo: 'SN20260904161752', userId: 1010, userName: '星轨观测员', userPhone: '13812340010', collectibleId: 9002, collectibleName: '云端法器', cover: '/images/collections/cover-2.jpg', quantity: 2, unitPrice: 299, amount: 598, status: 'abnormal', payType: 'wallet', createTime: dt(ts(1, 9)), payTime: dt(ts(1, 9)) },
-  { id: 7, orderNo: 'SN20260903182231', userId: 1002, userName: '青铜爱好者', userPhone: '13812340002', collectibleId: 9003, collectibleName: '青铜面具', cover: '/images/collections/cover-3.jpg', quantity: 1, unitPrice: 199, amount: 199, status: 'completed', payType: 'wallet', createTime: dt(ts(2, 4)), payTime: dt(ts(2, 4)) },
-  { id: 8, orderNo: 'SN20260903150747', userId: 1012, userName: '面具收藏家', userPhone: '13812340012', collectibleId: 9003, collectibleName: '青铜面具', cover: '/images/collections/cover-3.jpg', quantity: 1, unitPrice: 199, amount: 199, status: 'paid', payType: 'wallet', createTime: dt(ts(2, 8)), payTime: dt(ts(2, 8)) },
-  { id: 9, orderNo: 'SN20260902101519', userId: 1005, userName: '长卷收卷人', userPhone: '13812340005', collectibleId: 9007, collectibleName: '千里江山·数字长卷', cover: '/images/collections/cover-collection-1.jpg', quantity: 1, unitPrice: 499, amount: 499, status: 'refunded', payType: 'wallet', createTime: dt(ts(3, 5)), payTime: dt(ts(3, 5)) },
-  { id: 10, orderNo: 'SN20260901204403', userId: 1007, userName: '洛神赋吟者', userPhone: '13812340007', collectibleId: 9008, collectibleName: '洛神赋·绢本残卷', cover: '/images/collections/cover-collection-2.jpg', quantity: 1, unitPrice: 259, amount: 259, status: 'cancelled', payType: 'wallet', createTime: dt(ts(4, 2)), payTime: null },
-  { id: 11, orderNo: 'SN20260831123110', userId: 1006, userName: '织锦护膊', userPhone: '13812340006', collectibleId: 9004, collectibleName: '司南秘宝盲盒', cover: '/images/collections/cover-collection-bb1.jpg', quantity: 3, unitPrice: 99, amount: 297, status: 'completed', payType: 'wallet', createTime: dt(ts(5, 7)), payTime: dt(ts(5, 7)) },
-  { id: 12, orderNo: 'SN20260830162257', userId: 1011, userName: '金错刀', userPhone: '13812340011', collectibleId: 9001, collectibleName: '龙纹罗盘', cover: '/images/collections/cover-1.jpg', quantity: 1, unitPrice: 399, amount: 399, status: 'pending', payType: 'wallet', createTime: dt(ts(6, 4)), payTime: null },
-  { id: 13, orderNo: 'SN20260829190833', userId: 1004, userName: '山海经考据党', userPhone: '13812340004', collectibleId: 9006, collectibleName: '山海经·异兽图', cover: '/images/collections/cover-5.jpg', quantity: 1, unitPrice: 169, amount: 169, status: 'completed', payType: 'wallet', createTime: dt(ts(7, 2)), payTime: dt(ts(7, 2)) },
-  { id: 14, orderNo: 'SN20260828110621', userId: 1009, userName: '异兽图鉴', userPhone: '13812340009', collectibleId: 9003, collectibleName: '青铜面具', cover: '/images/collections/cover-3.jpg', quantity: 1, unitPrice: 199, amount: 199, status: 'completed', payType: 'wallet', createTime: dt(ts(8, 6)), payTime: dt(ts(8, 6)) },
-  { id: 15, orderNo: 'SN20260827142439', userId: 1002, userName: '青铜爱好者', userPhone: '13812340002', collectibleId: 9009, collectibleName: '战国错金铭文虎符', cover: '/images/collections/cover-collection-3.jpg', quantity: 1, unitPrice: 899, amount: 899, status: 'completed', payType: 'wallet', createTime: dt(ts(9, 3)), payTime: dt(ts(9, 3)) },
-  { id: 16, orderNo: 'SN20260827091548', userId: 1001, userName: '罗盘先生', userPhone: '13812340001', collectibleId: 9002, collectibleName: '云端法器', cover: '/images/collections/cover-2.jpg', quantity: 1, unitPrice: 299, amount: 299, status: 'completed', payType: 'wallet', createTime: dt(ts(9, 9)), payTime: dt(ts(9, 9)) }
+  { id: 1, orderNo: 'SN20260905153201', userId: 1001, userName: '罗盘先生', userPhone: '13812340001', collectibleId: 9007, collectibleName: '千里江山·数字长卷', cover: '/images/collections/cover-collection-1.jpg', quantity: 1, unitPrice: 499, amount: 499, source: 'release', status: 'paid', payType: 'wallet', createTime: dt(ts(0, 1)), payTime: dt(ts(0, 1)) },
+  { id: 2, orderNo: 'SN20260905140918', userId: 1006, userName: '织锦护膊', userPhone: '13812340006', collectibleId: 9004, collectibleName: '司南秘宝盲盒', cover: '/images/collections/cover-collection-bb1.jpg', quantity: 5, unitPrice: 99, amount: 495, source: 'blindbox', status: 'paid', payType: 'wallet', createTime: dt(ts(0, 2)), payTime: dt(ts(0, 2)) },
+  { id: 3, orderNo: 'SN20260905112235', userId: 1003, userName: '司南藏友8823', userPhone: '13812340003', collectibleId: 9006, collectibleName: '山海经·异兽图', cover: '/images/collections/cover-5.jpg', quantity: 1, unitPrice: 169, amount: 169, source: 'release', status: 'pending', payType: 'wallet', createTime: dt(ts(0, 5)), payTime: null },
+  { id: 4, orderNo: 'SN20260904213944', userId: 1004, userName: '山海经考据党', userPhone: '13812340004', collectibleId: 9001, collectibleName: '龙纹罗盘', cover: '/images/collections/cover-1.jpg', quantity: 1, unitPrice: 399, amount: 399, source: 'release', status: 'completed', payType: 'wallet', createTime: dt(ts(1, 3)), payTime: dt(ts(1, 3)) },
+  { id: 5, orderNo: 'SN20260904200916', userId: 1008, userName: '虎符将军', userPhone: '13812340008', collectibleId: 9009, collectibleName: '战国错金铭文虎符', cover: '/images/collections/cover-collection-3.jpg', quantity: 1, unitPrice: 899, amount: 899, source: 'release', status: 'refunding', payType: 'wallet', createTime: dt(ts(1, 6)), payTime: dt(ts(1, 6)) },
+  { id: 6, orderNo: 'SN20260904161752', userId: 1010, userName: '星轨观测员', userPhone: '13812340010', collectibleId: 9002, collectibleName: '云端法器', cover: '/images/collections/cover-2.jpg', quantity: 2, unitPrice: 299, amount: 598, source: 'release', status: 'abnormal', payType: 'wallet', createTime: dt(ts(1, 9)), payTime: dt(ts(1, 9)) },
+  { id: 7, orderNo: 'SN20260903182231', userId: 1002, userName: '青铜爱好者', userPhone: '13812340002', collectibleId: 9003, collectibleName: '青铜面具', cover: '/images/collections/cover-3.jpg', quantity: 1, unitPrice: 199, amount: 199, source: 'priority', status: 'completed', payType: 'wallet', createTime: dt(ts(2, 4)), payTime: dt(ts(2, 4)) },
+  { id: 8, orderNo: 'SN20260903150747', userId: 1012, userName: '面具收藏家', userPhone: '13812340012', collectibleId: 9003, collectibleName: '青铜面具', cover: '/images/collections/cover-3.jpg', quantity: 1, unitPrice: 199, amount: 199, source: 'eligibility', status: 'paid', payType: 'wallet', createTime: dt(ts(2, 8)), payTime: dt(ts(2, 8)) },
+  { id: 9, orderNo: 'SN20260902101519', userId: 1005, userName: '长卷收卷人', userPhone: '13812340005', collectibleId: 9007, collectibleName: '千里江山·数字长卷', cover: '/images/collections/cover-collection-1.jpg', quantity: 1, unitPrice: 499, amount: 499, source: 'release', status: 'refunded', payType: 'wallet', createTime: dt(ts(3, 5)), payTime: dt(ts(3, 5)) },
+  { id: 10, orderNo: 'SN20260901204403', userId: 1007, userName: '洛神赋吟者', userPhone: '13812340007', collectibleId: 9008, collectibleName: '洛神赋·绢本残卷', cover: '/images/collections/cover-collection-2.jpg', quantity: 1, unitPrice: 259, amount: 259, source: 'market', status: 'cancelled', payType: 'wallet', createTime: dt(ts(4, 2)), payTime: null },
+  { id: 11, orderNo: 'SN20260831123110', userId: 1006, userName: '织锦护膊', userPhone: '13812340006', collectibleId: 9004, collectibleName: '司南秘宝盲盒', cover: '/images/collections/cover-collection-bb1.jpg', quantity: 3, unitPrice: 99, amount: 297, source: 'blindbox', status: 'completed', payType: 'wallet', createTime: dt(ts(5, 7)), payTime: dt(ts(5, 7)) },
+  { id: 12, orderNo: 'SN20260830162257', userId: 1011, userName: '金错刀', userPhone: '13812340011', collectibleId: 9001, collectibleName: '龙纹罗盘', cover: '/images/collections/cover-1.jpg', quantity: 1, unitPrice: 399, amount: 399, source: 'release', status: 'pending', payType: 'wallet', createTime: dt(ts(6, 4)), payTime: null },
+  { id: 13, orderNo: 'SN20260829190833', userId: 1004, userName: '山海经考据党', userPhone: '13812340004', collectibleId: 9006, collectibleName: '山海经·异兽图', cover: '/images/collections/cover-5.jpg', quantity: 1, unitPrice: 169, amount: 169, source: 'release', status: 'completed', payType: 'wallet', createTime: dt(ts(7, 2)), payTime: dt(ts(7, 2)) },
+  { id: 14, orderNo: 'SN20260828110621', userId: 1009, userName: '异兽图鉴', userPhone: '13812340009', collectibleId: 9003, collectibleName: '青铜面具', cover: '/images/collections/cover-3.jpg', quantity: 1, unitPrice: 199, amount: 199, source: 'market', status: 'completed', payType: 'wallet', createTime: dt(ts(8, 6)), payTime: dt(ts(8, 6)) },
+  { id: 15, orderNo: 'SN20260827142439', userId: 1002, userName: '青铜爱好者', userPhone: '13812340002', collectibleId: 9009, collectibleName: '战国错金铭文虎符', cover: '/images/collections/cover-collection-3.jpg', quantity: 1, unitPrice: 899, amount: 899, source: 'priority', status: 'completed', payType: 'wallet', createTime: dt(ts(9, 3)), payTime: dt(ts(9, 3)) },
+  { id: 16, orderNo: 'SN20260827091548', userId: 1001, userName: '罗盘先生', userPhone: '13812340001', collectibleId: 9002, collectibleName: '云端法器', cover: '/images/collections/cover-2.jpg', quantity: 1, unitPrice: 299, amount: 299, source: 'eligibility', status: 'completed', payType: 'wallet', createTime: dt(ts(9, 9)), payTime: dt(ts(9, 9)) }
 ]
 
 export const refunds = [
@@ -373,6 +378,185 @@ export const dashboard = {
     { name: '青铜面具', sold: 510, amount: 101490, cover: '/images/collections/cover-3.jpg' }
   ]
 }
+
+// ============================================================
+// v2.0 扩展数据（BuildAdmin 提示词补漏模块）
+// ============================================================
+
+// ---- 藏品/盲盒新字段统一注入（寄售/转赠开关、价格管控、发售配置、资格购）----
+collectibles.forEach((c) => {
+  c.isTransferable ??= 1        // 转赠开关（独立于寄售）
+  c.isResaleable ??= 1          // 寄售开关（独立于转赠）
+  c.resalePriceMode ??= 'free'   // 价格管控模式：limit 限价 / free 不限价
+  c.resalePriceMin ??= null     // 限价下限（元，精确到分）
+  c.resalePriceMax ??= null     // 限价上限
+  c.saleQuantity ??= c.edition  // 发售数量（<= 库存池）
+  c.perUserLimit ??= 2          // 每人限购
+  c.qualificationEnabled ??= 0  // 资格购开关
+})
+// 示例：龙纹罗盘开启限价管控；洛神赋已关闭寄售
+Object.assign(collectibles.find((c) => c.id === 9001), { isResaleable: 1, resalePriceMode: 'limit', resalePriceMin: 350, resalePriceMax: 699 })
+Object.assign(collectibles.find((c) => c.id === 9008), { isResaleable: 0, isTransferable: 1 })
+Object.assign(collectibles.find((c) => c.id === 9007), { qualificationEnabled: 1 })
+
+// ---- 盲盒 v2.0 字段注入（库存恒等式 / 流通量 / 开关）----
+// 盲盒库存池 = edition - sold - airdroppedCount - destroyedCount
+// 盲盒流通量 = sold + airdroppedCount
+blindBoxes.forEach((b) => {
+  b.airdroppedCount ??= 0
+  b.destroyedCount ??= 0
+  b.circulate ??= b.sold
+  b.isTransferable ??= 1
+  b.isResaleable ??= 1
+  b.saleQuantity ??= b.edition
+  b.perUserLimit ??= 5
+})
+Object.assign(blindBoxes.find((b) => b.id === 1), { airdroppedCount: 120, destroyedCount: 30, circulate: 4812 + 120 })
+
+// ---- 用户黑名单字段注入 ----
+users.forEach((u) => {
+  u.isBlacklisted ??= 0
+  u.blacklistReason ??= ''
+})
+Object.assign(users.find((u) => u.id === 1005), { isBlacklisted: 1, blacklistReason: '多次恶意抢购后批量退款', blacklistAt: dt(ts(5)) })
+
+// ---- 资格购配置（购买门槛系统，独立于优先购）----
+export const qualifications = [
+  {
+    id: 1, collectibleId: 9007, collectibleName: '千里江山·数字长卷', cover: '/images/collections/cover-collection-1.jpg',
+    isEnabled: 1, conditionType: 1, validStartAt: dt(ts(2)), validEndAt: dt(tsA(12)),
+    requiredCollectibles: [
+      { collectibleId: 9001, name: '龙纹罗盘', cover: '/images/collections/cover-1.jpg' },
+      { collectibleId: 9002, name: '云端法器', cover: '/images/collections/cover-2.jpg' }
+    ],
+    requiredCheckinDays: 7, requiredInviteCount: 3,
+    whitelist: [
+      { id: 1, userId: 1006, nickname: '织锦护膊', phone: '13812340006', expiresAt: dt(tsA(12)) },
+      { id: 2, userId: 1010, nickname: '星轨观测员', phone: '13812340010', expiresAt: dt(tsA(12)) }
+    ],
+    qualifiedCount: 386
+  },
+  {
+    id: 2, collectibleId: 9005, collectibleName: '司南·星轨徽章', cover: '/images/collections/cover-4.jpg',
+    isEnabled: 1, conditionType: 2, validStartAt: dt(tsA(1)), validEndAt: dt(tsA(6)),
+    requiredCollectibles: [],
+    requiredCheckinDays: 30, requiredInviteCount: 0,
+    whitelist: [
+      { id: 11, userId: 1008, nickname: '虎符将军', phone: '13812340008', expiresAt: dt(tsA(6)) }
+    ],
+    qualifiedCount: 86
+  }
+]
+
+// ---- 销毁记录台账 ----
+export const destroyRecords = [
+  { id: 1, targetName: '司南秘宝盲盒', targetType: 'blindbox', quantity: 8, operator: 'admin', time: dt(ts(9, 2)), remark: '瑕疵品销毁' },
+  { id: 2, targetName: '龙纹罗盘', targetType: 'collectible', quantity: 2, operator: 'admin', time: dt(ts(20, 1)), remark: '合约迁移销毁' }
+]
+
+// ---- 求购市场 ----
+export const buyRequests = [
+  { id: 1, userName: '虎符将军', collectibleName: '战国错金铭文虎符', price: 1500, quantity: 1, status: 'active', createTime: dt(ts(0, 3)) },
+  { id: 2, userName: '青铜爱好者', collectibleName: '龙纹罗盘', price: 500, quantity: 2, status: 'active', createTime: dt(ts(1, 5)) },
+  { id: 3, userName: '洛神赋吟者', collectibleName: '洛神赋·绢本残卷', price: 400, quantity: 1, status: 'delisted', createTime: dt(ts(3, 6)) }
+]
+
+// ---- 风控告警 ----
+export const riskAlerts = [
+  { id: 1, type: 'abnormal_trade', level: 'high', userName: '长卷收卷人', userPhone: '13812340005', detail: '10 分钟内连续寄售挂单 6 次，触发异常交易预警', status: 'pending', createTime: dt(ts(0, 2)) },
+  { id: 2, type: 'bulk_refund', level: 'high', userName: '面具收藏家', userPhone: '13812340012', detail: '24 小时内申请退款 3 笔，疑似恶意退款', status: 'pending', createTime: dt(ts(0, 7)) },
+  { id: 3, type: 'bulk_register', level: 'medium', userName: '星轨观测员', userPhone: '13812340010', detail: '邀请注册的新设备指纹重复率达 80%，疑似批量注册', status: 'processing', createTime: dt(ts(1, 3)) },
+  { id: 4, type: 'abnormal_trade', level: 'low', userName: '金错刀', userPhone: '13812340011', detail: '转赠对象高度集中于同一接收人（5 次）', status: 'resolved', createTime: dt(ts(2, 9)), handleTime: dt(ts(2, 5)), handler: '李风控', result: '核实为家人间流转，已放行' },
+  { id: 5, type: 'price_manipulation', level: 'medium', userName: '织锦护膊', userPhone: '13812340006', detail: '寄售价格偏离限价区间上限 15%', status: 'resolved', createTime: dt(ts(3, 4)), handleTime: dt(ts(3, 2)), handler: '李风控', result: '已强制下架并通知用户' }
+]
+
+// ---- 客服工单 ----
+export const tickets = [
+  {
+    id: 1, ticketNo: 'TK202609050001', userName: '司南藏友8823', userPhone: '13812340003', type: 'order', priority: 'high',
+    title: '支付成功但未到账', content: '购买山海经·异兽图支付后仓库一直没到货，请处理。', status: 'pending', createTime: dt(ts(0, 4)), replies: []
+  },
+  {
+    id: 2, ticketNo: 'TK202609040002', userName: '面具收藏家', userPhone: '13812340012', type: 'refund', priority: 'urgent',
+    title: '退款进度查询', content: '昨天申请的退款还没到账，麻烦帮忙看看。', status: 'processing', createTime: dt(ts(1, 6)),
+    replies: [{ id: 1, author: '苏客服', content: '您好，已加急为您核实，预计 2 小时内到账。', time: dt(ts(1, 4)) }]
+  },
+  {
+    id: 3, ticketNo: 'TK202609030003', userName: '青铜爱好者', userPhone: '13812340002', type: 'account', priority: 'normal',
+    title: '修改绑定手机号', content: '手机号换绑为 139****2233。', status: 'closed', createTime: dt(ts(2, 8)), closeTime: dt(ts(2, 5)),
+    replies: [
+      { id: 2, author: '苏客服', content: '已完成换绑，请使用新手机号登录。', time: dt(ts(2, 6)) },
+      { id: 3, author: '青铜爱好者', content: '好的，谢谢。', time: dt(ts(2, 5)) }
+    ]
+  }
+]
+
+// ---- 区块链：智能合约 ----
+export const chainContracts = [
+  { id: 1, chainType: 'ETH', chainEnv: 'mainnet', contractName: 'SinanNFTCore', contractAddress: '0x7d5...a3f8', txCount: 128406, status: 1, createTime: dt(ts(180)) },
+  { id: 2, chainType: 'ETH', chainEnv: 'testnet', contractName: 'SinanBlindBox', contractAddress: '0x9c1...e2b7', txCount: 8212, status: 1, createTime: dt(ts(90)) },
+  { id: 3, chainType: 'POLYGON', chainEnv: 'mainnet', contractName: 'SinanMarket', contractAddress: '0x3fa...11cd', txCount: 21044, status: 0, createTime: dt(ts(60)) }
+]
+
+// ---- 区块链：链上交易 ----
+export const chainTransactions = [
+  { id: 1, txHash: '0x8f2e...c4d9', type: 'Mint', contractName: 'SinanNFTCore', userName: '罗盘先生', token: '龙纹罗盘 #0332', gas: '0.0021 ETH', status: 'success', blockTime: dt(ts(0, 2)) },
+  { id: 2, txHash: '0x1a7b...9e03', type: 'Transfer', contractName: 'SinanNFTCore', userName: '织锦护膊', token: '青铜面具 #0087', gas: '0.0018 ETH', status: 'success', blockTime: dt(ts(0, 5)) },
+  { id: 3, txHash: '0xd4c8...77aa', type: 'Sale', contractName: 'SinanMarket', userName: '虎符将军', token: '战国错金铭文虎符 #0233', gas: '0.0035 ETH', status: 'pending', blockTime: dt(ts(0, 8)) },
+  { id: 4, txHash: '0x55e0...bb12', type: 'Mint', contractName: 'SinanBlindBox', userName: '面具收藏家', token: '司南秘宝盲盒 #4812', gas: '0.0026 ETH', status: 'failed', blockTime: dt(ts(1, 2)) }
+]
+
+// ---- 内容审核（用户发布内容）----
+export const contentAudits = [
+  { id: 1, type: 'ugc_collectible', userName: '洛神赋吟者', userPhone: '13812340007', title: '自制异兽图二创', content: '基于山海经·异兽图创作的二创作品，申请上架。', cover: '/images/collections/cover-5.jpg', copyright: '原创声明截图', status: 'pending', submitTime: dt(ts(0, 3)) },
+  { id: 2, type: 'community_post', userName: '青铜爱好者', userPhone: '13812340002', title: '社群分享帖', content: '分享龙纹罗盘开箱体验（内含外站二维码）', cover: null, copyright: null, status: 'rejected', submitTime: dt(ts(1, 6)), handleTime: dt(ts(1, 3)), reason: '含外站导流二维码，违反社区规范' },
+  { id: 3, type: 'ugc_collectible', userName: '金错刀', userPhone: '13812340011', title: '鎏金面具临摹', content: '三星堆鎏金面具数字临摹作品。', cover: '/images/collections/cover-3.jpg', copyright: '原创声明截图', status: 'approved', submitTime: dt(ts(2, 4)), handleTime: dt(ts(2, 1)) }
+]
+
+// ---- 敏感操作审批工作流 ----
+export const approvals = [
+  { id: 1, type: 'large_refund', title: '大额退款审批：SN20260904200916 ¥899', applicant: '苏客服', amount: 899, status: 'pending', createTime: dt(ts(0, 5)), reason: '用户误购，客服核实后发起' },
+  { id: 2, type: 'asset_modify', title: '强制修改用户资产：织锦护膊 +2 龙纹罗盘', applicant: '王运营', amount: null, status: 'pending', createTime: dt(ts(1, 2)), reason: '活动补发（空投失败补偿）' },
+  { id: 3, type: 'config_modify', title: '修改支付配置：支付宝商户号变更', applicant: '钱财务', amount: null, status: 'approved', createTime: dt(ts(2, 6)), handleTime: dt(ts(2, 3)), handler: 'admin' },
+  { id: 4, type: 'large_refund', title: '大额退款审批：SN20260902101519 ¥499', applicant: '苏客服', amount: 499, status: 'rejected', createTime: dt(ts(3, 1)), handleTime: dt(ts(3, 4)), handler: 'admin', reason: '用户藏品已发生二次流转' }
+]
+
+// ---- 站点配置扩展（支付/短信/区块链/存储/手续费）----
+Object.assign(siteConfig, {
+  feeMode: 'rate',            // 手续费模式：rate 比例 / fixed 固定
+  feeRate: 0.05,              // 比例 5%
+  feeFixed: 5,                // 固定 5 元
+  alipayEnabled: 1, wechatEnabled: 1, unionpayEnabled: 0, cryptoEnabled: 0,
+  chainRpc: 'https://mainnet.infura.io/v3/***',
+  chainId: 1,
+  gasStrategy: 'medium',       // low / medium / high（平台补贴）
+  storageType: 'oss'           // oss / ipfs
+})
+
+// ---- 统计报表 ----
+export const statistics = {
+  dau: 3218,
+  dauTrend: [2100, 2350, 2280, 2600, 2850, 2980, 3218],
+  retention: [
+    { label: '次日留存', value: 42 },
+    { label: '7日留存', value: 28 },
+    { label: '30日留存', value: 19 }
+  ],
+  finance: {
+    monthIncome: 286400, monthFee: 14320, monthRecharge: 526000, monthWithdraw: 88000,
+    incomeTrend: [18200, 21400, 19800, 23600, 25100, 27300, 28640].map((v, i) => ({ date: `08-${30 + i}`, value: v })),
+    feeShare: [
+      { label: '寄售手续费', value: 62 },
+      { label: '盲盒销售分成', value: 24 },
+      { label: '合成材料费', value: 14 }
+    ]
+  },
+  salesRank: dashboard.topCollectibles,
+  userTrend: dashboard.trend.map((t) => ({ date: t.date, value: t.users }))
+}
+
+// ---- 管理员密码验证（敏感操作二次校验，Mock 仅 admin123）----
+export const verifyPassword = (pwd) => pwd === 'admin123'
 
 // 供视图直接使用的工具
 export const helpers = { dt, dOnly, ts, tsA }

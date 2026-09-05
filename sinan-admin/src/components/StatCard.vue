@@ -1,89 +1,111 @@
 <script setup>
 import { computed } from 'vue'
 
+// ============================================================
+// 指标卡片：渐变背景 + 白色文字 + 环比趋势（Soybean Admin 风格）
+// 用法：<StatCard icon="Coin" label="今日 GMV" :value="123" unit="元" :trend="5.2" tone="primary" />
+// ============================================================
+
 const props = defineProps({
-  icon: { type: String, default: 'chart-trending-o' },
+  icon: { type: String, default: 'TrendCharts' },   // Element Plus 图标名
   label: { type: String, required: true },
-  value: { type: [String, Number], required: true },
+  value: { type: [String, Number], default: 0 },
   unit: { type: String, default: '' },
-  trend: { type: Number, default: null },   // 环比百分比
-  tone: { type: String, default: 'primary' } // primary | gold | blue | green
+  trend: { type: Number, default: null },            // 环比百分比，null 不显示
+  tone: { type: String, default: 'primary' }         // primary/gold/blue/green
 })
 
-const toneMap = {
-  primary: { color: 'var(--color-primary)', bg: 'rgba(192,0,0,.08)' },
-  gold:    { color: 'var(--color-gold)', bg: 'rgba(212,165,116,.14)' },
-  blue:    { color: 'var(--color-blue)', bg: 'rgba(25,137,250,.08)' },
-  green:   { color: 'var(--color-success)', bg: 'rgba(7,193,96,.08)' }
-}
-
-const tone = computed(() => toneMap[props.tone] || toneMap.primary)
-const trendText = computed(() =>
-  props.trend === null ? '' : `${props.trend >= 0 ? '+' : ''}${props.trend}% 环比昨日`
-)
+const trendText = computed(() => {
+  if (props.trend === null || props.trend === undefined) return ''
+  return `${props.trend > 0 ? '+' : ''}${props.trend}%`
+})
 </script>
 
 <template>
-  <div class="stat">
-    <div class="stat__icon" :style="{ background: tone.bg }">
-      <van-icon :name="icon" size="19" :color="tone.color" />
+  <div class="stat-card" :class="`is-${tone}`">
+    <div class="stat-card__icon">
+      <el-icon :size="26"><component :is="icon" /></el-icon>
     </div>
-    <div class="stat__meta">
-      <div class="stat__label">{{ label }}</div>
-      <div class="stat__value">
-        <span class="price">{{ value }}</span>
-        <span v-if="unit" class="stat__unit">{{ unit }}</span>
-      </div>
-      <div v-if="trendText" class="stat__trend" :class="trend >= 0 ? 'trend-up' : 'trend-down'">
-        {{ trendText }}
+    <div class="stat-card__body">
+      <div class="stat-card__label">{{ label }}</div>
+      <div class="stat-card__value">
+        {{ value }}<span v-if="unit" class="stat-card__unit">{{ unit }}</span>
+        <span v-if="trend !== null" class="stat-card__trend" :class="trend > 0 ? 'is-up' : 'is-down'">
+          <el-icon :size="12"><CaretTop v-if="trend > 0" /><CaretBottom v-else /></el-icon>
+          {{ trendText }}
+        </span>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
-.stat {
-  background: $color-card;
-  border-radius: $radius-lg;
-  padding: 14px;
+.stat-card {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  box-shadow: 0 1px 6px rgba(26, 26, 26, 0.04);
+  align-items: center;
+  gap: 14px;
+  border-radius: 8px;
+  padding: 20px;
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+
+  &.is-primary {
+    background: linear-gradient(135deg, #c00000 0%, #d03333 100%);
+    .stat-card__icon { background: rgba(255,255,255,0.18); }
+  }
+  &.is-gold {
+    background: linear-gradient(135deg, #b08d55 0%, #d4a574 100%);
+    .stat-card__icon { background: rgba(255,255,255,0.2); }
+  }
+  &.is-blue {
+    background: linear-gradient(135deg, #1989fa 0%, #4aa7f8 100%);
+    .stat-card__icon { background: rgba(255,255,255,0.2); }
+  }
+  &.is-green {
+    background: linear-gradient(135deg, #07a950 0%, #07c160 100%);
+    .stat-card__icon { background: rgba(255,255,255,0.2); }
+  }
 }
 
-.stat__icon {
-  width: 36px;
-  height: 36px;
+.stat-card__icon {
+  width: 52px;
+  height: 52px;
   border-radius: 10px;
-  @include flex-center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
 }
 
-.stat__meta { min-width: 0; }
-
-.stat__label {
+.stat-card__label {
   font-size: 12px;
-  color: $color-text-secondary;
-  @include ellipsis;
+  opacity: 0.85;
 }
 
-.stat__value {
-  margin-top: 3px;
+.stat-card__value {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', 'DIN Condensed', 'Helvetica Neue', Arial, sans-serif;
+  margin-top: 4px;
   display: flex;
   align-items: baseline;
-  gap: 3px;
-
-  .price { font-size: 20px; line-height: 1.1; }
+  gap: 6px;
 }
 
-.stat__unit {
-  font-size: 11px;
-  color: $color-text-tertiary;
+.stat-card__unit {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.8;
 }
 
-.stat__trend {
-  font-size: 11px;
-  margin-top: 4px;
+.stat-card__trend {
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+
+  &.is-up { color: #eafff2; }
+  &.is-down { color: #ffecec; }
 }
 </style>

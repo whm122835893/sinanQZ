@@ -1,9 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { Calendar, Trophy, MagicStick, Share, Timer, Key, ArrowRight } from '@element-plus/icons-vue'
 import { getCheckinConfig, getLuckyDraws, getSynthesisList, getInviteActivity, getPrioritySales } from '@/api'
-import StatusTag from '@/components/StatusTag.vue'
-import { ACTIVITY_STATUS } from '@/utils/maps'
 import { fmtNumber } from '@/utils/format'
 
 const router = useRouter()
@@ -27,164 +26,191 @@ onMounted(async () => {
 })
 
 const entries = [
-  { to: '/marketing/checkin', icon: 'calendar-o', title: '签到配置', desc: '连续签到奖励', tone: 'primary' },
-  { to: '/marketing/luckydraw', icon: 'medal-o', title: '抽奖活动', desc: '转盘奖池管理', tone: 'gold' },
-  { to: '/marketing/synthesis', icon: 'cluster-o', title: '合成活动', desc: '材料合成玩法', tone: 'blue' },
-  { to: '/marketing/invite', icon: 'contact', title: '邀请活动', desc: '邀友注册奖励', tone: 'green' },
-  { to: '/marketing/priority', icon: 'coupon-o', title: '优先购管理', desc: '白名单资格', tone: 'primary' }
+  { to: '/marketing/checkin', icon: Calendar, title: '签到配置', desc: '连续签到奖励', tone: 'primary' },
+  { to: '/marketing/luckydraw', icon: Trophy, title: '抽奖活动', desc: '转盘奖池管理', tone: 'gold' },
+  { to: '/marketing/synthesis', icon: MagicStick, title: '合成活动', desc: '材料合成玩法', tone: 'blue' },
+  { to: '/marketing/invite', icon: Share, title: '邀请活动', desc: '邀友注册奖励', tone: 'green' },
+  { to: '/marketing/priority', icon: Timer, title: '优先购管理', desc: '白名单资格', tone: 'primary' },
+  { to: '/marketing/qualification', icon: Key, title: '资格购管理', desc: '购买门槛配置', tone: 'gold' }
 ]
+
+function statOf(entry) {
+  if (!checkin.value) return ''
+  switch (entry.to) {
+    case '/marketing/checkin':
+      return checkin.value.enabled === 1 ? `今日 ${fmtNumber(checkin.value.todayCount)} 人签到` : '已停用'
+    case '/marketing/luckydraw': {
+      const on = lucky.value.filter((a) => a.status === 'enabled').length
+      return `${on} 个进行中`
+    }
+    case '/marketing/synthesis': {
+      const on = synthesis.value.filter((a) => a.status === 'enabled').length
+      return `${on} 个进行中`
+    }
+    case '/marketing/invite':
+      return `累计邀请 ${fmtNumber(invite.value.stats.invitedCount)} 人`
+    case '/marketing/priority':
+      return `${priority.value.length} 个活动`
+    case '/marketing/qualification':
+      return '门槛 / 白名单'
+    default:
+      return ''
+  }
+}
 </script>
 
 <template>
   <div class="adm-page mk">
-    <van-skeleton v-if="loading" title :row="6" style="padding: 16px" />
+    <el-skeleton v-if="loading" :rows="6" animated style="padding: 20px" />
     <template v-else>
       <!-- 功能入口 -->
-      <div class="adm-card">
-        <div class="adm-card__title">营销玩法</div>
-        <div class="mk__entries">
-          <div v-for="e in entries" :key="e.to" class="mk__entry" :class="`is-${e.tone}`" @click="router.push(e.to)">
-            <van-icon :name="e.icon" size="24" />
-            <div class="mk__entry-title">{{ e.title }}</div>
-            <div class="mk__entry-desc">{{ e.desc }}</div>
+      <div class="mk__grid">
+        <div v-for="e in entries" :key="e.to" class="mk__entry adm-card" @click="router.push(e.to)">
+          <div class="mk__icon" :class="`is-${e.tone}`">
+            <el-icon :size="22"><component :is="e.icon" /></el-icon>
           </div>
+          <div class="mk__body">
+            <div class="mk__title">{{ e.title }}</div>
+            <div class="mk__desc">{{ e.desc }}</div>
+            <div class="mk__stat">{{ statOf(e) }}</div>
+          </div>
+          <el-icon class="mk__arrow"><ArrowRight /></el-icon>
         </div>
       </div>
 
-      <!-- 签到概览 -->
+      <!-- 奖励类型说明 -->
       <div class="adm-card">
-        <div class="adm-card__title">
-          每日签到
-          <StatusTag :value="checkin.enabled === 1 ? 'enabled' : 'disabled'" :map="ACTIVITY_STATUS" />
-          <span class="adm-card__more" @click="router.push('/marketing/checkin')">配置<van-icon name="arrow" /></span>
-        </div>
-        <div class="mk__stats">
-          <div class="mk__stat"><div class="price">{{ fmtNumber(checkin.todayCount) }}</div><div class="t-tertiary">今日签到</div></div>
-          <div class="mk__stat"><div class="price">{{ fmtNumber(checkin.monthCount) }}</div><div class="t-tertiary">本月签到</div></div>
-          <div class="mk__stat"><div class="price">{{ checkin.rules.length }}</div><div class="t-tertiary">奖励档位</div></div>
-        </div>
-      </div>
-
-      <!-- 抽奖概览 -->
-      <div class="adm-card">
-        <div class="adm-card__title">
-          抽奖活动（{{ lucky.filter(a => a.status === 'enabled').length }} 个进行中）
-          <span class="adm-card__more" @click="router.push('/marketing/luckydraw')">管理<van-icon name="arrow" /></span>
-        </div>
-        <div v-for="a in lucky" :key="a.id" class="adm-item" @click="router.push('/marketing/luckydraw')">
-          <div class="adm-item__body">
-            <div class="adm-item__title">
-              {{ a.name }}
-              <StatusTag :value="a.status" :map="ACTIVITY_STATUS" />
-            </div>
-            <div class="adm-item__desc">{{ a.startTime }} ~ {{ a.endTime }}</div>
+        <div class="adm-card__title">统一奖励类型（全平台活动奖励同构）</div>
+        <div class="mk__types">
+          <div class="mk__type">
+            <el-tag type="primary" effect="plain">藏品</el-tag>
+            <span class="mk__type-desc">选择藏品 + 数量（计划上限，发放时动态校验配额预留）</span>
           </div>
-          <div class="adm-item__side">
-            <div class="price" style="font-size: 14px">{{ fmtNumber(a.chancesUsed) }}</div>
-            <div class="t-tertiary" style="font-size: 11px">已消耗次数</div>
+          <div class="mk__type">
+            <el-tag type="info" effect="plain">优先购白名单资格</el-tag>
+            <span class="mk__type-desc">选择优先购活动 + 资格数量 + 有效期</span>
+          </div>
+          <div class="mk__type">
+            <el-tag type="info" effect="plain">资格购资格</el-tag>
+            <span class="mk__type-desc">选择目标藏品 + 有效期（精确到时分秒）</span>
+          </div>
+          <div class="mk__type">
+            <el-tag type="success" effect="plain">抽奖次数</el-tag>
+            <span class="mk__type-desc">输入次数</span>
+          </div>
+          <div class="mk__type">
+            <el-tag type="warning" effect="plain">司南币</el-tag>
+            <span class="mk__type-desc">输入金额（钱包流水入账）</span>
+          </div>
+          <div class="mk__type">
+            <el-tag type="danger" effect="plain">盲盒</el-tag>
+            <span class="mk__type-desc">选择盲盒 + 数量（计划上限，发放时动态校验盲盒库存池）</span>
           </div>
         </div>
-      </div>
-
-      <!-- 合成概览 -->
-      <div class="adm-card">
-        <div class="adm-card__title">
-          合成活动
-          <span class="adm-card__more" @click="router.push('/marketing/synthesis')">管理<van-icon name="arrow" /></span>
-        </div>
-        <div v-for="a in synthesis" :key="a.id" class="adm-item" @click="router.push('/marketing/synthesis')">
-          <div class="adm-item__body">
-            <div class="adm-item__title">
-              {{ a.title }}
-              <StatusTag :value="a.status" :map="ACTIVITY_STATUS" />
-            </div>
-            <div class="adm-item__desc">{{ a.rules }}</div>
-          </div>
-          <div class="adm-item__side">
-            <div class="price" style="font-size: 14px">{{ fmtNumber(a.usedCount) }}</div>
-            <div class="t-tertiary" style="font-size: 11px">已合成</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 邀请概览 -->
-      <div class="adm-card">
-        <div class="adm-card__title">
-          邀请活动
-          <StatusTag :value="invite.status" :map="ACTIVITY_STATUS" />
-          <span class="adm-card__more" @click="router.push('/marketing/invite')">配置<van-icon name="arrow" /></span>
-        </div>
-        <div class="mk__stats">
-          <div class="mk__stat"><div class="price">{{ fmtNumber(invite.stats.invitedCount) }}</div><div class="t-tertiary">累计邀请</div></div>
-          <div class="mk__stat"><div class="price">{{ fmtNumber(invite.stats.registerCount) }}</div><div class="t-tertiary">注册成功</div></div>
-          <div class="mk__stat"><div class="price">{{ fmtNumber(invite.stats.rewardIssued) }}</div><div class="t-tertiary">奖励发放</div></div>
-        </div>
-      </div>
-
-      <!-- 优先购概览 -->
-      <div class="adm-card">
-        <div class="adm-card__title">
-          优先购 / 资格购
-          <span class="adm-card__more" @click="router.push('/marketing/priority')">管理<van-icon name="arrow" /></span>
-        </div>
-        <div v-for="s in priority" :key="s.id" class="adm-item" @click="router.push('/marketing/priority')">
-          <img class="adm-item__thumb" style="width: 40px; height: 40px" :src="s.cover" :alt="s.name" />
-          <div class="adm-item__body">
-            <div class="adm-item__title">{{ s.name }}</div>
-            <div class="adm-item__desc">{{ s.startTime }} ~ {{ s.endTime }}</div>
-          </div>
-          <div class="adm-item__side">
-            <div class="price" style="font-size: 14px">{{ s.whitelistCount }}</div>
-            <div class="t-tertiary" style="font-size: 11px">白名单</div>
-          </div>
-        </div>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="mk__tip"
+          title="所有批量发放生成完整发放记录台账，支持按活动 / 用户 / 时间筛选导出；奖励发放时动态校验库存（配额预留 / 盲盒库存池），不足则拦截提示「配额预留不足，当前剩余 X 份」"
+        />
       </div>
     </template>
   </div>
 </template>
 
 <style scoped lang="scss">
-.mk__entries {
+.mk__grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+
+  @media (max-width: 992px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .mk__entry {
-  border-radius: $radius-md;
-  padding: 14px 4px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: transform 0.15s, box-shadow 0.15s;
 
-  &:active { transform: scale(0.95); }
-
-  &.is-primary { background: rgba(192, 0, 0, 0.06); color: $color-primary; }
-  &.is-gold { background: rgba(212, 165, 116, 0.12); color: $color-gold-dark; }
-  &.is-blue { background: rgba(25, 137, 250, 0.06); color: var(--color-blue); }
-  &.is-green { background: rgba(7, 193, 96, 0.06); color: var(--color-success); }
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  }
 }
 
-.mk__entry-title {
-  font-size: 13px;
+.mk__icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &.is-primary { background: $color-primary-bg; color: $color-primary; }
+  &.is-gold { background: rgba(212, 165, 116, 0.15); color: var(--color-gold-dark); }
+  &.is-blue { background: rgba(25, 137, 250, 0.1); color: var(--color-blue); }
+  &.is-green { background: rgba(7, 193, 96, 0.1); color: var(--color-success); }
+}
+
+.mk__body { flex: 1; min-width: 0; }
+
+.mk__title {
+  font-size: 15px;
   font-weight: 600;
   color: $color-text-primary;
-  margin-top: 6px;
 }
 
-.mk__entry-desc { font-size: 10px; color: $color-text-tertiary; margin-top: 2px; }
+.mk__desc {
+  font-size: 12px;
+  color: $color-text-secondary;
+  margin-top: 2px;
+}
 
-.mk__stats {
+.mk__stat {
+  font-size: 11px;
+  color: $color-text-tertiary;
+  margin-top: 4px;
+}
+
+.mk__arrow {
+  color: $color-text-tertiary;
+  flex-shrink: 0;
+}
+
+.mk__types {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
-  text-align: center;
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
 }
 
-.mk__stat .price { font-size: 18px; }
-.mk__stat .t-tertiary { font-size: 11px; margin-top: 2px; }
-
-@media (max-width: 480px) {
-  .mk__entries { grid-template-columns: repeat(3, 1fr); }
+.mk__type {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: $color-surface;
 }
+
+.mk__type-desc {
+  font-size: 12px;
+  color: $color-text-secondary;
+}
+
+.mk__tip { margin-top: 12px; }
 </style>

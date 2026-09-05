@@ -1,14 +1,21 @@
 <script setup>
 import { ref } from 'vue'
-import { showSuccessToast, showConfirmDialog } from 'vant'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { View } from '@element-plus/icons-vue'
 import { getUserList, auditRealname } from '@/api'
-import AdminListPage from '@/components/AdminListPage.vue'
-import DetailSheet from '@/components/DetailSheet.vue'
+import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import PasswordVerify from '@/components/PasswordVerify.vue'
 import { REALNAME_STATUS } from '@/utils/maps'
+import { maskPhone, maskName, maskIdNo } from '@/utils/format'
 
-const sheetShow = ref(false)
+// 实名模块只读 + 审核；查看完整信息需密码验证（写审计日志）
+const drawerShow = ref(false)
 const detail = ref(null)
+const revealed = ref(false)
+const pwdShow = ref(false)
+const rejectShow = ref(false)
+const rejectReason = ref('')
 
 const filters = [
   {
@@ -24,101 +31,194 @@ const filters = [
 
 function openDetail(u) {
   detail.value = u
-  sheetShow.value = true
+  revealed.value = false
+  drawerShow.value = true
+}
+
+function onReveal() {
+  pwdShow.value = true
+}
+
+function onRevealed() {
+  revealed.value = true
+  ElMessage.success('已查看完整信息，本次查看已写入审计日志')
 }
 
 async function audit(pass) {
   const u = detail.value
-  await showConfirmDialog({
-    title: pass ? '通过实名审核' : '驳回实名申请',
-    message: pass
-      ? `确认通过「${u.realnameName}」的实名审核？`
-      : `确认驳回「${u.realnameName}」的实名申请？驳回后用户可重新提交。`
-  })
-  const res = await auditRealname(u.id, pass)
+  if (pass) {
+    await ElMessageBox.confirm(`确认通过「${u.realnameName}」的实名审核？`, '通过实名审核', { type: 'warning' })
+  } else {
+    rejectShow.value = true
+    return
+  }
+  const res = await auditRealname(u.id, true)
   if (res.code === 0) {
-    u.realnameStatus = pass ? 'approved' : 'rejected'
-    showSuccessToast(pass ? '已通过' : '已驳回')
-    sheetShow.value = false
+    u.realnameStatus = 'approved'
+    ElMessage.success('已通过')
+    drawerShow.value = false
+  }
+}
+
+async function onRejectConfirm() {
+  if (!rejectReason.value.trim()) return ElMessage.warning('请填写驳回原因')
+  const res = await auditRealname(detail.value.id, false)
+  if (res.code === 0) {
+    detail.value.realnameStatus = 'rejected'
+    ElMessage.success('已驳回')
+    rejectShow.value = false
+    drawerShow.value = false
   }
 }
 </script>
 
 <template>
   <div class="adm-page">
-    <AdminListPage
+    <AdminTablePage
       :fetch="getUserList"
       :filters="filters"
       :defaults="{ realnameStatus: 'pending' }"
       search-placeholder="搜索昵称 / 手机号"
     >
       <template #default="{ items }">
-        <div class="adm-card" style="padding: 0">
-          <div
-            v-for="u in items"
-            :key="u.id"
-            class="adm-item"
-            style="padding: 12px 14px"
-            @click="openDetail(u)"
-          >
-            <img class="rn__avatar" :src="u.avatar" :alt="u.nickname" />
-            <div class="adm-item__body">
-              <div class="adm-item__title">{{ u.nickname }}（{{ u.realnameName }}）</div>
-              <div class="adm-item__desc">身份证 {{ u.realnameIdNo }}</div>
-              <div class="adm-item__desc">{{ u.phone }}</div>
+        <el-table-column label="申请人" min-width="180">
+          <template #default="{ row }">
+            <div class="rn-cell" @click="openDetail(row)">
+              <img class="rn-avatar" :src="row.avatar" :alt="row.nickname" />
+              <div>
+                <div class="rn-name">{{ maskName(row.realnameName) }}（{{ row.nickname }}）</div>
+                <div class="rn-sub">身份证 {{ maskIdNo(row.realnameIdNo) }}</div>
+              </div>
             </div>
-            <div class="adm-item__side">
-              <StatusTag :value="u.realnameStatus" :map="REALNAME_STATUS" />
-              <div class="t-tertiary" style="font-size: 11px; margin-top: 6px">最近登录 {{ u.lastLoginTime }}</div>
-            </div>
-          </div>
-        </div>
-      </template>
-    </AdminListPage>
+          </template>
+        </el-table-column>
 
-    <DetailSheet v-model:show="sheetShow" :title="detail?.realnameName ? `实名审核 · ${detail.realnameName}` : '实名审核'">
+        <el-table-column label="绑定手机" width="130">
+          <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
+        </el-table-column>
+
+        <el-table-column label="审核状态" width="100">
+          <template #default="{ row }">
+            <StatusTag :value="row.realnameStatus" :map="REALNAME_STATUS" />
+          </template>
+        </el-table-column>
+
+        <el-table-column label="最近登录" width="160" prop="lastLoginTime" />
+
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openDetail(row)">审核</el-button>
+          </template>
+        </el-table-column>
+      </template>
+    </AdminTablePage>
+
+    <!-- 审核抽屉 -->
+    <el-drawer
+      v-model="drawerShow"
+      :title="detail?.realnameName ? `实名审核 · ${maskName(detail.realnameName)}` : '实名审核'"
+      size="420px"
+    >
       <template v-if="detail">
-        <div class="adm-card" style="margin-bottom: 10px">
+        <div class="adm-card" style="box-shadow: none">
           <div class="adm-card__title">审核材料</div>
           <div class="rn__idcard">
             <img :src="detail.avatar" alt="证件照片" />
           </div>
-          <div class="adm-kv"><span class="k">真实姓名</span><span class="v">{{ detail.realnameName }}</span></div>
-          <div class="adm-kv"><span class="k">身份证号</span><span class="v">{{ detail.realnameIdNo }}</span></div>
-          <div class="adm-kv"><span class="k">绑定手机</span><span class="v">{{ detail.phone }}</span></div>
+          <div class="adm-kv">
+            <span class="k">真实姓名</span>
+            <span class="v">
+              {{ revealed ? detail.realnameName : maskName(detail.realnameName) }}
+            </span>
+          </div>
+          <div class="adm-kv">
+            <span class="k">身份证号</span>
+            <span class="v">
+              {{ revealed ? detail.realnameIdNo : maskIdNo(detail.realnameIdNo) }}
+              <el-button v-if="!revealed" link type="primary" size="small" :icon="View" @click="onReveal">
+                查看完整
+              </el-button>
+            </span>
+          </div>
+          <div class="adm-kv">
+            <span class="k">绑定手机</span>
+            <span class="v">{{ revealed ? detail.phone : maskPhone(detail.phone) }}</span>
+          </div>
           <div class="adm-kv"><span class="k">账号昵称</span><span class="v">{{ detail.nickname }}</span></div>
           <div class="adm-kv"><span class="k">注册时间</span><span class="v">{{ detail.registerTime }}</span></div>
-          <van-notice-bar
-            left-icon="info-o"
-            text="请核对姓名与身份证号一致、证件清晰无遮挡（联调后此处展示实拍证件照）"
-            style="margin-top: 8px"
+
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="请核对姓名与身份证号一致、证件清晰无遮挡；每次查看完整信息均写入审计日志"
+            style="margin-top: 10px"
           />
+
+          <div v-if="detail.realnameStatus === 'pending'" class="rn__actions">
+            <el-button type="danger" plain @click="audit(false)">驳回</el-button>
+            <el-button type="primary" @click="audit(true)">通过审核</el-button>
+          </div>
         </div>
       </template>
+    </el-drawer>
 
-      <template #actions v-if="detail?.realnameStatus === 'pending'">
-        <van-button block round plain type="danger" @click="audit(false)">驳回</van-button>
-        <van-button block round type="primary" @click="audit(true)">通过审核</van-button>
+    <!-- 驳回原因 -->
+    <el-dialog v-model="rejectShow" title="驳回实名申请" width="420px">
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="驳回后用户可重新提交实名认证"
+        style="margin-bottom: 14px"
+      />
+      <el-input
+        v-model="rejectReason"
+        type="textarea"
+        :rows="3"
+        placeholder="请填写驳回原因（必填，将通知用户）"
+      />
+      <template #footer>
+        <el-button @click="rejectShow = false">取消</el-button>
+        <el-button type="danger" @click="onRejectConfirm">确认驳回</el-button>
       </template>
-    </DetailSheet>
+    </el-dialog>
+
+    <!-- 查看完整信息密码验证 -->
+    <PasswordVerify
+      v-model="pwdShow"
+      title="查看完整实名信息"
+      tip="查看用户完整实名信息（含身份证号全量）属敏感操作，需管理员密码验证并记录审计日志"
+      @verified="onRevealed"
+    />
   </div>
 </template>
 
 <style scoped lang="scss">
-.rn__avatar {
-  width: 42px;
-  height: 42px;
+.rn-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.rn-avatar {
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
   border: 1px solid $color-border;
 }
 
+.rn-name { font-size: 13px; font-weight: 600; color: $color-text-primary; }
+.rn-sub { font-size: 12px; color: $color-text-tertiary; margin-top: 2px; }
+
 .rn__idcard {
   height: 150px;
-  border-radius: $radius-md;
+  border-radius: 8px;
   overflow: hidden;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   background: $color-surface;
   display: flex;
   align-items: center;
@@ -129,5 +229,13 @@ async function audit(pass) {
     height: 100%;
     object-fit: cover;
   }
+}
+
+.rn__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+
+  .el-button { flex: 1; }
 }
 </style>
