@@ -1,161 +1,180 @@
-<template>
-  <div v-loading="loading" class="page-container">
-    <div class="sn-card page-head">
-      <div class="head-left">
-        <el-button text :icon="'ArrowLeft'" @click="router.back()">返回</el-button>
-        <div>
-          <h3 class="head-title">编辑藏品</h3>
-          <span class="head-sub">仅草稿状态可编辑基础信息（文档 6.1）</span>
-        </div>
-      </div>
-    </div>
-
-    <template v-if="detail">
-      <div class="sn-card">
-        <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" style="max-width: 640px">
-          <el-form-item label="藏品名称" prop="name">
-            <el-input v-model="form.name" maxlength="60" show-word-limit />
-          </el-form-item>
-          <el-form-item label="藏品分类" prop="categoryId">
-            <el-select v-model="form.categoryId" style="width: 240px">
-              <el-option v-for="c in CATEGORIES" :key="c.value" :label="c.label" :value="c.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="发行总量" prop="edition">
-            <el-input-number v-model="form.edition" :min="1" :max="1000000" :step="100" step-strictly />
-            <div class="form-hint">已售出 {{ detail.sold }} / 锁定 {{ detail.lockedQuantity }}，发行总量不可低于已消耗数量</div>
-          </el-form-item>
-          <el-form-item label="简介（副标题）">
-            <el-input v-model="form.description" maxlength="120" show-word-limit />
-          </el-form-item>
-          <el-form-item label="创作故事">
-            <el-input v-model="form.story" type="textarea" :rows="4" maxlength="2000" show-word-limit />
-          </el-form-item>
-          <el-form-item label="主图地址">
-            <el-input v-model="form.image" />
-          </el-form-item>
-          <el-form-item label="发行方">
-            <el-input v-model="form.issuer" style="width: 320px" />
-          </el-form-item>
-          <el-form-item label="创作者">
-            <el-input v-model="form.creator" style="width: 320px" />
-          </el-form-item>
-          <el-form-item label="标签">
-            <el-input v-model="form.tag" style="width: 320px" />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :loading="submitting" @click="submit">保存修改</el-button>
-            <el-button @click="router.back()">取 消</el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-    </template>
-  </div>
-</template>
-
-<script setup lang="ts">
-// 编辑藏品（文档 8.5 #26：仅 draft 可编辑）
-import { onMounted, reactive, ref } from 'vue'
+<script setup>
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
-import { fetchCollectibleDetail, updateCollectible } from '@/api/collectible'
-import type { CollectibleDetail } from '@/types/api'
+import { showSuccessToast } from 'vant'
+import { getCollectibleDetail, saveCollectible } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
-
-const CATEGORIES = [
-  { value: 1, label: '水墨' },
-  { value: 2, label: '国潮' },
-  { value: 3, label: '限定' }
-]
-
-const loading = ref(false)
-const detail = ref<CollectibleDetail | null>(null)
-const formRef = ref<FormInstance>()
+const id = route.params.id ? Number(route.params.id) : null
 const submitting = ref(false)
 
-const form = reactive({
+const form = ref({
   name: '',
-  categoryId: undefined as number | undefined,
-  edition: 100,
+  subtitle: '',
+  category: '青铜',
+  price: '',
+  edition: '',
+  saleTime: '',
+  tag: '首发',
+  issuer: '司南数字藏品',
   description: '',
-  story: '',
-  image: '',
-  issuer: '',
-  creator: '',
-  tag: ''
+  featured: false,
+  status: 'upcoming',
+  cover: '/images/collections/cover-1.jpg'
 })
 
-const rules: FormRules = {
-  name: [{ required: true, message: '藏品名称不能为空', trigger: 'blur' }],
-  categoryId: [{ required: true, message: '请选择藏品分类', trigger: 'change' }],
-  edition: [{ required: true, message: '发行总量必须大于 0', trigger: 'change' }]
-}
+const categories = ['青铜', '水墨', '国潮', '限定']
+const statuses = [
+  { value: 'upcoming', label: '待发售' },
+  { value: 'onsale', label: '发售中' },
+  { value: 'soldout', label: '已售罄' },
+  { value: 'offline', label: '已下架' }
+]
 
-async function load(): Promise<void> {
-  loading.value = true
-  try {
-    detail.value = await fetchCollectibleDetail(route.params.id as string)
-    const d = detail.value
-    form.name = d.name
-    form.categoryId = d.categoryId
-    form.edition = d.edition
-    form.description = d.subtitle ?? ''
-    form.story = d.description ?? ''
-    form.image = d.image
-    form.issuer = d.issuer ?? ''
-    form.creator = d.creator ?? ''
-    form.tag = d.tag ?? ''
-    if (d.status !== 'draft') {
-      ElMessage.warning(`当前状态为「${d.status}」，仅草稿状态可保存修改`)
+onMounted(async () => {
+  if (id) {
+    const res = await getCollectibleDetail(id)
+    const c = res.data
+    form.value = {
+      name: c.name, subtitle: c.subtitle, category: c.category,
+      price: String(c.price), edition: String(c.edition), saleTime: c.saleTime,
+      tag: c.tag, issuer: c.issuer, description: c.description,
+      featured: c.featured, status: c.status, cover: c.cover
     }
-  } catch {
-    // 拦截器已提示
-  } finally {
-    loading.value = false
   }
-}
+})
 
-async function submit(): Promise<void> {
-  const formEl = formRef.value
-  if (!formEl) return
-  const valid = await formEl.validate().catch(() => false)
-  if (!valid) return
+const coverOptions = [
+  '/images/collections/cover-1.jpg',
+  '/images/collections/cover-2.jpg',
+  '/images/collections/cover-3.jpg',
+  '/images/collections/cover-4.jpg',
+  '/images/collections/cover-5.jpg',
+  '/images/collections/cover-collection-1.jpg',
+  '/images/collections/cover-collection-2.jpg',
+  '/images/collections/cover-collection-3.jpg',
+  '/images/collections/cover-collection-4.jpg',
+  '/images/collections/cover-collection-5.jpg'
+]
 
+async function onSubmit() {
+  const f = form.value
+  if (!f.name.trim()) return
   submitting.value = true
-  try {
-    await updateCollectible(route.params.id as string, {
-      name: form.name.trim(),
-      categoryId: form.categoryId,
-      edition: form.edition,
-      description: form.description.trim(),
-      story: form.story.trim(),
-      images: form.image.trim() ? [form.image.trim()] : [],
-      issuer: form.issuer.trim(),
-      creator: form.creator.trim(),
-      tag: form.tag.trim()
-    })
-    ElMessage.success('藏品信息已保存')
+  const res = await saveCollectible({
+    id,
+    name: f.name.trim(),
+    subtitle: f.subtitle.trim(),
+    category: f.category,
+    price: Number(f.price) || 0,
+    edition: Number(f.edition) || 0,
+    saleTime: f.saleTime,
+    tag: f.tag,
+    issuer: f.issuer,
+    description: f.description,
+    featured: f.featured,
+    status: f.status,
+    cover: f.cover
+  })
+  submitting.value = false
+  if (res.code === 0) {
+    showSuccessToast(id ? '保存成功' : '创建成功')
     router.back()
-  } catch {
-    // 拦截器已提示
-  } finally {
-    submitting.value = false
   }
 }
-
-onMounted(load)
 </script>
 
-<style scoped lang="scss">
-@use '@/assets/styles/table-common' as *;
+<template>
+  <div class="adm-page ce">
+    <div class="adm-card">
+      <div class="adm-card__title">{{ id ? '编辑藏品' : '新建藏品' }}</div>
 
-.form-hint {
-  font-size: 12px;
-  color: $sn-text-muted;
-  line-height: 1.6;
-  margin-top: 4px;
+      <van-field v-model="form.name" label="藏品名称" placeholder="请输入藏品名称" required />
+      <van-field v-model="form.subtitle" label="副标题" placeholder="系列 / 描述" />
+      <van-field v-model="form.price" type="number" label="售价（元）" placeholder="0.00" required />
+      <van-field v-model="form.edition" type="digit" label="发行量（份）" placeholder="发行总量" required />
+      <van-field v-model="form.saleTime" label="发售时间" placeholder="2026-09-07 18:00" />
+      <van-field v-model="form.tag" label="标签" placeholder="首发 / 热销 / 爆款" />
+      <van-field v-model="form.issuer" label="发行方" placeholder="发行方名称" />
+
+      <van-field name="category" label="分类">
+        <template #input>
+          <van-radio-group v-model="form.category" direction="horizontal" style="flex-wrap: wrap; gap: 8px">
+            <van-radio v-for="c in categories" :key="c" :name="c">{{ c }}</van-radio>
+          </van-radio-group>
+        </template>
+      </van-field>
+
+      <van-field name="status" label="状态">
+        <template #input>
+          <van-radio-group v-model="form.status" direction="horizontal" style="flex-wrap: wrap; gap: 8px">
+            <van-radio v-for="s in statuses" :key="s.value" :name="s.value">{{ s.label }}</van-radio>
+          </van-radio-group>
+        </template>
+      </van-field>
+
+      <van-field name="featured" label="首页推荐">
+        <template #input>
+          <van-switch v-model="form.featured" size="20px" />
+        </template>
+      </van-field>
+
+      <van-field
+        v-model="form.description"
+        type="textarea"
+        rows="3"
+        maxlength="200"
+        show-word-limit
+        label="藏品描述"
+        placeholder="藏品介绍（C 端详情页展示）"
+      />
+
+      <van-field name="cover" label="封面图">
+        <template #input>
+          <div class="ce__covers">
+            <img
+              v-for="c in coverOptions"
+              :key="c"
+              :src="c"
+              :class="{ 'is-active': form.cover === c }"
+              @click="form.cover = c"
+            />
+          </div>
+        </template>
+      </van-field>
+    </div>
+
+    <div class="ce__submit">
+      <van-button block round type="primary" :loading="submitting" @click="onSubmit">
+        {{ id ? '保存修改' : '创建藏品' }}
+      </van-button>
+    </div>
+  </div>
+</template>
+
+<style scoped lang="scss">
+.ce__covers {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  width: 100%;
+
+  img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    cursor: pointer;
+
+    &.is-active {
+      border-color: $color-primary;
+    }
+  }
+}
+
+.ce__submit {
+  padding: 4px 2px 20px;
 }
 </style>

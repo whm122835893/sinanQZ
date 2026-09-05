@@ -1,0 +1,48 @@
+// ============================================================
+// 司南珍藏 · 管理后台 —— 复用 mixin（不输出 CSS，与 C 端同源）
+// ============================================================
+
+@mixin ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@mixin multi-ellipsis($lines: 2) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: $lines;
+  overflow: hidden;
+}
+
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@mixin safe-bottom($extra: 0px) {
+  padding-bottom: calc(#{$extra} + env(safe-area-inset-bottom));
+}
+
+@mixin safe-top($extra: 0px) {
+  padding-top: calc(#{$extra} + env(safe-area-inset-top));
+}
+
+@mixin card-base($radius: $radius-lg) {
+  background: $color-card;
+  border-radius: $radius;
+}
+
+// 液态玻璃（C 端 TabBar 同款质感）
+@mixin glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}

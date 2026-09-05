@@ -1,414 +1,305 @@
-<template>
-  <div v-loading="loading" class="page-container">
-    <!-- 顶部：返回 + 藏品概要 -->
-    <div class="sn-card page-head">
-      <div class="head-left">
-        <el-button text :icon="'ArrowLeft'" @click="router.push('/collectible')">返回列表</el-button>
-        <el-image :src="detail?.image" fit="cover" class="head-cover">
-          <template #error>
-            <div class="head-cover head-cover--fallback"><el-icon><Picture /></el-icon></div>
-          </template>
-        </el-image>
-        <div class="head-meta">
-          <div class="head-name">
-            <h3>{{ detail?.name || '—' }}</h3>
-            <el-tag v-if="detail" :type="STATUS_TAG[detail.status] ?? 'info'" size="small">
-              {{ STATUS_MAP[detail.status] ?? detail.status }}
-            </el-tag>
-            <el-tag v-if="detail?.isBlindbox" type="warning" size="small" effect="plain">盲盒藏品</el-tag>
-          </div>
-          <span class="head-sub">{{ detail?.subtitle || '暂无简介' }}</span>
-        </div>
-      </div>
-      <div class="head-actions">
-        <el-button v-if="detail?.status === 'draft'" v-permission="'collectible:edit'" @click="router.push(`/collectible/${id}/edit`)">编辑</el-button>
-        <el-button v-if="detail && ['draft', 'upcoming'].includes(detail.status)" v-permission="'collectible:release'" type="primary" @click="router.push(`/collectible/${id}/release`)">发售配置</el-button>
-        <el-button v-permission="'collectible:audit'" @click="router.push(`/collectible/${id}/audit`)">库存审计</el-button>
-      </div>
-    </div>
-
-    <template v-if="detail">
-      <!-- 库存五数（文档 11.2-13） -->
-      <div class="stock-grid">
-        <div class="sn-card stock-card">
-          <span class="stock-label">发行总量</span>
-          <span class="stock-value din">{{ detail.edition }}</span>
-        </div>
-        <div class="sn-card stock-card">
-          <span class="stock-label">已售出发售</span>
-          <span class="stock-value din">{{ detail.sold }}</span>
-        </div>
-        <div class="sn-card stock-card">
-          <span class="stock-label">已配置配额</span>
-          <span class="stock-value din">{{ detail.reservedCount }}</span>
-        </div>
-        <div class="sn-card stock-card" :class="{ 'stock-card--danger': detail.stockPool <= 5 && ['onsale', 'upcoming'].includes(detail.status) }">
-          <span class="stock-label">库存池</span>
-          <span class="stock-value din">{{ detail.stockPool }}</span>
-        </div>
-        <div class="sn-card stock-card">
-          <span class="stock-label">流通量</span>
-          <span class="stock-value din">{{ detail.circulate }}</span>
-        </div>
-        <div class="sn-card stock-card">
-          <span class="stock-label">锁定(待支付)</span>
-          <span class="stock-value din">{{ detail.lockedQuantity }}</span>
-        </div>
-        <div class="sn-card stock-card">
-          <span class="stock-label">已空投</span>
-          <span class="stock-value din">{{ detail.airdroppedCount }}</span>
-        </div>
-        <div class="sn-card stock-card">
-          <span class="stock-label">已销毁</span>
-          <span class="stock-value din">{{ detail.destroyedCount }}</span>
-        </div>
-      </div>
-
-      <div class="detail-grid">
-        <!-- 基础信息 -->
-        <div class="sn-card">
-          <div class="card-title">基础信息</div>
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="藏品ID">{{ detail.id }}</el-descriptions-item>
-            <el-descriptions-item label="分类">{{ detail.category }}</el-descriptions-item>
-            <el-descriptions-item label="发售价格">
-              <span class="din amount">¥{{ detail.price }}</span>
-            </el-descriptions-item>
-            <el-descriptions-item label="每人限购">{{ detail.perUserLimit > 0 ? `${detail.perUserLimit} 份` : '不限购' }}</el-descriptions-item>
-            <el-descriptions-item label="计划发售数量">{{ detail.releaseQuantity ?? '不限' }}</el-descriptions-item>
-            <el-descriptions-item label="实际可卖">{{ detail.saleable }}</el-descriptions-item>
-            <el-descriptions-item label="发售时间">{{ detail.onsaleAt || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="下架时间">{{ detail.offSaleAt || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="寄售开关">
-              <el-tag :type="detail.isResaleable ? 'success' : 'danger'" size="small">{{ detail.isResaleable ? '开启' : '关闭' }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="转赠开关">
-              <el-tag :type="detail.isTransferable ? 'success' : 'danger'" size="small">{{ detail.isTransferable ? '开启' : '关闭' }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="寄售限价">
-              {{ detail.resalePriceMode === 1 ? `¥${detail.resalePriceMin ?? '—'} ~ ¥${detail.resalePriceMax ?? '—'}` : '不限价' }}
-            </el-descriptions-item>
-            <el-descriptions-item label="标签">{{ detail.tag || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="发行方">{{ detail.issuer || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="创作者">{{ detail.creator || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ detail.createdAt }}</el-descriptions-item>
-            <el-descriptions-item label="更新时间">{{ detail.updatedAt }}</el-descriptions-item>
-          </el-descriptions>
-          <div v-if="detail.description" class="story-block">
-            <div class="card-title" style="margin-top: 14px">创作故事</div>
-            <p class="story-text">{{ detail.description }}</p>
-          </div>
-        </div>
-
-        <!-- 资格购配置（文档 5.1：发售配置内 Switch 开启；6.1：仅草稿可配置） -->
-        <div class="sn-card">
-          <div class="card-title-row">
-            <span class="card-title">资格购配置（与优先购完全独立，文档 5.1）</span>
-            <el-button
-              v-if="detail.status === 'draft'"
-              v-permission="'collectible:qualification'"
-              text
-              type="primary"
-              @click="router.push(`/collectible/${id}/release`)"
-            >
-              配置
-            </el-button>
-          </div>
-          <template v-if="detail.qualification">
-            <el-descriptions :column="1" border size="small">
-              <el-descriptions-item label="开关状态">
-                <el-tag :type="detail.qualification.isEnabled ? 'success' : 'info'" size="small">{{ detail.qualification.isEnabled ? '已开启' : '已关闭' }}</el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item label="条件组合">
-                {{ detail.qualification.conditionType === 2 ? '满足全部条件' : '满足任一条件' }}
-              </el-descriptions-item>
-              <el-descriptions-item label="持有指定藏品">
-                {{ detail.qualification.requiredCollectibleIds.length ? detail.qualification.requiredCollectibleIds.map((v) => `#${v}`).join('、') : '不限' }}
-              </el-descriptions-item>
-              <el-descriptions-item label="累计签到">{{ detail.qualification.requiredCheckinDays }} 天</el-descriptions-item>
-              <el-descriptions-item label="邀请人数">{{ detail.qualification.requiredInviteCount }} 人</el-descriptions-item>
-              <el-descriptions-item label="资格有效期">
-                {{ detail.qualification.validStartAt || '—' }} ~ {{ detail.qualification.validEndAt || '—' }}
-              </el-descriptions-item>
-              <el-descriptions-item label="白名单">
-                {{ detail.qualification.whitelist.length ? `${detail.qualification.whitelist.length} 人` : '未配置' }}
-              </el-descriptions-item>
-            </el-descriptions>
-          </template>
-          <el-empty v-else description="未配置资格购" :image-size="60" />
-        </div>
-      </div>
-
-      <!-- 配额 -->
-      <div class="sn-card">
-        <div class="card-title-row">
-          <span class="card-title">配额列表（文档 4.3.2）</span>
-          <el-button v-permission="'collectible:quota'" text type="primary" @click="router.push(`/collectible/${id}/quota`)">配额管理</el-button>
-        </div>
-        <el-table :data="detail.quotas" size="small" empty-text="暂无配额">
-          <el-table-column label="配额名称" prop="quotaName" min-width="140" />
-          <el-table-column label="类型" width="110">
-            <template #default="{ row }">{{ QUOTA_TYPE_MAP[row.quotaType] ?? row.quotaType }}</template>
-          </el-table-column>
-          <el-table-column label="计划数量" prop="plannedQuantity" width="100" align="right" />
-          <el-table-column label="已使用" prop="usedQuantity" width="90" align="right" />
-          <el-table-column label="剩余" width="90" align="right">
-            <template #default="{ row }">
-              <span class="din">{{ row.plannedQuantity - row.usedQuantity }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="90">
-            <template #default="{ row }">
-              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="创建时间" prop="createdAt" min-width="160" />
-        </el-table>
-      </div>
-
-      <!-- 空投 / 销毁记录 -->
-      <div class="sn-card">
-        <el-tabs v-model="recordTab">
-          <el-tab-pane label="空投记录" name="airdrop">
-            <el-table v-loading="airdropLoading" :data="airdropRecords" size="small" empty-text="暂无空投记录">
-              <el-table-column label="用户" prop="username" min-width="120" />
-              <el-table-column label="手机号" prop="phone" width="130" />
-              <el-table-column label="数量" prop="quantity" width="70" align="right" />
-              <el-table-column label="来源" prop="source" min-width="120" />
-              <el-table-column label="发放时间" prop="issuedAt" min-width="160" />
-            </el-table>
-          </el-tab-pane>
-          <el-tab-pane label="销毁记录" name="destroy">
-            <el-table v-loading="destroyLoading" :data="destroyRecords" size="small" empty-text="暂无销毁记录">
-              <el-table-column label="数量" prop="quantity" width="80" align="right" />
-              <el-table-column label="原因" prop="reason" min-width="180" show-overflow-tooltip />
-              <el-table-column label="操作人" prop="adminName" width="110" />
-              <el-table-column label="IP" prop="ip" width="130" />
-              <el-table-column label="时间" prop="createdAt" min-width="160" />
-            </el-table>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-    </template>
-
-    <div v-else-if="!loading" class="sn-card error-card">
-      <el-empty description="藏品不存在">
-        <el-button type="primary" @click="router.push('/collectible')">返回列表</el-button>
-      </el-empty>
-    </div>
-  </div>
-</template>
-
-<script setup lang="ts">
-// 藏品详情（文档 8.6 #35：库存五数 + 全部开关 + 配额 + 空投/销毁记录）
-import { onMounted, ref } from 'vue'
+<script setup>
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchCollectibleDetail, fetchAirdropRecords, fetchDestroyRecords } from '@/api/collectible'
-import type { AirdropRecordRow, CollectibleDetail, DestroyRecordRow } from '@/types/api'
+import { showSuccessToast, showConfirmDialog, showToast } from 'vant'
+import { getCollectibleDetail, airdropCollectible, destroyCollectible, addQuota, toggleQuota } from '@/api'
+import DetailSheet from '@/components/DetailSheet.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import { COLLECTIBLE_STATUS, QUOTA_TYPES } from '@/utils/maps'
+import { fmtMoney, stockPool } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
-const id = route.params.id as string
+const id = Number(route.params.id)
+const loading = ref(true)
+const detail = ref(null)
 
-const STATUS_MAP: Record<string, string> = {
-  draft: '草稿', upcoming: '待发售', onsale: '发售中', soldout: '已售罄', off: '已下架'
-}
-const STATUS_TAG: Record<string, string> = {
-  draft: 'info', upcoming: 'warning', onsale: 'success', soldout: 'danger', off: ''
-}
-/** 配额类型（文档 4.3.2） */
-const QUOTA_TYPE_MAP: Record<number, string> = {
-  1: '优先购', 2: '活动空投', 3: '签到', 4: '注册', 5: '邀请', 6: '抽奖', 7: '其他'
-}
+// ---- 空投 ----
+const airShow = ref(false)
+const airForm = ref({ phones: '', quantity: 1 })
 
-const loading = ref(false)
-const detail = ref<CollectibleDetail | null>(null)
+// ---- 销毁 ----
+const destroyShow = ref(false)
+const destroyQty = ref(1)
 
-async function load(): Promise<void> {
+// ---- 配额 ----
+const quotaShow = ref(false)
+const quotaForm = ref({ quotaType: 1, quotaName: '', quantity: 10 })
+
+async function load() {
   loading.value = true
-  try {
-    detail.value = await fetchCollectibleDetail(id)
-    await Promise.all([loadAirdropRecords(), loadDestroyRecords()])
-  } catch {
-    // 拦截器已提示
-  } finally {
-    loading.value = false
-  }
+  const res = await getCollectibleDetail(id)
+  detail.value = res.data
+  loading.value = false
 }
-
-// ---------------- 空投/销毁记录（#49 / #50） ----------------
-const recordTab = ref('airdrop')
-const airdropLoading = ref(false)
-const airdropRecords = ref<AirdropRecordRow[]>([])
-const destroyLoading = ref(false)
-const destroyRecords = ref<DestroyRecordRow[]>([])
-
-async function loadAirdropRecords(): Promise<void> {
-  airdropLoading.value = true
-  try {
-    const data = await fetchAirdropRecords(id, { page: 1, pageSize: 10 })
-    airdropRecords.value = data.list
-  } catch {
-    // 拦截器已提示
-  } finally {
-    airdropLoading.value = false
-  }
-}
-
-async function loadDestroyRecords(): Promise<void> {
-  destroyLoading.value = true
-  try {
-    const data = await fetchDestroyRecords(id, { page: 1, pageSize: 10 })
-    destroyRecords.value = data.list
-  } catch {
-    // 拦截器已提示
-  } finally {
-    destroyLoading.value = false
-  }
-}
-
 onMounted(load)
+
+async function onAirdrop() {
+  const phones = airForm.value.phones.split(/[\n,，\s]+/).filter(Boolean)
+  if (!phones.length) return showToast('请输入至少一个手机号')
+  if (!Number.isInteger(airForm.value.quantity) || airForm.value.quantity < 1) return showToast('请输入有效数量')
+  const res = await airdropCollectible({ id, phones, quantity: airForm.value.quantity })
+  if (res.code === 0) {
+    showSuccessToast(`已空投给 ${res.data.users} 位用户`)
+    airShow.value = false
+    load()
+  }
+}
+
+async function onDestroy() {
+  if (!Number.isInteger(destroyQty.value) || destroyQty.value.quantity < 1) return showToast('请输入有效数量')
+  await showConfirmDialog({
+    title: '确认销毁',
+    message: `确认从库存池销毁 ${destroyQty.value} 份？销毁后不可恢复，总发行量守恒。`
+  })
+  const res = await destroyCollectible({ id, quantity: destroyQty.value })
+  if (res.code === 0) {
+    showSuccessToast(`已销毁 ${res.data.destroyed} 份`)
+    destroyShow.value = false
+    load()
+  }
+}
+
+async function onAddQuota() {
+  if (!quotaForm.value.quotaName.trim()) return showToast('请输入配额名称')
+  const res = await addQuota({
+    collectibleId: id,
+    quotaType: quotaForm.value.quotaType,
+    quotaName: quotaForm.value.quotaName,
+    quantity: quotaForm.value.quantity
+  })
+  if (res.code === 0) {
+    showSuccessToast('配额已添加')
+    quotaShow.value = false
+    load()
+  }
+}
+
+async function onToggleQuota(q) {
+  const res = await toggleQuota(q.id)
+  if (res.code === 0) {
+    q.status = res.data
+    showSuccessToast(res.data === 1 ? '已启用' : '已停用')
+  }
+}
 </script>
 
+<template>
+  <div class="adm-page cd">
+    <van-skeleton v-if="loading" title :row="8" style="padding: 16px" />
+    <template v-else-if="detail">
+      <!-- 头图 -->
+      <div class="cd__hero adm-card">
+        <img class="cd__cover" :src="detail.cover" :alt="detail.name" />
+        <div class="cd__hero-info">
+          <div class="cd__name">
+            {{ detail.name }}
+            <StatusTag :value="detail.status" :map="COLLECTIBLE_STATUS" />
+          </div>
+          <div class="t-tertiary" style="font-size: 12px">{{ detail.subtitle }} · {{ detail.category }} · {{ detail.issuer }}</div>
+          <div class="cd__price price">¥{{ fmtMoney(detail.price) }}</div>
+        </div>
+      </div>
+
+      <!-- 库存守恒审计 -->
+      <div class="adm-card">
+        <div class="adm-card__title">
+          库存守恒审计
+          <van-tag v-if="detail.audit.ok" type="success" size="medium" plain round>守恒正常</van-tag>
+          <van-tag v-else type="danger" size="medium" plain round>数据异常</van-tag>
+        </div>
+        <div class="cd__audit">
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.edition }}</div>
+            <div class="cd__audit-l">总发行</div>
+          </div>
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.sold }}</div>
+            <div class="cd__audit-l">已售</div>
+          </div>
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.audit.pool }}</div>
+            <div class="cd__audit-l">库存池</div>
+          </div>
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.lockedQuantity }}</div>
+            <div class="cd__audit-l">锁定</div>
+          </div>
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.reservedCount }}</div>
+            <div class="cd__audit-l">配额预留</div>
+          </div>
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.airdroppedCount }}</div>
+            <div class="cd__audit-l">空投</div>
+          </div>
+          <div class="cd__audit-item">
+            <div class="cd__audit-v price">{{ detail.destroyedCount }}</div>
+            <div class="cd__audit-l">销毁</div>
+          </div>
+        </div>
+        <div class="cd__audit-formula">
+          发行 {{ detail.edition }} = 已售 {{ detail.sold }} + 库存 {{ detail.audit.pool }} + 锁定 {{ detail.lockedQuantity }} + 预留 {{ detail.reservedCount }} + 空投 {{ detail.airdroppedCount }} + 销毁 {{ detail.destroyedCount }}
+        </div>
+      </div>
+
+      <!-- 基本信息 -->
+      <div class="adm-card">
+        <div class="adm-card__title">基本信息</div>
+        <div class="adm-kv"><span class="k">发售时间</span><span class="v">{{ detail.saleTime }}</span></div>
+        <div class="adm-kv"><span class="k">流通量</span><span class="v">{{ detail.circulate }}</span></div>
+        <div class="adm-kv"><span class="k">首发推荐</span><span class="v">{{ detail.featured ? '是' : '否' }}</span></div>
+        <div class="adm-kv"><span class="k">藏品描述</span><span class="v">{{ detail.description }}</span></div>
+      </div>
+
+      <!-- 配额 -->
+      <div class="adm-card">
+        <div class="adm-card__title">
+          配额管理
+          <span class="adm-card__more" @click="quotaShow = true"><van-icon name="plus" />新增配额</span>
+        </div>
+        <div v-for="q in detail.quotas" :key="q.id" class="adm-item">
+          <div class="adm-item__body">
+            <div class="adm-item__title">{{ q.quotaName }}</div>
+            <div class="adm-item__desc">{{ QUOTA_TYPES[q.quotaType] }} · 计划 {{ q.plannedQuantity }} / 已用 {{ q.usedQuantity }}</div>
+          </div>
+          <van-switch :model-value="q.status === 1" size="20px" @click="onToggleQuota(q)" />
+        </div>
+        <van-empty v-if="!detail.quotas.length" description="暂无配额" image-size="60" />
+      </div>
+
+      <!-- 持有人 TOP -->
+      <div class="adm-card">
+        <div class="adm-card__title">持有人 TOP5</div>
+        <div v-for="(h, i) in detail.holders" :key="h.serial" class="adm-item">
+          <div class="cd__rank">{{ i + 1 }}</div>
+          <div class="adm-item__body">
+            <div class="adm-item__title">{{ h.nickname }}</div>
+            <div class="adm-item__desc">{{ h.serial }}</div>
+          </div>
+          <div class="adm-item__side"><span class="price">×{{ h.quantity }}</span></div>
+        </div>
+      </div>
+
+      <!-- 操作 -->
+      <div class="cd__ops">
+        <van-button block round plain type="primary" icon="gift-o" @click="airShow = true">独立空投</van-button>
+        <van-button block round plain type="danger" icon="fire-o" @click="destroyShow = true">销毁库存</van-button>
+        <van-button block round type="primary" icon="edit" :to="`/collectible/edit/${id}`">编辑藏品</van-button>
+      </div>
+
+      <!-- 空投弹层 -->
+      <DetailSheet v-model:show="airShow" title="独立空投">
+        <van-field
+          v-model="airForm.phones"
+          type="textarea"
+          rows="3"
+          label="手机号"
+          placeholder="多个手机号用换行或逗号分隔"
+        />
+        <van-field v-model="airForm.quantity" type="digit" label="每人份数" placeholder="每用户空投份数" />
+        <van-notice-bar left-icon="info-o" text="空投从库存池扣减，直接进入用户账户，记入空投统计。" style="margin-top: 10px" />
+        <template #actions>
+          <van-button block round type="primary" @click="onAirdrop">确认空投</van-button>
+        </template>
+      </DetailSheet>
+
+      <!-- 销毁弹层 -->
+      <DetailSheet v-model:show="destroyShow" title="销毁库存">
+        <van-field v-model="destroyQty" type="digit" label="销毁份数" :placeholder="`最多可销毁 ${stockPool(detail)} 份`" />
+        <van-notice-bar left-icon="warning-o" text="销毁从库存池扣减且不可恢复，销毁后总发行量守恒（已售+库存+锁定+预留+空投+销毁=发行）。" style="margin-top: 10px" />
+        <template #actions>
+          <van-button block round type="danger" @click="onDestroy">确认销毁</van-button>
+        </template>
+      </DetailSheet>
+
+      <!-- 配额弹层 -->
+      <DetailSheet v-model:show="quotaShow" title="新增配额">
+        <van-field v-model="quotaForm.quotaName" label="配额名称" placeholder="如：优先购预留 / 活动空投" />
+        <van-field v-model="quotaForm.quantity" type="digit" label="预留数量" placeholder="从库存池预留的份数" />
+        <van-field name="quotaType" label="配额类型">
+          <template #input>
+            <van-radio-group v-model="quotaForm.quotaType" direction="horizontal" style="flex-wrap: wrap; gap: 8px">
+              <van-radio v-for="(label, value) in QUOTA_TYPES" :key="value" :name="Number(value)">{{ label }}</van-radio>
+            </van-radio-group>
+          </template>
+        </van-field>
+        <template #actions>
+          <van-button block round type="primary" @click="onAddQuota">确认添加</van-button>
+        </template>
+      </DetailSheet>
+    </template>
+  </div>
+</template>
+
 <style scoped lang="scss">
-@use '@/assets/styles/table-common' as *;
-
-.page-head {
+.cd__hero {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-
-  .head-left {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    min-width: 0;
-  }
-
-  .head-cover {
-    width: 64px;
-    height: 64px;
-    border-radius: 10px;
-    flex-shrink: 0;
-    background: $sn-surface;
-
-    &--fallback {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: $sn-text-muted;
-    }
-  }
-
-  .head-meta {
-    min-width: 0;
-
-    .head-name {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-
-      h3 {
-        margin: 0;
-        font-size: 17px;
-        font-weight: 600;
-        color: $sn-text-main;
-      }
-    }
-
-    .head-sub {
-      display: block;
-      font-size: 12px;
-      color: $sn-text-muted;
-      margin-top: 3px;
-      max-width: 420px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
+  gap: 14px;
 }
 
-.stock-grid {
+.cd__cover {
+  width: 110px;
+  height: 110px;
+  border-radius: $radius-md;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: $color-surface;
+}
+
+.cd__hero-info { flex: 1; min-width: 0; padding-top: 4px; }
+
+.cd__name {
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  @include ellipsis;
+}
+
+.cd__price { font-size: 20px; margin-top: 8px; }
+
+.cd__audit {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 10px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px 4px;
+  text-align: center;
 }
 
-.stock-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
+.cd__audit-v { font-size: 16px; }
+.cd__audit-l { font-size: 10px; color: $color-text-tertiary; margin-top: 2px; }
 
-  .stock-label {
-    font-size: 12px;
-    color: $sn-text-sub;
-  }
-
-  .stock-value {
-    font-size: 22px;
-    font-weight: 600;
-    color: $sn-text-main;
-  }
-
-  &--danger .stock-value {
-    color: $sn-danger;
-  }
+.cd__audit-formula {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: $radius-md;
+  background: $color-surface;
+  font-size: 11px;
+  color: $color-text-secondary;
+  line-height: 1.7;
 }
 
-.detail-grid {
+.cd__rank {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: $color-surface;
+  color: $color-text-tertiary;
+  font-size: 10px;
+  font-weight: 700;
+  @include flex-center;
+  flex-shrink: 0;
+}
+
+.cd__ops {
   display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding-bottom: 6px;
 }
 
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: $sn-text-main;
-  margin-bottom: 12px;
-}
-
-.card-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-
-  .card-title {
-    margin-bottom: 0;
-  }
-}
-
-.story-block {
-  .story-text {
-    margin: 0;
-    font-size: 13px;
-    line-height: 1.8;
-    color: $sn-text-sub;
-    background: $sn-bg;
-    border-radius: 8px;
-    padding: 12px;
-  }
-}
-
-.error-card {
-  min-height: 240px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-@media (max-width: 1365px) {
-  .stock-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .detail-grid {
-    grid-template-columns: 1fr;
-  }
+@media (min-width: 769px) {
+  .cd__audit { grid-template-columns: repeat(7, 1fr); }
 }
 </style>

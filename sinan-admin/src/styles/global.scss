@@ -1,0 +1,244 @@
+// ============================================================
+// 司南珍藏 · 管理后台 —— 全局样式（令牌与 C 端完全一致）
+// ============================================================
+
+:root {
+  // ---- 色彩令牌（与 C 端严格一致）----
+  --color-primary:          #C00000;
+  --color-primary-dark:     #A00000;
+  --color-primary-light:    #F5E0E0;
+  --color-primary-disabled: #E08080;
+  --color-bg:               #F7F8FA;
+  --color-card:             #FFFFFF;
+  --color-surface:          #F2F3F5;
+  --color-text-primary:     #333333;
+  --color-text-secondary:   #666666;
+  --color-text-tertiary:    #999999;
+  --color-border:           #EEEEEE;
+  --color-gold:             #D4A574;
+  --color-gold-dark:        #B08D55;
+  --color-dark:             #1A1A1A;
+  --color-primary-bg:       #FFF5F5;
+  --color-success:           #07c160;
+  --color-warning:          #ff976a;
+  --color-blue:             #1989fa;
+
+  // ---- 覆盖 Vant 主题令牌（与 C 端一致）----
+  --van-primary-color:      var(--color-primary);
+  --van-danger-color:       var(--color-primary);
+  --van-success-color:      #07c160;
+  --van-warning-color:      #ff976a;
+  --van-text-color:          var(--color-text-primary);
+  --van-text-color-2:       var(--color-text-secondary);
+  --van-text-color-3:       var(--color-text-tertiary);
+  --van-gray-1:             var(--color-surface);
+  --van-gray-2:             var(--color-bg);
+  --van-gray-3:             #ebedf0;
+  --van-border-color:       var(--color-border);
+  --van-button-default-color: var(--color-text-primary);
+  --van-button-primary-background: var(--color-primary);
+  --van-button-primary-border-color: var(--color-primary);
+  --van-font-family:        'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background: $color-bg;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: $font-family;
+  font-size: 14px;
+  color: $color-text-primary;
+  background: $color-bg;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+a { color: inherit; text-decoration: none; }
+ul, li { list-style: none; margin: 0; padding: 0; }
+img { display: block; max-width: 100%; }
+
+// ---- 通用工具类 ----
+.t-primary   { color: $color-primary; }
+.t-secondary { color: $color-text-secondary; }
+.t-tertiary  { color: $color-text-tertiary; }
+.t-gold      { color: $color-gold; }
+.t-success   { color: var(--color-success); }
+.t-warning   { color: var(--color-warning); }
+.fw-600 { font-weight: 600; }
+.fw-700 { font-weight: 700; }
+.calligraphy { font-family: $font-calligraphy; font-weight: 700; }
+.price { font-family: $font-price; font-weight: 700; color: $color-primary; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+// ---- 管理后台通用结构 ----
+
+// 页面容器（移动端带 TabBar 底部留白；桌面端由布局提供内边距）
+.adm-page {
+  min-height: 100%;
+  padding-bottom: calc(#{$tabbar-height} + env(safe-area-inset-bottom) + 16px);
+}
+
+// 白卡片（C 端同款 12px 圆角）
+.adm-card {
+  background: $color-card;
+  border-radius: $radius-lg;
+  padding: 14px;
+  margin: 0 0 12px;
+  box-shadow: 0 1px 6px rgba(26, 26, 26, 0.04);
+}
+
+.adm-card__title {
+  @include flex-between;
+  font-size: 15px;
+  font-weight: 600;
+  color: $color-text-primary;
+  margin-bottom: 12px;
+
+  .adm-card__more {
+    font-size: 12px;
+    font-weight: 400;
+    color: $color-text-tertiary;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+  }
+}
+
+// 列表行
+.adm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid $color-border;
+  cursor: pointer;
+
+  &:last-child { border-bottom: none; }
+  &:active { background: rgba(0,  0, 0, 0.02); }
+}
+
+.adm-item__thumb {
+  width: 54px;
+  height: 54px;
+  border-radius: $radius-md;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: $color-surface;
+}
+
+.adm-item__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.adm-item__title {
+  font-size: 14px;
+  font-weight: 600;
+  @include ellipsis;
+}
+
+.adm-item__desc {
+  font-size: 12px;
+  color: $color-text-tertiary;
+  margin-top: 3px;
+  @include ellipsis;
+}
+
+.adm-item__side {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+// 键值对行
+.adm-kv {
+  @include flex-between;
+  padding: 8px 0;
+  font-size: 13px;
+
+  .k { color: $color-text-secondary; flex-shrink: 0; margin-right: 16px; }
+  .v { color: $color-text-primary; text-align: right; word-break: break-all; }
+}
+
+// 筛选胶囊
+.adm-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 0 12px;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+.adm-chip {
+  padding: 5px 14px;
+  border-radius: $radius-pill;
+  background: $color-card;
+  border: 1px solid $color-border;
+  font-size: 12px;
+  color: $color-text-secondary;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &.is-active {
+    background: var(--color-primary-bg);
+    border-color: $color-primary;
+    color: $color-primary;
+    font-weight: 600;
+  }
+}
+
+// 统计宫格
+.adm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+// 工具条（页头操作区）
+.adm-toolbar {
+  @include flex-between;
+  padding: 0 0 12px;
+}
+
+// 数字上/下行
+.trend-up   { color: var(--color-success); }
+.trend-down { color: $color-primary; }
+
+// 桌面端：两栏内容
+@media (min-width: 769px) {
+  .adm-page {
+    padding-bottom: 40px;
+  }
+  .adm-grid--desktop-4 { grid-template-columns: repeat(4, 1fr); }
+  .adm-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+}
+
+// 页面切换动画
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from,
+.fade-leave-to { opacity: 0; }
+
+// 细滚动条（桌面端侧边栏/内容区）
+.thin-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); border-radius: 2px; }

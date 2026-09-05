@@ -1,310 +1,183 @@
-<script setup lang="ts">
-// 用户列表：多条件检索 + 冻结/解冻（文档 8.4 P0 子集）
-import { onMounted, reactive, ref } from 'vue'
+<script setup>
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import type { FormInstance } from 'element-plus'
-import { fetchUsers, freezeUser, unfreezeUser } from '@/api/user'
-import type { PageData, UserRow } from '@/types/api'
+import { showSuccessToast, showConfirmDialog } from 'vant'
+import { getUserList, getUserDetail, freezeUser, resetTradePwd } from '@/api'
+import AdminListPage from '@/components/AdminListPage.vue'
+import DetailSheet from '@/components/DetailSheet.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import { USER_STATUS, REALNAME_STATUS } from '@/utils/maps'
+import { fmtMoney, fmtDateTime } from '@/utils/format'
 
 const router = useRouter()
+const sheetShow = ref(false)
+const detail = ref(null)
 
-// ---------------- 检索 ----------------
-const queryFormRef = ref<FormInstance>()
-const query = reactive({
-  phone: '',
-  username: '',
-  uid: '',
-  status: '',
-  isRealname: '',
-  createdAtRange: null as [string, string] | null
-})
+const filters = [
+  {
+    field: 'status',
+    label: '状态',
+    options: [
+      { value: 'normal', label: '正常' },
+      { value: 'frozen', label: '已冻结' }
+    ]
+  },
+  {
+    field: 'realnameStatus',
+    label: '实名',
+    options: [
+      { value: 'approved', label: '已实名' },
+      { value: 'pending', label: '待审核' },
+      { value: 'rejected', label: '已驳回' },
+      { value: 'none', label: '未实名' }
+    ]
+  }
+]
 
-function buildParams(): Record<string, unknown> {
-  const params: Record<string, unknown> = {
-    page: page.value,
-    pageSize: pageSize.value
-  }
-  if (query.phone.trim()) params.phone = query.phone.trim()
-  if (query.username.trim()) params.username = query.username.trim()
-  if (query.uid.trim()) params.uid = query.uid.trim()
-  if (query.status !== '') params.status = query.status
-  if (query.isRealname !== '') params.isRealname = query.isRealname
-  if (query.createdAtRange && query.createdAtRange.length === 2) {
-    params.createdAtStart = query.createdAtRange[0]
-    params.createdAtEnd = query.createdAtRange[1]
-  }
-  return params
+async function openDetail(u) {
+  const res = await getUserDetail(u.id)
+  detail.value = res.data
+  sheetShow.value = true
 }
 
-// ---------------- 列表 ----------------
-const loading = ref(false)
-const list = ref<UserRow[]>([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-
-async function load(): Promise<void> {
-  loading.value = true
-  try {
-    const data = await fetchUsers(buildParams())
-    const pageData = data as PageData<UserRow>
-    list.value = pageData.list
-    total.value = pageData.total
-  } catch {
-    // 拦截器已提示
-  } finally {
-    loading.value = false
+async function onFreeze() {
+  const u = detail.value
+  const freezing = u.status === 'normal'
+  await showConfirmDialog({
+    title: freezing ? '冻结账号' : '解冻账号',
+    message: freezing
+      ? `确认冻结「${u.nickname}」？冻结后该用户无法登录与交易。`
+      : `确认解冻「${u.nickname}」？`
+  })
+  const res = await freezeUser(u.id)
+  if (res.code === 0) {
+    u.status = res.data
+    showSuccessToast(res.data === 'normal' ? '已解冻' : '已冻结')
   }
 }
 
-function handleSearch(): void {
-  page.value = 1
-  load()
+async function onResetPwd() {
+  await showConfirmDialog({
+    title: '重置交易密码',
+    message: `确认重置「${detail.value.nickname}」的交易密码？重置后用户可重新设置。`
+  })
+  const res = await resetTradePwd(detail.value.id)
+  if (res.code === 0) showSuccessToast('已重置')
 }
-
-function resetSearch(): void {
-  query.phone = ''
-  query.username = ''
-  query.uid = ''
-  query.status = ''
-  query.isRealname = ''
-  query.createdAtRange = null
-  handleSearch()
-}
-
-// ---------------- 冻结 / 解冻 ----------------
-const freezeDialogVisible = ref(false)
-const freezeSubmitting = ref(false)
-const freezeTarget = ref<UserRow | null>(null)
-const freezeFormRef = ref<FormInstance>()
-const freezeForm = reactive({ reason: '' })
-
-function openFreeze(row: UserRow): void {
-  freezeTarget.value = row
-  freezeForm.reason = ''
-  freezeDialogVisible.value = true
-}
-
-async function submitFreeze(): Promise<void> {
-  const target = freezeTarget.value
-  if (!target) return
-  const formEl = freezeFormRef.value
-  if (!formEl) return
-  const valid = await formEl.validate().catch(() => false)
-  if (!valid) return
-
-  freezeSubmitting.value = true
-  try {
-    await freezeUser(target.id, freezeForm.reason.trim())
-    ElMessage.success(`账号 ${target.username} 已冻结`)
-    freezeDialogVisible.value = false
-    load()
-  } catch {
-    // 拦截器已提示
-  } finally {
-    freezeSubmitting.value = false
-  }
-}
-
-async function handleUnfreeze(row: UserRow): Promise<void> {
-  try {
-    await unfreezeUser(row.id)
-    ElMessage.success(`账号 ${row.username} 已解冻`)
-    load()
-  } catch {
-    // 拦截器已提示
-  }
-}
-
-function gotoDetail(row: UserRow): void {
-  router.push(`/user/${row.id}`)
-}
-
-onMounted(load)
 </script>
 
 <template>
-  <div class="page-container">
-    <!-- 检索区 -->
-    <div class="sn-card">
-      <el-form ref="queryFormRef" :model="query" inline class="query-form" @submit.prevent="handleSearch">
-        <el-form-item label="手机号">
-          <el-input v-model="query.phone" placeholder="支持模糊搜索" clearable style="width: 180px" />
-        </el-form-item>
-        <el-form-item label="用户名">
-          <el-input v-model="query.username" placeholder="支持模糊搜索" clearable style="width: 160px" />
-        </el-form-item>
-        <el-form-item label="UID">
-          <el-input v-model="query.uid" placeholder="精确匹配" clearable style="width: 150px" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable style="width: 120px">
-            <el-option label="正常" value="1" />
-            <el-option label="冻结" value="0" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="实名">
-          <el-select v-model="query.isRealname" placeholder="全部" clearable style="width: 120px">
-            <el-option label="已实名" value="1" />
-            <el-option label="未实名" value="0" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="注册时间">
-          <el-date-picker
-            v-model="query.createdAtRange"
-            type="daterange"
-            value-format="YYYY-MM-DD"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            style="width: 260px"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :icon="'Search'" @click="handleSearch">查询</el-button>
-          <el-button :icon="'RefreshLeft'" @click="resetSearch">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </div>
-
-    <!-- 列表区 -->
-    <div class="sn-card">
-      <el-table v-loading="loading" :data="list" stripe>
-        <el-table-column prop="uid" label="UID" width="170" show-overflow-tooltip>
-          <template #default="{ row }">
-            <el-link type="primary" @click="gotoDetail(row)">{{ row.uid }}</el-link>
-          </template>
-        </el-table-column>
-        <el-table-column label="用户" min-width="160">
-          <template #default="{ row }">
-            <div class="user-cell">
-              <el-avatar :size="28" :src="row.avatar || undefined">
-                {{ row.username.slice(0, 1).toUpperCase() }}
-              </el-avatar>
-              <span>{{ row.username }}</span>
+  <div class="adm-page">
+    <AdminListPage :fetch="getUserList" :filters="filters" search-placeholder="搜索昵称 / 手机号">
+      <template #default="{ items }">
+        <div class="adm-card" style="padding: 0">
+          <div
+            v-for="u in items"
+            :key="u.id"
+            class="adm-item"
+            style="padding: 12px 14px"
+            @click="openDetail(u)"
+          >
+            <img class="user__avatar" :src="u.avatar" :alt="u.nickname" />
+            <div class="adm-item__body">
+              <div class="adm-item__title">
+                {{ u.nickname }}
+                <StatusTag :value="u.status" :map="USER_STATUS" />
+              </div>
+              <div class="adm-item__desc">{{ u.phone }} · 注册于 {{ u.registerTime.slice(0, 10) }}</div>
+              <div class="adm-item__desc">
+                余额 <span class="price">{{ fmtMoney(u.balance) }}</span> · {{ u.collectibleCount }} 件藏品 · {{ u.orderCount }} 笔订单
+              </div>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="phone" label="手机号" width="130">
-          <template #default="{ row }">{{ row.phone || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="实名" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.isRealname ? 'success' : 'info'" size="small" effect="light">
-              {{ row.isRealname ? '已实名' : '未实名' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="80" align="center">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
-              {{ row.status === 1 ? '正常' : '冻结' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="loginCount" label="登录次数" width="90" align="center" />
-        <el-table-column prop="lastLoginAt" label="最后登录" width="160">
-          <template #default="{ row }">{{ row.lastLoginAt || '—' }}</template>
-        </el-table-column>
-        <el-table-column prop="createdAt" label="注册时间" width="160" />
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" size="small" @click="gotoDetail(row)">详情</el-button>
-            <el-button
-              v-if="row.status === 1"
-              v-permission="'user:freeze'"
-              link
-              type="danger"
-              size="small"
-              @click="openFreeze(row)"
-            >
-              冻结
-            </el-button>
-            <el-button
-              v-else
-              v-permission="'user:freeze'"
-              link
-              type="success"
-              size="small"
-              @click="handleUnfreeze(row)"
-            >
-              解冻
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <div class="table-footer">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next, jumper"
-          @current-change="load"
-          @size-change="handleSearch"
-        />
-      </div>
-    </div>
-
-    <!-- 冻结弹窗 -->
-    <el-dialog
-      v-model="freezeDialogVisible"
-      title="冻结账号"
-      width="440px"
-      :close-on-click-modal="false"
-      append-to-body
-    >
-      <el-alert
-        type="warning"
-        :closable="false"
-        show-icon
-        :title="`确认冻结账号「${freezeTarget?.username ?? ''}」？冻结后该用户无法登录与交易`"
-        style="margin-bottom: 16px"
-      />
-      <el-form ref="freezeFormRef" :model="freezeForm" @submit.prevent>
-        <el-form-item
-          label="冻结原因"
-          prop="reason"
-          :rules="[{ required: true, message: '冻结原因不能为空', trigger: 'blur' }]"
-          label-width="82px"
-        >
-          <el-input
-            v-model="freezeForm.reason"
-            type="textarea"
-            :rows="3"
-            maxlength="200"
-            show-word-limit
-            placeholder="将写入操作审计日志"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="freezeDialogVisible = false">取消</el-button>
-        <el-button type="danger" :loading="freezeSubmitting" @click="submitFreeze">确认冻结</el-button>
+            <div class="adm-item__side">
+              <StatusTag :value="u.realnameStatus" :map="REALNAME_STATUS" />
+              <div class="t-tertiary" style="font-size: 11px; margin-top: 6px">{{ u.lastLoginTime }}</div>
+            </div>
+          </div>
+        </div>
       </template>
-    </el-dialog>
+    </AdminListPage>
+
+    <!-- 用户详情抽屉 -->
+    <DetailSheet v-model:show="sheetShow" :title="detail?.nickname">
+      <template v-if="detail">
+        <div class="adm-card" style="margin-bottom: 10px">
+          <div class="adm-card__title">基础信息</div>
+          <div class="adm-kv"><span class="k">用户 ID</span><span class="v">{{ detail.id }}</span></div>
+          <div class="adm-kv"><span class="k">手机号</span><span class="v">{{ detail.phone }}</span></div>
+          <div class="adm-kv"><span class="k">注册时间</span><span class="v">{{ detail.registerTime }}</span></div>
+          <div class="adm-kv"><span class="k">最近登录</span><span class="v">{{ detail.lastLoginTime }}</span></div>
+          <div class="adm-kv"><span class="k">实名状态</span><span class="v"><StatusTag :value="detail.realnameStatus" :map="REALNAME_STATUS" /></span></div>
+          <div class="adm-kv" v-if="detail.realnameName"><span class="k">实名信息</span><span class="v">{{ detail.realnameName }}（{{ detail.realnameIdNo }}）</span></div>
+          <div class="adm-kv"><span class="k">账号状态</span><span class="v"><StatusTag :value="detail.status" :map="USER_STATUS" /></span></div>
+        </div>
+
+        <div class="adm-card" style="margin-bottom: 10px">
+          <div class="adm-card__title">资产概况</div>
+          <div class="user__assets">
+            <div class="user__asset">
+              <div class="price">{{ fmtMoney(detail.balance) }}</div>
+              <div class="t-tertiary">余额（元）</div>
+            </div>
+            <div class="user__asset">
+              <div class="price">{{ detail.points }}</div>
+              <div class="t-tertiary">司南币</div>
+            </div>
+            <div class="user__asset">
+              <div class="price">{{ detail.collectibleCount }}</div>
+              <div class="t-tertiary">藏品数</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="adm-card" style="margin-bottom: 10px">
+          <div class="adm-card__title">最近订单</div>
+          <div v-for="o in detail.orders" :key="o.id" class="adm-kv">
+            <span class="k" style="max-width: 60%">{{ o.collectibleName }} ×{{ o.quantity }}</span>
+            <span class="v">¥{{ o.amount }} · {{ o.createTime.slice(5, 16) }}</span>
+          </div>
+          <van-empty v-if="!detail.orders.length" description="暂无订单" image-size="60" />
+        </div>
+
+        <div class="adm-card">
+          <div class="adm-card__title">最近钱包流水</div>
+          <div v-for="t in detail.transfers" :key="t.id" class="adm-kv">
+            <span class="k" style="max-width: 60%">{{ t.title }}</span>
+            <span class="v" :class="t.direction > 0 ? 't-success' : 't-primary'">
+              {{ t.direction > 0 ? '+' : '-' }}{{ t.amount }}
+            </span>
+          </div>
+          <van-empty v-if="!detail.transfers.length" description="暂无流水" image-size="60" />
+        </div>
+      </template>
+
+      <template #actions>
+        <van-button block round plain type="warning" @click="onResetPwd">重置交易密码</van-button>
+        <van-button block round :type="detail?.status === 'normal' ? 'danger' : 'primary'" @click="onFreeze">
+          {{ detail?.status === 'normal' ? '冻结账号' : '解冻账号' }}
+        </van-button>
+      </template>
+    </DetailSheet>
   </div>
 </template>
 
 <style scoped lang="scss">
-.query-form {
-  :deep(.el-form-item) {
-    margin-bottom: 4px;
-    margin-right: 16px;
-  }
+.user__avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid $color-border;
 }
 
-.user-cell {
-  display: flex;
-  align-items: center;
+.user__assets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  text-align: center;
 }
+
+.user__asset .price { font-size: 17px; }
+.user__asset .t-tertiary { font-size: 11px; margin-top: 3px; }
 </style>
