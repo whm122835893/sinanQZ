@@ -1,6 +1,6 @@
 # sinanQZ 数字藏品平台（司南珍藏）
 
-前后端 + 管理后台 + 数据库单仓库。**管理后台为两套后台的融合版**：以新后台（sinan-admin）为主干 UI 风格，移植了原后台独有的功能模块，并新增区块链上链配置（文昌链 / 联盟链 / 蚂蚁链）。
+前后端 + 管理后台 + 数据库单仓库。**管理后台（sinan-admin）为两套后台的融合版**：以新后台为主干 UI 风格，移植了原后台独有的功能模块，并新增区块链上链配置（文昌链 / 联盟链 / 蚂蚁链）。原管理后台（sinan-nft-admin）已由融合版完全替代并从仓库移除，历史代码可通过 git 记录查阅。
 
 ## 目录结构
 
@@ -9,7 +9,6 @@ sinanQZ/
 ├── jichao-art-source/     # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
 ├── sinan-admin/           # 管理后台（融合版，Vue 3 + Vite 5 + Pinia + Element Plus + ECharts）
 ├── sinan-nft-backend/     # 后端（ThinkPHP 8 多应用：api = C 端 / admin = 管理端）
-├── sinan-nft-admin/       # 原管理后台（融合后仅留档参考，不再维护）
 └── database/              # 数据库脚本
     ├── init.sql               # 基础建库：33 表 / 56 外键 / 16 CHECK（幂等可重复执行）
     ├── admin_init.sql          # 管理端扩展表：管理员/角色/权限/操作日志/审批/链网络/链合约
