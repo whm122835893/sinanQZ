@@ -1,0 +1,188 @@
+// ============================================================
+// 司南珍藏 · 管理后台 —— 全局样式（Soybean Admin 桌面风格 + 司南红令牌）
+// ============================================================
+
+@use './element.scss';
+
+:root {
+  // ---- 色彩令牌（与 C 端严格一致）----
+  --color-primary:          #C00000;
+  --color-primary-dark:     #A00000;
+  --color-primary-light:    #F5E0E0;
+  --color-primary-disabled: #E08080;
+  --color-bg:               #F7F8FA;
+  --color-card:             #FFFFFF;
+  --color-surface:          #F2F3F5;
+  --color-text-primary:     #333333;
+  --color-text-secondary:   #666666;
+  --color-text-tertiary:    #999999;
+  --color-border:           #EEEEEE;
+  --color-gold:             #D4A574;
+  --color-gold-dark:        #B08D55;
+  --color-dark:             #1A1A1A;
+  --color-primary-bg:       #FFF5F5;
+  --color-success:           #07c160;
+  --color-warning:          #ff976a;
+  --color-blue:             #1989fa;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  background: $color-bg;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: $font-family;
+  font-size: 14px;
+  color: $color-text-primary;
+  background: $color-bg;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+ul, li { list-style: none; margin: 0; padding: 0; }
+img { display: block; max-width: 100%; }
+
+// ---- 通用工具类 ----
+.t-primary   { color: $color-primary; }
+.t-secondary { color: $color-text-secondary; }
+.t-tertiary  { color: $color-text-tertiary; }
+.t-gold      { color: $color-gold; }
+.t-success   { color: var(--color-success); }
+.t-warning   { color: var(--color-warning); }
+.fw-600 { font-weight: 600; }
+.fw-700 { font-weight: 700; }
+.calligraphy { font-family: $font-calligraphy; font-weight: 700; }
+.price { font-family: $font-price; font-weight: 700; color: $color-primary; }
+.trend-up   { color: var(--color-success); }
+.trend-down { color: $color-primary; }
+
+// ---- 通用结构类 ----
+
+// 页面容器
+.adm-page {
+  min-height: 100%;
+  padding-bottom: 20px;
+}
+
+// 内容卡片（白底圆角柔和阴影）
+.adm-card {
+  background: $color-card;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 14px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+.adm-card__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 15px;
+  font-weight: 600;
+  color: $color-text-primary;
+  margin-bottom: 14px;
+}
+
+// 键值对行（详情页）
+.adm-kv {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed $color-border;
+
+  &:last-child { border-bottom: none; }
+
+  .k { color: $color-text-secondary; flex-shrink: 0; margin-right: 16px; }
+  .v { color: $color-text-primary; text-align: right; word-break: break-all; }
+}
+
+// 统计宫格
+.adm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+// 表格内图片缩略
+.adm-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: $color-surface;
+  display: block;
+}
+
+// 表格名称单元（图+文）
+.adm-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .adm-cell__body { min-width: 0; }
+  .adm-cell__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: $color-text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .adm-cell__desc {
+    font-size: 11px;
+    color: $color-text-tertiary;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+// 环比箭头
+.trend-arrow { font-size: 12px; }
+
+// 操作列按钮间距（el-table 内）
+.op-buttons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+// 危险操作提示条
+.danger-note {
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: var(--color-primary-bg);
+  color: $color-primary;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+// 页面切换动画
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from,
+.fade-leave-to { opacity: 0; }
+
+// 细滚动条（侧边栏/内容区）
+.thin-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: rgba(0,0,0,.12); border-radius: 2px; }
+
+@media (max-width: 768px) {
+  .adm-grid { grid-template-columns: repeat(2, 1fr); }
+  .adm-card { padding: 14px; }
+}

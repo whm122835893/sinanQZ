@@ -1,0 +1,111 @@
+// ============================================================
+// 司南珍藏 · 管理后台 —— Element Plus 主题令牌覆盖（Soybean Admin 风格）
+// 主色保持司南红 #C00000，与 C 端品牌一致
+// ============================================================
+
+:root {
+  // ---- Element Plus 主色系 ----
+  --el-color-primary: #c00000;
+  --el-color-primary-dark-2: #a00000;
+  --el-color-primary-light-3: #d03333;
+  --el-color-primary-light-5: #e08080;
+  --el-color-primary-light-7: #f5e0e0;
+  --el-color-primary-light-8: #f8e8e8;
+  --el-color-primary-light-9: #fff5f5;
+
+  // ---- 功能色 ----
+  --el-color-success: #07c160;
+  --el-color-warning: #ff976a;
+  --el-color-danger: #c00000;
+  --el-color-error: #c00000;
+  --el-color-info: #999999;
+
+  // ---- 边框与背景 ----
+  --el-border-color: #eeeeee;
+  --el-border-color-light: #f0f0f0;
+  --el-border-color-lighter: #f5f5f5;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f7f8fa;
+  --el-bg-color-overlay: #ffffff;
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-light: #f7f8fa;
+
+  // ---- 文字 ----
+  --el-text-color-primary: #333333;
+  --el-text-color-regular: #666666;
+  --el-text-color-secondary: #999999;
+  --el-text-color-placeholder: #b0b3b8;
+
+  // ---- 字体 ----
+  --el-font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+
+  // ---- 圆角 ----
+  --el-border-radius-base: 4px;
+  --el-border-radius-small: 3px;
+  --el-border-radius-round: 24px;
+}
+
+// ---- 组件级覆盖 ----
+.el-button {
+  font-weight: 500;
+
+  &--primary {
+    --el-button-hover-bg-color: #a00000;
+    --el-button-hover-border-color: #a00000;
+  }
+}
+
+.el-table {
+  --el-table-header-bg-color: #f5f7fa;
+  --el-table-header-text-color: #666;
+  --el-table-row-hover-bg-color: #f5f7fa;
+  --el-table-border-color: #eee;
+
+  th.el-table__cell {
+    font-weight: 600;
+    color: #333;
+  }
+}
+
+.el-card {
+  --el-card-border-radius: 8px;
+  --el-card-box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  border: none;
+
+  &.is-never-shadow {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  }
+}
+
+.el-dialog {
+  --el-dialog-border-radius: 8px;
+}
+
+.el-drawer {
+  --el-drawer-padding-primary: 16px;
+}
+
+.el-tag {
+  --el-tag-border-radius: 4px;
+}
+
+// 搜索表单区域内联布局
+.el-form--inline .el-form-item {
+  margin-right: 12px;
+  margin-bottom: 12px;
+}
+
+// 分页右对齐
+.el-pagination {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+// 弹窗内表单宽度约束
+.form-dialog {
+  .el-select,
+  .el-input-number,
+  .el-date-editor {
+    width: 100%;
+  }
+}

@@ -52,6 +52,26 @@ export const useUserStore = defineStore('user', () => {
     return res // { debugCode?: '123456' }
   }
 
+  // ---- 注册（真实接口：POST /api/auth/register，验证码模式，支持邀请码）----
+  // 注册成功后端直接返回 token（注册即登录）
+  async function register(payload) {
+    const res = await request.post('/auth/register', {
+      phone: payload.phone,
+      code: payload.code,
+      nickname: payload.nickname,
+      inviteCode: payload.inviteCode || ''
+    })
+    setToken(res.token)
+    setUserInfo({
+      nickname: res.userInfo.username,
+      avatar: res.userInfo.avatar || '',
+      phone: res.userInfo.phone,
+      isRealName: !!res.userInfo.isRealname,
+      inviteCode: res.userInfo.inviteCode
+    })
+    return res
+  }
+
   function logout() {
     setToken('')
   }
@@ -225,7 +245,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     token, userInfo, isLoggedIn, inventory, consignments,
     signState, todaySigned,
-    setUserInfo, login, sendCode, logout, fetchUserInfo,
+    setUserInfo, login, sendCode, register, logout, fetchUserInfo,
     verifyPaymentPassword, ownedCount, fetchInventory, findUserCollectibleId,
     fetchConsignments, consign, cancelConsign, isNoLocked, consignCooldownRemain,
     openBlindbox, fetchSignCalendar, doSign

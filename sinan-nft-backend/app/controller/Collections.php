@@ -97,10 +97,22 @@ class Collections extends BaseController
                 ->count();
         }
 
-        // 系统配置：限购数
-        $saleLimit = (int) Db::name('system_configs')
-            ->where('config_key', 'purchase_limit_per_user')
-            ->value('config_value');
+        // 系统配置：限购数（藏品级 per_user_limit 非 0 时覆盖，联动点 10.2）
+        $saleLimit = \app\service\PurchaseQualifyService::perUserLimit($c);
+
+        // 联动点 10.1：资格购状态（开启/本人是否具备/提示文案）+ 本人优先购资格标识
+        $eligibility = \app\service\PurchaseQualifyService::checkEligibility((int) $userId, $c);
+        $priority    = $userId ? \app\service\PurchaseQualifyService::priorityQualification($userId, (int) $c['id']) : null;
+        $priorityData = $priority ? [
+            'saleId'       => (int) $priority['sale_id'],
+            'saleName'     => (string) $priority['sale_name'],
+            'startTime'    => (string) $priority['start_time'],
+            'endTime'      => (string) $priority['end_time'],
+            'maxQuantity'  => (int) $priority['max_quantity'],
+            'usedQuantity' => (int) $priority['used_quantity'],
+            'remaining'    => max((int) $priority['max_quantity'] - (int) $priority['used_quantity'], 0),
+            'expiresAt'    => (string) $priority['expires_at'],
+        ] : null;
 
         return $this->success([
             'id'               => (int) $c['id'],
@@ -128,8 +140,23 @@ class Collections extends BaseController
                 'code' => $category['code'] ?? '',
             ],
             'isBlindBox' => $isBlindBox,
-            'saleLimit'  => $saleLimit ?: 5,
+            'saleLimit'  => $saleLimit,
             'myOwned'    => $myOwned,
+            // 联动点 10.1：寄售/转赠开关与限价配置（控制「转赠/寄售」入口显隐，文档 5.3）
+            'isTransferable'  => (int) $c['is_transferable'] === 1,
+            'isResaleable'    => (int) $c['is_resaleable'] === 1,
+            'resalePriceMode' => (int) $c['resale_price_mode'],
+            'resalePriceMin'  => (float) $c['resale_price_min'],
+            'resalePriceMax'  => (float) $c['resale_price_max'],
+            'perUserLimit'    => $saleLimit,
+            'qualification'   => [
+                'enabled'       => $eligibility['enabled'],
+                'qualified'     => $eligibility['qualified'],
+                'reason'        => $eligibility['reason'],
+                'conditionType' => $eligibility['conditionType'],
+                'requirements'  => array_values($eligibility['requirements']),
+            ],
+            'myPriorityQualification' => $priorityData,
         ]);
     }
 

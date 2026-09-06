@@ -16,11 +16,11 @@ use think\facade\Db;
  * 请求头 Authorization: Bearer {token}
  * 解析后将用户ID写入 $request->userId
  *
- * 安全增强（管理后台联动）：
+ * 安全增强（管理后台联动，两种后台实现共存）：
  * - 实时校验用户状态：冻结（status=0）账号即刻拒绝访问
  * - 实时校验黑名单：is_blacklisted=1 拒绝访问
- * - 强制登出：logout_before 非空时，签发时间（iat）早于该值的令牌全部失效
- *   （管理后台「强制登出」操作即写入该字段）
+ * - 强制登出（DB 方案）：logout_before 非空时，签发时间（iat）早于该值的令牌全部失效
+ * - 强制登出（缓存方案）：force_logout_{uid} 缓存键存在时拒绝访问（TTL=JWT 有效期）
  */
 class JwtAuth
 {
@@ -68,6 +68,15 @@ class JwtAuth
         if (!empty($user['logout_before']) && isset($payload->iat)
             && (int) $payload->iat <= strtotime((string) $user['logout_before'])) {
             return json(['code' => 2001, 'message' => '登录已失效，请重新登录', 'data' => null]);
+        }
+
+        // 管理端强制登出黑名单（TTL=JWT有效期；缓存不可用时跳过，保持向后兼容）
+        try {
+            if (cache('force_logout_' . $request->userId)) {
+                return json(['code' => 2001, 'message' => '账号已被强制登出，请重新登录', 'data' => null]);
+            }
+        } catch (\Throwable $e) {
+            // 缓存异常时跳过踢出检查
         }
 
         return $next($request);

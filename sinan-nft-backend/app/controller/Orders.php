@@ -80,7 +80,7 @@ class Orders extends BaseController
                 $source      = 'market';
                 $soldNo      = $userCollectible['serial'];
             } else {
-                // ===== 发售购买 =====
+                // ===== 发售购买（含优先购/资格购判定链，文档 5.1/5.2，联动点 10.2）=====
                 if ($quantity < 1) {
                     Db::rollback();
                     return $this->fail(1001, '数量必须大于0');
@@ -99,9 +99,56 @@ class Orders extends BaseController
                     Db::rollback();
                     return $this->fail(3002, '藏品已售罄');
                 }
-                if (strtotime($collectible['onsale_at']) > time()) {
-                    Db::rollback();
-                    return $this->fail(1001, '尚未开售');
+
+                $source = 'release';
+                $nowTs  = time();
+
+                // Step 1：有效优先购资格 = expires_at > now 且 used < max 且活动窗口内（行锁）
+                // 注意 field 显式别名：两表均有 id/status 等同名列，PDO fetch 时后者覆盖前者，
+                // 必须以 w.* + ps 别名字段返回，否则 $priority['id'] 会错拿到活动 ID
+                $priority = Db::name('priority_sale_whitelists')->alias('w')
+                    ->join('priority_sales ps', 'ps.id = w.priority_sale_id', 'INNER')
+                    ->field('w.*,ps.id AS sale_id,ps.name AS sale_name,ps.start_time,ps.end_time')
+                    ->where('ps.collectible_id', $collectibleId)
+                    ->where('ps.status', 1)
+                    ->where('w.user_id', $userId)
+                    ->where('w.status', 1)
+                    ->where('w.expires_at', '>', date('Y-m-d H:i:s'))
+                    ->where('ps.start_time', '<=', date('Y-m-d H:i:s'))
+                    ->where('ps.end_time', '>=', date('Y-m-d H:i:s'))
+                    ->whereRaw('w.used_quantity < w.max_quantity')
+                    ->lock(true)
+                    ->find();
+                if ($priority) {
+                    // 优先购覆盖资格购限制；原子条件 UPDATE 防并发超用（used + N <= max）
+                    $bumped = Db::name('priority_sale_whitelists')
+                        ->where('id', $priority['id'])
+                        ->whereRaw('used_quantity + ' . (int) $quantity . ' <= max_quantity')
+                        ->update([
+                            'used_quantity' => Db::raw('used_quantity + ' . (int) $quantity),
+                            'updated_at'    => date('Y-m-d H:i:s'),
+                        ]);
+                    if (!$bumped) {
+                        Db::rollback();
+                        return $this->fail(3004, '优先购可购数量不足');
+                    }
+                    $source = 'priority';
+                } else {
+                    // Step 2/3：资格购判定（优先购不参与资格购）
+                    $eligibility = \app\service\PurchaseQualifyService::checkEligibility($userId, $collectible);
+                    if ($eligibility['enabled']) {
+                        if (!$eligibility['qualified']) {
+                            Db::rollback();
+                            return $this->fail(3004, $eligibility['reason'] ?: '未获得购买资格');
+                        }
+                        $source = 'eligibility';
+                    }
+
+                    // 公售时间校验（优先购不受公售时间限制；onsale_at 为 NULL 表示不限）
+                    if (!empty($collectible['onsale_at']) && strtotime($collectible['onsale_at']) > $nowTs) {
+                        Db::rollback();
+                        return $this->fail(1001, '尚未开售');
+                    }
                 }
 
                 // 库存锁定（原子操作，受 CHECK 防超卖兜底）
@@ -114,23 +161,20 @@ class Orders extends BaseController
                     return $this->fail(3001, '库存不足');
                 }
 
-                // 限购检查
-                $limit = (int) Db::name('system_configs')
-                    ->where('config_key', 'purchase_limit_per_user')
-                    ->value('config_value');
+                // 限购检查（藏品级 per_user_limit 非 0 时覆盖系统 purchase_limit_per_user，联动点 10.2）
+                $limit = \app\service\PurchaseQualifyService::perUserLimit($collectible);
                 $ownedCount = Db::name('orders')
                     ->where('user_id', $userId)
                     ->where('collectible_id', $collectibleId)
                     ->where('status', 'completed')
                     ->sum('quantity');
-                if ($ownedCount + $quantity > ($limit ?: 5)) {
+                if ($ownedCount + $quantity > $limit) {
                     Db::rollback();
                     return $this->fail(3003, "已达限购上限 {$limit}");
                 }
 
                 $unitPrice   = $collectible['price'];
                 $totalPrice  = bcmul((string) $unitPrice, (string) $quantity, 2);
-                $source      = 'release';
                 $resaleListingId = null;
             }
 

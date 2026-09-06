@@ -1,31 +1,109 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import AppEmpty from '@/components/AppEmpty.vue'
+import AppModal from '@/components/AppModal.vue'
+import AppInput from '@/components/AppInput.vue'
+import AppButton from '@/components/AppButton.vue'
 import { showToast } from 'vant'
+import { useUserStore } from '@/stores/user'
+import { useLoginGate } from '@/utils/loginGate'
 
-const router = useRouter()
+const route = useRoute()
+const user = useUserStore()
+const { requireLogin } = useLoginGate()
 
-const balance = ref('12,860.00')
-const coin = ref('1,280.00')
-const available = ref('11,580.00')
 const visible = ref(true)
+const wallet = ref({ balance: 0, available: 0, frozen: 0, points: 0, brand: '汇付' })
+const records = ref([])
+const loading = ref(false)
+
+// 千分位格式化金额
+const fmt = (n) => Number(n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// MOCK_REPLACED: 原为内联 mock 余额（12,860.00 等）与流水数组，
+// 现从后端拉取：GET /api/wallet（余额/可用/司南币）、GET /api/wallet/transactions（流水）
+async function fetchWallet() {
+  wallet.value = await request.get('/wallet')
+}
+
+async function fetchRecords() {
+  const res = await request.get('/wallet/transactions', { params: { page: 1, pageSize: 20 } })
+  records.value = (res.list || []).map((t) => ({
+    id: t.id,
+    type: t.transType, // recharge充值 / buy消费 / withdraw提现 / reward奖励
+    title: t.title,
+    time: String(t.createdAt || '').slice(0, 16),
+    amount: (t.direction === 'in' ? '+' : '-') + fmt(t.amount),
+    income: t.direction === 'in'
+  }))
+}
+
+async function refresh() {
+  loading.value = true
+  try {
+    await Promise.all([fetchWallet(), fetchRecords()])
+  } catch (e) {
+    showToast(e.message || '加载失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  if (!requireLogin(route.fullPath)) return
+  refresh()
+})
 
 function toggleVisible() { visible.value = !visible.value }
 
-const records = [
-  { type: 'recharge', title: '账户充值', time: '2026-08-20 14:22', amount: '+2,000.00', done: true },
-  { type: 'buy', title: '购买《司南·青铜纹样》', time: '2026-08-18 21:05', amount: '-399.00', done: true },
-  { type: 'withdraw', title: '提现到银行卡', time: '2026-08-15 10:48', amount: '-1,500.00', done: true },
-  { type: 'buy', title: '购买《司南·鎏金面具》', time: '2026-08-12 19:33', amount: '-880.00', done: true },
-  { type: 'recharge', title: '账户充值', time: '2026-08-10 09:11', amount: '+1,000.00', done: true }
-]
+const icons = { recharge: 'wallet', buy: 'cube', withdraw: 'horn', reward: 'gift' }
 
-const icons = { recharge: 'wallet', buy: 'cube', withdraw: 'horn' }
-const titles = { recharge: '充值', buy: '消费', withdraw: '提现' }
+// ---- 充值（真实接口：POST /api/wallet/recharge，模拟入账）----
+const showRecharge = ref(false)
+const amount = ref('')
+const quickAmounts = [100, 500, 1000, 2000]
+const rechargeError = ref('')
+const recharging = ref(false)
 
-function action(name) { showToast(name + '功能开发中') }
+function openRecharge() {
+  if (!user.isLoggedIn) { requireLogin(route.fullPath); return }
+  amount.value = ''
+  rechargeError.value = ''
+  showRecharge.value = true
+}
+
+function pickQuick(v) {
+  amount.value = String(v)
+  rechargeError.value = ''
+}
+
+async function submitRecharge() {
+  const n = Number(amount.value)
+  if (!n || n < 1) { rechargeError.value = '请输入大于 0 的充值金额'; return }
+  if (recharging.value) return
+  recharging.value = true
+  try {
+    await request.post('/wallet/recharge', { amount: n })
+    showRecharge.value = false
+    showToast('充值成功')
+    await refresh()
+  } catch (e) {
+    rechargeError.value = e.message || '充值失败'
+  } finally {
+    recharging.value = false
+  }
+}
+
+function action(name) {
+  if (name === '充值') { openRecharge(); return }
+  if (name === '提现') { showToast('提现功能开发中'); return }
+  // 明细：滚动到流水区域
+  document.querySelector('.wallet-records')?.scrollIntoView({ behavior: 'smooth' })
+}
 </script>
 
 <template>
@@ -34,7 +112,7 @@ function action(name) { showToast(name + '功能开发中') }
 
     <!-- 资产卡片 -->
     <div class="wallet-card">
-      <span class="wallet-card__brand">汇付</span>
+      <span class="wallet-card__brand">{{ wallet.brand || '汇付' }}</span>
       <svg class="wallet-card__logo" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
         <circle cx="30" cy="30" r="22" fill="none" stroke="#444" stroke-width="1"/>
         <circle cx="30" cy="12" r="4" fill="#E84B4B"/>
@@ -54,11 +132,11 @@ function action(name) { showToast(name + '功能开发中') }
             <AppIcon :name="visible ? 'search' : 'close'" :size="16" color="#fff" />
           </span>
         </div>
-        <div class="wallet-card__balance">{{ visible ? '¥ ' + balance : '¥ ****' }}</div>
+        <div class="wallet-card__balance">{{ visible ? '¥ ' + fmt(wallet.balance) : '¥ ****' }}</div>
         <div class="wallet-card__sub">
-          <span>司南币 {{ visible ? coin : '****' }}</span>
+          <span>司南币 {{ visible ? fmt(wallet.points) : '****' }}</span>
           <span class="dot">·</span>
-          <span>可用 {{ visible ? '¥ ' + available : '****' }}</span>
+          <span>可用 {{ visible ? '¥ ' + fmt(wallet.available) : '****' }}</span>
         </div>
       </div>
 
@@ -81,21 +159,52 @@ function action(name) { showToast(name + '功能开发中') }
     <!-- 交易明细 -->
     <div class="wallet-records">
       <h3 class="wallet-records__title">交易明细</h3>
-      <div class="wallet-records__list">
-        <div v-for="(r, i) in records" :key="i" class="wallet-records__item">
+      <div v-if="records.length" class="wallet-records__list">
+        <div v-for="r in records" :key="r.id" class="wallet-records__item">
           <div class="wallet-records__icon" :class="'is-' + r.type">
-            <AppIcon :name="icons[r.type]" :size="20" color="#fff" />
+            <AppIcon :name="icons[r.type] || 'wallet'" :size="20" color="#fff" />
           </div>
           <div class="wallet-records__info">
             <p class="wallet-records__name">{{ r.title }}</p>
             <p class="wallet-records__time">{{ r.time }}</p>
           </div>
-          <span class="wallet-records__amount" :class="{ minus: r.amount.startsWith('-') }">
+          <span class="wallet-records__amount" :class="{ minus: !r.income }">
             {{ r.amount }}
           </span>
         </div>
       </div>
+      <div v-else-if="loading" class="wallet-records__loading">加载中...</div>
+      <AppEmpty v-else description="暂无交易明细" />
     </div>
+
+    <!-- 充值弹窗 -->
+    <AppModal v-model:show="showRecharge" title="账户充值" :closable="!recharging">
+      <div class="recharge">
+        <div class="recharge__balance">
+          当前可用余额：<b>¥ {{ fmt(wallet.available) }}</b>
+        </div>
+        <AppInput
+          v-model="amount"
+          type="number"
+          label="充值金额（元）"
+          placeholder="请输入充值金额"
+          :error="rechargeError"
+        />
+        <div class="recharge__quick">
+          <button
+            v-for="q in quickAmounts"
+            :key="q"
+            class="recharge__quick-btn"
+            :class="{ active: String(q) === String(amount) }"
+            @click="pickQuick(q)"
+          >¥{{ q }}</button>
+        </div>
+        <AppButton :disabled="recharging" @click="submitRecharge">
+          {{ recharging ? '充值中...' : '确认充值' }}
+        </AppButton>
+        <p class="recharge__tip">当前为联调环境，充值即时模拟到账</p>
+      </div>
+    </AppModal>
   </div>
 </template>
 
@@ -125,6 +234,7 @@ function action(name) { showToast(name + '功能开发中') }
 .wallet-records { margin: 8px 16px 16px; }
 .wallet-records__title { margin: 4px 0 12px; font-size: 16px; font-weight: 700; color: $color-text-primary; }
 .wallet-records__list { background: $color-card; border-radius: $radius-lg; padding: 0 14px; }
+.wallet-records__loading { padding: 32px 0; text-align: center; font-size: 13px; color: $color-text-tertiary; }
 .wallet-records__item {
   display: flex; align-items: center; gap: 12px; min-height: 64px;
   &:not(:last-child) { border-bottom: 1px solid $color-border; }
@@ -135,6 +245,7 @@ function action(name) { showToast(name + '功能开发中') }
   &.is-recharge { background: #07c160; }
   &.is-buy { background: $color-primary; }
   &.is-withdraw { background: #E8A33D; }
+  &.is-reward { background: #9B59F0; }
 }
 .wallet-records__info { flex: 1; min-width: 0; }
 .wallet-records__name { margin: 0 0 4px; font-size: 14px; color: $color-text-primary; @include ellipsis; }
@@ -142,5 +253,19 @@ function action(name) { showToast(name + '功能开发中') }
 .wallet-records__amount {
   font-size: 15px; font-weight: 700; font-family: $font-price; color: #07c160;
   &.minus { color: $color-text-primary; }
+}
+
+.recharge {
+  &__balance {
+    margin-bottom: 14px; font-size: 13px; color: $color-text-secondary;
+    b { color: $color-text-primary; font-family: $font-price; }
+  }
+  &__quick { display: flex; gap: 8px; margin: 12px 0 16px; }
+  &__quick-btn {
+    flex: 1; height: 34px; border: 1px solid $color-border; border-radius: $radius-md;
+    background: $color-surface; color: $color-text-primary; font-size: 13px; cursor: pointer;
+    &.active { border-color: $color-primary; color: $color-primary; font-weight: 700; }
+  }
+  &__tip { margin: 12px 0 0; font-size: 12px; color: $color-text-tertiary; text-align: center; }
 }
 </style>

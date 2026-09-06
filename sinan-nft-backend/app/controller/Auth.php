@@ -213,6 +213,13 @@ class Auth extends BaseController
         ]);
         Db::commit();
 
+        // 重新登录即开启新会话：清除管理端强制登出标记（踢出标记仅作用于旧 token，否则等效封禁到 TTL）
+        try {
+            cache('force_logout_' . $user['id'], null);
+        } catch (\Throwable $e) {
+            // 缓存异常不阻断登录
+        }
+
         $token = JwtService::encode($user['id'], $phone);
         return $this->success([
             'token'    => $token,

@@ -1,0 +1,29 @@
+{
+  "name": "sinan-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "司南珍藏 · 管理后台（BuildAdmin 骨架 / UI 与 C 端同源）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.7.2",
+    "dayjs": "^1.11.23",
+    "decimal.js": "^10.6.0",
+    "echarts": "^6.1.0",
+    "element-plus": "^2.14.5",
+    "pinia": "^2.1.7",
+    "vant": "^4.9.0",
+    "vue": "^3.4.27",
+    "vue-router": "^4.3.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "sass": "^1.77.4",
+    "vite": "^5.3.1"
+  }
+}
