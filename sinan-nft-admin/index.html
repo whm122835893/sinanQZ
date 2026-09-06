@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>司南数字藏品 · 管理后台</title>
+    <style>
+      /* 首屏加载占位（避免白屏） */
+      html, body, #app { height: 100%; margin: 0; background: #f5f6f8; }
+      .app-loading {
+        display: flex; align-items: center; justify-content: center;
+        height: 100%; flex-direction: column; gap: 12px;
+        font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+        color: #8a8f99; font-size: 14px;
+      }
+      .app-loading .ring {
+        width: 36px; height: 36px; border-radius: 50%;
+        border: 3px solid #f0d5d5; border-top-color: #b00000;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="app-loading"><div class="ring"></div>正在进入司南管理后台…</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

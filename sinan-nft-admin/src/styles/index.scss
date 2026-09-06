@@ -1,0 +1,183 @@
+/**
+ * 全局样式：司南红主题（CSS 变量覆盖 Element Plus）+ 通用工具类
+ * 品牌色取自 C 端：#B00000 / #C43434 / #8A0000
+ */
+:root {
+  // ===== Element Plus 主题变量（司南红） =====
+  --el-color-primary: #b00000;
+  --el-color-primary-light-1: #ba1b1b;
+  --el-color-primary-light-2: #c43434;
+  --el-color-primary-light-3: #cc4a4a;
+  --el-color-primary-light-4: #d56666;
+  --el-color-primary-light-5: #de8282;
+  --el-color-primary-light-6: #e69898;
+  --el-color-primary-light-7: #efb0b0;
+  --el-color-primary-light-8: #f5c8c8;
+  --el-color-primary-light-9: #fbe3e3;
+  --el-color-primary-dark-2: #8a0000;
+
+  // ===== 布局变量 =====
+  --sn-red: #b00000;
+  --sn-red-light: #c43434;
+  --sn-red-dark: #8a0000;
+  --sn-red-bg: #fdf1f1;
+  --sn-sidebar-width: 224px;
+  --sn-sidebar-collapsed-width: 64px;
+  --sn-header-height: 56px;
+  --sn-tabs-height: 38px;
+  --sn-text: #141415;
+  --sn-text-secondary: #6b7280;
+  --sn-border: #e5e7eb;
+  --sn-bg: #f5f6f8;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  color: var(--sn-text);
+  background: var(--sn-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+// ================= 通用页面容器 =================
+.page-container {
+  padding: 16px;
+}
+
+.search-bar {
+  background: #fff;
+  padding: 16px 16px 2px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.table-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+// 统计卡片
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .stat-info {
+    .stat-label {
+      font-size: 13px;
+      color: var(--sn-text-secondary);
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-sub {
+      font-size: 12px;
+      color: var(--sn-text-secondary);
+      margin-top: 4px;
+    }
+  }
+
+  .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: #fff;
+    background: var(--sn-red);
+
+    &.green { background: #2e7d32; }
+    &.orange { background: #b26a00; }
+    &.blue { background: #1565c0; }
+    &.gray { background: #6b7280; }
+    &.purple { background: #6a1b9a; }
+  }
+}
+
+// 详情页信息组
+.detail-section {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+
+  .section-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 14px;
+    padding-left: 8px;
+    border-left: 3px solid var(--sn-red);
+  }
+}
+
+.pagination-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.table-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #f3f4f6;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.chart-box {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  margin-bottom: 12px;
+
+  .chart-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+}

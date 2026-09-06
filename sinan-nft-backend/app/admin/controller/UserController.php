@@ -1,0 +1,422 @@
+<?php
+declare(strict_types=1);
+
+namespace app\admin\controller;
+
+use think\facade\Db;
+
+/**
+ * 管理后台用户管理控制器
+ *
+ * 功能：用户列表/详情（多维度聚合）、冻结解冻、重置交易密码、
+ * 强制登出、黑名单管理、强制回收藏品/盲盒。
+ *
+ * 敏感数据策略：
+ * - 手机号默认脱敏；持有 realname:full 权限可见完整手机号与解密实名信息
+ * - 实名信息（real_name/id_card）AES-256-CBC 加密存储，接口侧按需解密
+ */
+class UserController extends BaseController
+{
+    /** 是否具备查看完整实名信息权限 */
+    private function canViewFull(): bool
+    {
+        $admin = $this->admin();
+        return !empty($admin['is_super']) || in_array('realname:full', $admin['permissions'] ?? [], true);
+    }
+
+    /**
+     * GET /admin/user/list
+     * 筛选：keyword(手机号/UID/用户名)、status、isRealname、isBlacklisted、注册时间区间
+     */
+    public function list()
+    {
+        [$page, $pageSize] = $this->pageParams();
+
+        $query = Db::name('users')->alias('u')->whereNull('u.deleted_at');
+
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->where(function ($q) use ($keyword) {
+                $q->whereLike('u.phone', "%{$keyword}%")
+                  ->whereOr('u.uid', $keyword)
+                  ->whereLike('u.username', "%{$keyword}%");
+            });
+        }
+        $status = $this->request->param('status');
+        if ($status !== null && $status !== '') {
+            $query->where('u.status', (int) $status);
+        }
+        $isRealname = $this->request->param('isRealname');
+        if ($isRealname !== null && $isRealname !== '') {
+            $query->where('u.is_realname', (int) $isRealname);
+        }
+        $isBlacklisted = $this->request->param('isBlacklisted');
+        if ($isBlacklisted !== null && $isBlacklisted !== '') {
+            $query->where('u.is_blacklisted', (int) $isBlacklisted);
+        }
+        $range = $this->dateRange();
+        if ($range) {
+            if ($range[0] !== '') $query->where('u.created_at', '>=', $range[0]);
+            if ($range[1] !== '') $query->where('u.created_at', '<=', $range[1]);
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->field('u.id, u.uid, u.phone, u.username, u.avatar, u.is_realname, u.status,
+                               u.is_blacklisted, u.last_login_at, u.login_count, u.created_at')
+            ->order('u.id', 'desc')
+            ->page($page, $pageSize)
+            ->select()->toArray();
+
+        $canFull = $this->canViewFull();
+        foreach ($rows as &$row) {
+            $row['phone'] = $canFull ? (string) $row['phone'] : mask_phone((string) $row['phone']);
+        }
+
+        return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
+    }
+
+    /**
+     * GET /admin/user/detail/:id
+     * 聚合：基础信息 + 钱包 + 持仓统计 + 最近订单 + 最近转赠
+     */
+    public function detail(int $id)
+    {
+        $user = Db::name('users')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$user) {
+            return $this->fail(4040, '用户不存在');
+        }
+
+        $canFull = $this->canViewFull();
+
+        // 实名信息：按权限解密或脱敏
+        $realName = '';
+        $idCard   = '';
+        if ((int) $user['is_realname'] === 1) {
+            $realName = (string) ($user['real_name'] ? (aes_decrypt((string) $user['real_name']) ?? '') : '');
+            $idCard   = (string) ($user['id_card'] ? (aes_decrypt((string) $user['id_card']) ?? '') : '');
+            if (!$canFull) {
+                $realName = $realName !== '' ? mb_substr($realName, 0, 1) . str_repeat('*', max(0, mb_strlen($realName) - 1)) : '';
+                $idCard   = $idCard !== '' ? substr($idCard, 0, 4) . str_repeat('*', 10) . substr($idCard, -4) : '';
+            }
+        }
+
+        $wallet = Db::name('wallets')->where('user_id', $id)->find();
+
+        $holdStats = Db::name('user_collectibles')->where('user_id', $id)
+            ->where('status', 'held')->count();
+        $holdSelling = Db::name('user_collectibles')->where('user_id', $id)
+            ->where('status', 'consigned')->count();
+        $holdFrozen = Db::name('user_collectibles')->where('user_id', $id)
+            ->where('status', 'frozen')->count();
+
+        $orderStats = Db::name('orders')->where('user_id', $id)
+            ->field("COUNT(*) AS total, SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed,
+                     SUM(CASE WHEN status='completed' THEN total_price ELSE 0 END) AS paid")
+            ->find();
+
+        $recentOrders = Db::name('orders')->alias('o')
+            ->field('o.id, o.order_no, o.total_price, o.status, o.created_at, c.name AS collectible_name')
+            ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT')
+            ->where('o.user_id', $id)
+            ->order('o.id', 'desc')->limit(10)->select()->toArray();
+
+        $recentTransfers = Db::name('transfers')->alias('t')
+            ->field('t.id, t.status, t.created_at, c.name AS collectible_name,
+                     IF(t.from_user_id=' . (int) $id . ', 0, 1) AS is_receive')
+            ->join('collectibles c', 'c.id = t.collectible_id', 'LEFT')
+            ->whereRaw('(t.from_user_id = ? OR t.to_user_id = ?)', [$id, $id])
+            ->order('t.id', 'desc')->limit(10)->select()->toArray();
+
+        // 是否在黑名单（含有效记录）
+        $blacklisted = Db::name('blacklist')->where('user_id', $id)->where('status', 1)->find();
+
+        $data = [
+            'id'          => (int) $user['id'],
+            'uid'         => $user['uid'],
+            'phone'       => $canFull ? (string) $user['phone'] : mask_phone((string) $user['phone']),
+            'username'    => $user['username'],
+            'avatar'      => $user['avatar'],
+            'status'      => (int) $user['status'],
+            'isRealname'  => (int) $user['is_realname'],
+            'realName'    => $realName,
+            'idCard'      => $idCard,
+            'isBlacklisted' => (int) $user['is_blacklisted'],
+            'blacklistReason' => $blacklisted ? $blacklisted['reason'] : null,
+            'hasTransactionPassword' => !empty($user['transaction_password']),
+            'lastLoginAt' => $user['last_login_at'],
+            'loginCount'  => (int) $user['login_count'],
+            'createdAt'   => $user['created_at'],
+            'wallet'      => $wallet ? [
+                'balance'   => (float) $wallet['balance'],
+                'available' => (float) $wallet['available'],
+                'frozen'    => (float) $wallet['frozen'],
+                'points'    => (float) $wallet['points'],
+            ] : ['balance' => 0, 'available' => 0, 'frozen' => 0, 'points' => 0],
+            'holdStats'   => [
+                'held' => (int) $holdStats, 'consigned' => (int) $holdSelling, 'frozen' => (int) $holdFrozen,
+            ],
+            'orderStats'  => [
+                'total' => (int) ($orderStats['total'] ?? 0),
+                'completed' => (int) ($orderStats['completed'] ?? 0),
+                'paid' => round((float) ($orderStats['paid'] ?? 0), 2),
+            ],
+            'recentOrders'   => camelize_keys($recentOrders),
+            'recentTransfers' => array_map(function ($t) {
+                $t['isReceive'] = (int) $t['is_receive'];
+                unset($t['is_receive']);
+                return camelize_keys($t);
+            }, $recentTransfers),
+        ];
+
+        // 审计：查看用户详情含实名信息时记录
+        $this->audit('user', 'view_detail', '查看用户详情（UID ' . $user['uid'] . '）', [], 'user', (int) $id);
+
+        return $this->success($data);
+    }
+
+    /**
+     * POST /admin/user/freeze { user_id, status(0冻结/1解冻), reason }
+     */
+    public function freeze()
+    {
+        $missing = $this->missingParams(['user_id', 'status']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+        $userId = (int) $this->request->param('user_id');
+        $status = (int) $this->request->param('status');
+        $reason = trim((string) $this->request->param('reason', ''));
+
+        if (!in_array($status, [0, 1], true)) {
+            return $this->fail(4220, 'status 仅允许 0（冻结）或 1（解冻）');
+        }
+        if ($status === 0 && $reason === '') {
+            return $this->fail(4220, '冻结操作必须填写原因');
+        }
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) {
+            return $this->fail(4040, '用户不存在');
+        }
+        if ((int) $user['status'] === $status) {
+            return $this->fail(4220, $status === 0 ? '用户已是冻结状态' : '用户已是正常状态');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        Db::name('users')->where('id', $userId)->update([
+            'status'     => $status,
+            'updated_at' => $now,
+        ]);
+
+        // 冻结同时强制登出（写入 logout_before 使现有令牌失效）
+        if ($status === 0) {
+            Db::name('users')->where('id', $userId)->update(['logout_before' => $now]);
+        }
+
+        $this->audit('user', $status === 0 ? 'freeze' : 'unfreeze',
+            ($status === 0 ? '冻结用户' : '解冻用户') . '（UID ' . $user['uid'] . '）',
+            ['reason' => $reason], 'user', $userId);
+
+        return $this->success(null, $status === 0 ? '用户已冻结并强制下线' : '用户已解冻');
+    }
+
+    /**
+     * POST /admin/user/reset-transaction-password { user_id }
+     * 重置交易密码：清空旧密码，用户在 C 端重新设置
+     */
+    public function resetTransactionPassword()
+    {
+        $userId = $this->positiveInt('user_id');
+        if ($userId === null) {
+            return $this->fail(4220, 'user_id 参数不正确');
+        }
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) {
+            return $this->fail(4040, '用户不存在');
+        }
+
+        Db::name('users')->where('id', $userId)->update([
+            'transaction_password' => null,
+            'updated_at'           => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->audit('user', 'reset_transaction_password', '重置交易密码（UID ' . $user['uid'] . '）', [], 'user', $userId);
+        return $this->success(null, '交易密码已重置，用户需在 APP 重新设置');
+    }
+
+    /**
+     * POST /admin/user/force-logout { user_id, reason }
+     * 强制登出：写入 logout_before，令该用户全部现存令牌失效
+     */
+    public function forceLogout()
+    {
+        $userId = $this->positiveInt('user_id');
+        if ($userId === null) {
+            return $this->fail(4220, 'user_id 参数不正确');
+        }
+        $reason = trim((string) $this->request->param('reason', ''));
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) {
+            return $this->fail(4040, '用户不存在');
+        }
+
+        Db::name('users')->where('id', $userId)->update([
+            'logout_before' => date('Y-m-d H:i:s'),
+            'updated_at'    => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->audit('user', 'force_logout', '强制登出用户（UID ' . $user['uid'] . '）', ['reason' => $reason], 'user', $userId);
+        return $this->success(null, '该用户全部登录态已失效');
+    }
+
+    /**
+     * POST /admin/user/blacklist { user_id, action(add/remove), reason, evidence? }
+     * 黑名单：加入后用户即刻被禁止访问（C 端中间件实时校验）
+     */
+    public function blacklist()
+    {
+        $missing = $this->missingParams(['user_id', 'action']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+        $userId = (int) $this->request->param('user_id');
+        $action = (string) $this->request->param('action');
+        $reason = trim((string) $this->request->param('reason', ''));
+        $evidence = trim((string) $this->request->param('evidence', ''));
+
+        if (!in_array($action, ['add', 'remove'], true)) {
+            return $this->fail(4220, 'action 仅允许 add / remove');
+        }
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) {
+            return $this->fail(4040, '用户不存在');
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        Db::startTrans();
+        try {
+            if ($action === 'add') {
+                if ($reason === '') {
+                    return $this->fail(4220, '加入黑名单必须填写原因');
+                }
+                if ((int) $user['is_blacklisted'] === 1) {
+                    return $this->fail(4220, '用户已在黑名单中');
+                }
+                Db::name('blacklist')->insert([
+                    'user_id'        => $userId,
+                    'blacklist_type' => 1,
+                    'target_value'   => (string) $user['phone'],
+                    'reason'         => $reason,
+                    'evidence'       => $evidence !== '' ? $evidence : null,
+                    'admin_id'       => $this->adminId(),
+                    'admin_name'     => $this->adminName(),
+                    'status'         => 1,
+                    'created_at'     => $now,
+                ]);
+                Db::name('users')->where('id', $userId)->update([
+                    'is_blacklisted' => 1,
+                    'blacklist_reason' => $reason,
+                    'blacklist_at'   => $now,
+                    'logout_before'  => $now,
+                    'updated_at'     => $now,
+                ]);
+            } else {
+                $record = Db::name('blacklist')->where('user_id', $userId)->where('status', 1)->order('id', 'desc')->find();
+                if (!$record) {
+                    return $this->fail(4040, '该用户没有生效中的黑名单记录');
+                }
+                Db::name('blacklist')->where('id', $record['id'])->update([
+                    'status'       => 0,
+                    'lifted_at'    => $now,
+                    'lifted_by'    => $this->adminId(),
+                    'lifted_reason' => $reason !== '' ? $reason : '管理后台移出黑名单',
+                    'updated_at'   => $now,
+                ]);
+                Db::name('users')->where('id', $userId)->update([
+                    'is_blacklisted' => 0,
+                    'blacklist_reason' => null,
+                    'updated_at'     => $now,
+                ]);
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '操作失败：' . $e->getMessage());
+        }
+
+        $this->audit('user', 'blacklist_' . $action,
+            ($action === 'add' ? '加入黑名单' : '移出黑名单') . '（UID ' . $user['uid'] . '）',
+            ['reason' => $reason], 'user', $userId);
+
+        return $this->success(null, $action === 'add' ? '已加入黑名单并强制下线' : '已移出黑名单');
+    }
+
+    /**
+     * POST /admin/user/recover { user_collectible_id, reason }
+     * 强制回收藏品：支持在持有/寄售中状态；回写库存与流通量；记录审计
+     */
+    public function recover()
+    {
+        $missing = $this->missingParams(['user_collectible_id', 'reason']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+        $ucid  = (int) $this->request->param('user_collectible_id');
+        $reason = trim((string) $this->request->param('reason', ''));
+
+        $uc = Db::name('user_collectibles')->alias('uc')
+            ->field('uc.*, c.name AS collectible_name, c.circulate')
+            ->join('collectibles c', 'c.id = uc.collectible_id')
+            ->where('uc.id', $ucid)
+            ->find();
+        if (!$uc) {
+            return $this->fail(4040, '藏品持有记录不存在');
+        }
+        if (!in_array($uc['status'], ['held', 'consigned', 'frozen'], true)) {
+            return $this->fail(4220, '仅持有中/寄售中/冻结中的藏品可强制回收（当前：' . $uc['status'] . '）');
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        Db::startTrans();
+        try {
+            // 若在寄售：取消挂单
+            if ($uc['status'] === 'consigned') {
+                $listing = Db::name('resale_listings')->where('user_collectible_id', $ucid)
+                    ->where('status', 'selling')->find();
+                if ($listing) {
+                    Db::name('resale_listings')->where('id', $listing['id'])->update([
+                        'status'             => 'cancelled',
+                        'system_delisted'    => 1,
+                        'system_delisted_at' => $now,
+                        'delist_reason'      => '管理员强制回收：' . $reason,
+                        'updated_at'         => $now,
+                    ]);
+                }
+            }
+
+            // 持有记录 → recovered
+            Db::name('user_collectibles')->where('id', $ucid)->update([
+                'status'      => 'recovered',
+                'is_consigned' => 0,
+                'updated_at'  => $now,
+            ]);
+
+            // 藏品流通量 -1（回收退出流通）
+            Db::name('collectibles')->where('id', $uc['collectible_id'])->dec('circulate')->update();
+
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '回收失败：' . $e->getMessage());
+        }
+
+        $this->audit('user', 'recover', '强制回收藏品「' . $uc['collectible_name'] . '」',
+            ['reason' => $reason, 'serial' => $uc['serial']], 'user_collectible', $ucid);
+
+        return $this->success(null, '藏品已强制回收');
+    }
+}

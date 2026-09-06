@@ -9,11 +9,18 @@ use Firebase\JWT\Key;
 use Firebase\JWT\ExpiredException;
 use think\Request;
 use think\Response;
+use think\facade\Db;
 
 /**
- * JWT 认证中间件
+ * JWT 认证中间件（C 端）
  * 请求头 Authorization: Bearer {token}
  * 解析后将用户ID写入 $request->userId
+ *
+ * 安全增强（管理后台联动）：
+ * - 实时校验用户状态：冻结（status=0）账号即刻拒绝访问
+ * - 实时校验黑名单：is_blacklisted=1 拒绝访问
+ * - 强制登出：logout_before 非空时，签发时间（iat）早于该值的令牌全部失效
+ *   （管理后台「强制登出」操作即写入该字段）
  */
 class JwtAuth
 {
@@ -41,6 +48,26 @@ class JwtAuth
             return json(['code' => 2001, 'message' => 'token已过期', 'data' => null]);
         } catch (\Throwable $e) {
             return json(['code' => 2001, 'message' => 'token无效', 'data' => null]);
+        }
+
+        // 实时状态校验（冻结/黑名单/强制登出即刻生效）
+        $user = Db::name('users')
+            ->where('id', $request->userId)
+            ->whereNull('deleted_at')
+            ->field('id, status, is_blacklisted, logout_before')
+            ->find();
+        if (!$user) {
+            return json(['code' => 2001, 'message' => '账号不存在', 'data' => null]);
+        }
+        if ((int) $user['status'] !== 1) {
+            return json(['code' => 2003, 'message' => '账号已被冻结，请联系客服', 'data' => null]);
+        }
+        if ((int) $user['is_blacklisted'] === 1) {
+            return json(['code' => 2003, 'message' => '账号已被列入黑名单，禁止访问', 'data' => null]);
+        }
+        if (!empty($user['logout_before']) && isset($payload->iat)
+            && (int) $payload->iat <= strtotime((string) $user['logout_before'])) {
+            return json(['code' => 2001, 'message' => '登录已失效，请重新登录', 'data' => null]);
         }
 
         return $next($request);
