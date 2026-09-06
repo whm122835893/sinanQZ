@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAdminStore } from '@/stores/admin'
-import { logout } from '@/api'
+import { logout, changeAdminPassword } from '@/api'
 import { ROLE_MAP } from '@/utils/maps'
 
 const router = useRouter()
@@ -30,17 +30,22 @@ async function onPwdSubmit() {
   if (!oldPwd || !newPwd) return ElMessage.warning('请填写完整')
   if (newPwd.length < 8) return ElMessage.warning('新密码至少 8 位')
   if (newPwd !== confirmPwd) return ElMessage.warning('两次输入的新密码不一致')
+  if (!/^(?=.*[a-zA-Z])(?=.*\d).+$/.test(newPwd)) return ElMessage.warning('新密码需同时包含字母和数字')
   pwdSubmitting.value = true
-  await new Promise((r) => setTimeout(r, 400))
+  const res = await changeAdminPassword(oldPwd, newPwd, confirmPwd)
   pwdSubmitting.value = false
-  pwdShow.value = false
-  ElMessage.success('密码已修改（Mock），下次登录生效')
+  if (res.code === 0) {
+    pwdShow.value = false
+    ElMessage.success(res.message || '密码已修改，下次登录生效')
+  } else if (res.code !== -1) {
+    ElMessage.error(res.message || '密码修改失败')
+  }
 }
 
 const securityItems = [
   { label: '登录密码', desc: '定期修改密码可提升账号安全性', action: '修改', handler: onChangePwd },
-  { label: '两步验证（2FA）', desc: 'TOTP 动态口令，登录时二次校验（联调后端后启用）', action: '开启', handler: () => ElMessage.info('2FA 配置联调后端后开放') },
-  { label: 'IP 白名单', desc: '限制仅白名单内 IP 可登录后台（联调后端后启用）', action: '配置', handler: () => ElMessage.info('IP 白名单联调后端后开放') }
+  { label: '两步验证（2FA）', desc: 'TOTP 动态口令，登录时二次校验（规划中）', action: '开启', handler: () => ElMessage.info('2FA 配置规划中') },
+  { label: 'IP 白名单', desc: '限制仅白名单内 IP 可登录后台（规划中）', action: '配置', handler: () => ElMessage.info('IP 白名单规划中') }
 ]
 </script>
 
@@ -84,14 +89,14 @@ const securityItems = [
           type="info"
           :closable="false"
           show-icon
-          title="当前为纯前端 Mock 演示版本，安全能力（2FA / IP 白名单 / 登录锁定）将在联调后端后生效"
+          title="登录密码已接入后端实时生效；2FA / IP 白名单为规划中能力，当前由账号锁定策略与登录日志提供安全保障"
           style="margin-top: 6px"
         />
       </div>
     </div>
 
     <div class="mine__version t-tertiary">
-      司南珍藏管理后台 · v0.2.0（Mock 演示，未联调后端）
+      司南珍藏管理后台 · v1.0.0（融合版）
     </div>
 
     <!-- 修改密码 -->

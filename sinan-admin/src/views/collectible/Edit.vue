@@ -2,13 +2,15 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getCollectibleDetail, saveCollectible } from '@/api'
+import { UploadFilled } from '@element-plus/icons-vue'
+import { getCollectibleDetail, saveCollectible, getChainNetworks, uploadImage } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id ? Number(route.params.id) : null
 const submitting = ref(false)
 const formRef = ref(null)
+const uploading = ref(false)
 
 const form = ref({
   name: '',
@@ -23,31 +25,43 @@ const form = ref({
   royaltyRate: null,
   description: '',
   featured: false,
-  cover: '/images/collections/cover-1.jpg'
+  cover: '',
+  chainType: ''
 })
 
 const rules = {
   name: [{ required: true, message: '请输入藏品名称', trigger: 'blur' }],
   price: [{ required: true, message: '请输入售价', trigger: 'blur' }],
-  edition: [{ required: true, message: '请输入发行总量', trigger: 'blur' }]
+  edition: [{ required: true, message: '请输入发行总量', trigger: 'blur' }],
+  cover: [{ required: true, message: '请上传藏品图', trigger: 'change' }]
 }
 
 const categories = ['青铜', '水墨', '国潮', '限定']
 
-const coverOptions = [
-  '/images/collections/cover-1.jpg',
-  '/images/collections/cover-2.jpg',
-  '/images/collections/cover-3.jpg',
-  '/images/collections/cover-4.jpg',
-  '/images/collections/cover-5.jpg',
-  '/images/collections/cover-collection-1.jpg',
-  '/images/collections/cover-collection-2.jpg',
-  '/images/collections/cover-collection-3.jpg',
-  '/images/collections/cover-collection-4.jpg',
-  '/images/collections/cover-collection-5.jpg'
-]
+// 上链链选择（三链）：显示后台启用的链，未配置时可留空（不上链）
+const CHAIN_LABELS = { wenchang: '文昌链', consortium: '联盟链', antchain: '蚂蚁链' }
+const chains = ref([])   // [{ code, name, status, isDefault, configured }]
 
 onMounted(async () => {
+  // 加载链网络（展示启用状态；默认链用于新建时的初始选择）
+  const net = await getChainNetworks()
+  if (net.code === 0) {
+    chains.value = (net.data?.networks || []).map((c) => ({
+      code: c.chainCode,
+      name: CHAIN_LABELS[c.chainCode] || c.chainName || c.chainCode,
+      status: c.status,
+      isDefault: !!c.isDefault,
+      hasKey: !!c.hasKey,
+      hasSecret: !!c.hasSecret,
+      hasRpc: !!c.rpcUrl,
+      isConsortium: c.chainCode === 'consortium'
+    }))
+    if (!id) {
+      const def = chains.value.find((c) => c.isDefault && c.status === 1)
+      if (def) form.value.chainType = def.code
+    }
+  }
+
   if (id) {
     const res = await getCollectibleDetail(id)
     const c = res.data
@@ -57,10 +71,37 @@ onMounted(async () => {
       tag: c.tag, issuer: c.issuer, creator: c.creator || '',
       royaltyRate: c.royaltyRate ?? null,
       description: c.description,
-      featured: c.featured, cover: c.cover
+      featured: c.featured, cover: c.cover,
+      chainType: c.chainType || ''
     }
   }
 })
+
+// 链配置完备性：文昌链需 Key；联盟链需 RPC；蚂蚁链需 Key + Secret
+function chainReady(c) {
+  if (!c.status) return false
+  if (c.isConsortium) return !!c.hasRpc
+  if (c.code === 'antchain') return !!c.hasKey && !!c.hasSecret
+  return !!c.hasKey
+}
+
+// ---- 藏品图上传（JPG/PNG/WEBP/GIF，≤5MB）----
+async function onUploadCover({ file }) {
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
+  uploading.value = true
+  const res = await uploadImage(file, 'collection')
+  uploading.value = false
+  if (res.code === 0 && res.data?.url) {
+    form.value.cover = res.data.url
+    formRef.value?.clearValidate('cover')
+    ElMessage.success('藏品图已上传')
+  } else {
+    ElMessage.error(res.message || '上传失败，请重试')
+  }
+}
 
 async function onSubmit() {
   await formRef.value.validate()
@@ -80,11 +121,12 @@ async function onSubmit() {
     royaltyRate: f.royaltyRate,
     description: f.description,
     featured: f.featured,
-    cover: f.cover
+    cover: f.cover,
+    chainType: f.chainType || ''
   })
   submitting.value = false
   if (res.code === 0) {
-    ElMessage.success(id ? '保存成功' : '创建成功')
+    ElMessage.success(id ? '保存成功' : '创建成功（当前为待发售状态，请到藏品列表开启上架售卖）')
     router.back()
   }
 }
@@ -122,7 +164,10 @@ async function onSubmit() {
         </el-form-item>
 
         <el-form-item label="发售时间">
-          <el-input v-model="form.saleTime" placeholder="2026-09-07 18:00（发售配置中设定）" style="width: 280px" />
+          <el-input v-model="form.saleTime" placeholder="2026-09-07 18:00（可留空，上架后即时开售）" style="width: 280px" />
+          <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
+            藏品创建后为「待发售」状态，需在藏品列表或详情中开启上架售卖后 C 端才可见
+          </div>
         </el-form-item>
 
         <el-form-item label="标签">
@@ -141,6 +186,26 @@ async function onSubmit() {
           <el-input-number v-model="form.royaltyRate" :min="0" :max="30" :precision="1" style="width: 200px" />
         </el-form-item>
 
+        <el-form-item label="上链链选择">
+          <el-radio-group v-model="form.chainType">
+            <el-radio v-for="c in chains" :key="c.code" :value="c.code">
+              {{ c.name }}
+              <el-tag v-if="c.isDefault" type="warning" effect="plain" size="small" style="margin-left: 4px">默认</el-tag>
+              <el-tag
+                :type="c.status === 1 ? (chainReady(c) ? 'success' : 'danger') : 'info'"
+                effect="plain"
+                size="small"
+                style="margin-left: 4px"
+              >
+                {{ c.status === 1 ? (chainReady(c) ? '可上链' : '配置不全') : '未启用' }}
+              </el-tag>
+            </el-radio>
+          </el-radio-group>
+          <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
+            藏品售出后按所选链铸造链上凭证；链网络参数在「区块链 → 上链配置」中维护
+          </div>
+        </el-form-item>
+
         <el-form-item label="首页推荐">
           <el-switch v-model="form.featured" />
         </el-form-item>
@@ -156,15 +221,32 @@ async function onSubmit() {
           />
         </el-form-item>
 
-        <el-form-item label="封面图">
-          <div class="ce__covers">
-            <img
-              v-for="c in coverOptions"
-              :key="c"
-              :src="c"
-              :class="{ 'is-active': form.cover === c }"
-              @click="form.cover = c"
-            />
+        <el-form-item label="藏品图" prop="cover">
+          <div class="ce__cover-edit">
+            <div class="ce__cover-preview">
+              <img v-if="form.cover" :src="form.cover" alt="藏品图预览" />
+              <div v-else class="ce__cover-empty">
+                <el-icon><UploadFilled /></el-icon>
+                <span>暂无图片</span>
+              </div>
+            </div>
+            <div class="ce__cover-ops">
+              <el-upload
+                :show-file-list="false"
+                :http-request="onUploadCover"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+              >
+                <el-button type="primary" plain :loading="uploading">
+                  {{ uploading ? '上传中…' : form.cover ? '重新上传' : '上传藏品图' }}
+                </el-button>
+              </el-upload>
+              <div class="t-tertiary ce__cover-tip">
+                支持 JPG / PNG / WEBP / GIF，大小不超过 5MB；上传后立即保存生效
+              </div>
+              <div v-if="id" class="t-tertiary ce__cover-tip">
+                编辑已有藏品时上传新图将替换原图
+              </div>
+            </div>
           </div>
         </el-form-item>
 
@@ -180,29 +262,52 @@ async function onSubmit() {
 </template>
 
 <style scoped lang="scss">
-.ce__covers {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  width: 420px;
+.ce__cover-edit {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
 
-  @media (max-width: 768px) {
-    width: 100%;
-    grid-template-columns: repeat(4, 1fr);
-  }
+.ce__cover-preview {
+  width: 140px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px dashed $color-border;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: $color-surface;
 
   img {
     width: 100%;
-    aspect-ratio: 1;
+    height: 100%;
     object-fit: cover;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition: border-color 0.15s;
-
-    &:hover { border-color: rgba(192, 0, 0, 0.3); }
-
-    &.is-active { border-color: $color-primary; }
+    display: block;
   }
+}
+
+.ce__cover-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: $color-text-tertiary;
+  font-size: 12px;
+
+  .el-icon { font-size: 28px; }
+}
+
+.ce__cover-ops { flex: 1; min-width: 220px; }
+
+.ce__cover-tip {
+  font-size: 12px;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+  .ce__cover-edit { flex-direction: column; }
 }
 </style>

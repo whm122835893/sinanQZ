@@ -18,6 +18,34 @@ use think\facade\Db;
 class WalletController extends BaseController
 {
     /**
+     * GET /admin/wallet/stats
+     * 钱包统计卡片：今日充值/消费/奖励 + 本月充值（列表页顶部指标）
+     */
+    public function stats()
+    {
+        $todayStart = date('Y-m-d 00:00:00');
+        $todayEnd   = date('Y-m-d 23:59:59');
+        $monthStart = date('Y-m-01 00:00:00');
+
+        $sumBy = function (string $type, string $from, string $to) {
+            return (float) (Db::name('wallet_transactions')
+                ->where('trans_type', $type)
+                ->whereBetweenTime('created_at', $from, $to)
+                ->sum('amount'));
+        };
+
+        return $this->success([
+            'todayRecharge' => $sumBy('recharge', $todayStart, $todayEnd),
+            'todayConsume'  => $sumBy('buy', $todayStart, $todayEnd),
+            'todayReward'   => $sumBy('reward', $todayStart, $todayEnd),
+            'todayWithdraw' => $sumBy('withdraw', $todayStart, $todayEnd),
+            'monthRecharge' => $sumBy('recharge', $monthStart, $todayEnd),
+            'totalBalance'  => (float) (Db::name('wallets')->sum('balance')),
+            'totalFrozen'   => (float) (Db::name('wallets')->sum('frozen')),
+        ]);
+    }
+
+    /**
      * GET /admin/wallet/transactions
      * 钱包流水：trans_type/title/bizNo/userId 筛选
      */

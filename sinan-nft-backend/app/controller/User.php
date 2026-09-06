@@ -32,6 +32,9 @@ class User extends BaseController
             'phone'    => mask_phone($user['phone']),
             'avatar'   => $user['avatar'],
             'isRealName'   => (bool) $user['is_realname'],
+            // 实名审核状态：0未提交 1待审核 2已通过 3已驳回（供 C 端展示「审核中/被驳回」）
+            'realnameStatus' => (int) ($user['realname_status'] ?? 0),
+            'realnameRejectReason' => (string) ($user['realname_reject_reason'] ?? ''),
             'inviteCode'   => $user['invite_code'],
             'wallet' => [
                 'balance'   => (float) ($wallet['balance'] ?? 0),
@@ -94,18 +97,24 @@ class User extends BaseController
         }
 
         $user = Db::name('users')->where('id', $userId)->find();
-        if ((int) $user['is_realname'] === 1) {
+        if ((int) $user['is_realname'] === 1 && (int) $user['realname_status'] === 2) {
             return $this->fail(1001, '已完成实名认证');
         }
+        if ((int) ($user['realname_status'] ?? 0) === 1) {
+            return $this->fail(1001, '实名认证审核中，请耐心等待');
+        }
 
+        // 提交后进入待审核（管理员后台审核通过后 is_realname 置 1）
         Db::name('users')->where('id', $userId)->update([
-            'real_name'     => aes_encrypt($realName),
-            'id_card'       => aes_encrypt($idCard),
-            'is_realname'   => 1,
-            'updated_at'    => date('Y-m-d H:i:s.v'),
+            'real_name'              => aes_encrypt($realName),
+            'id_card'                => aes_encrypt($idCard),
+            'realname_status'        => 1,
+            'realname_submitted_at'  => date('Y-m-d H:i:s'),
+            'realname_reject_reason' => null,
+            'updated_at'             => date('Y-m-d H:i:s.v'),
         ]);
 
-        return $this->success();
+        return $this->success(['status' => 'pending'], '已提交实名认证，等待审核');
     }
 
     /**

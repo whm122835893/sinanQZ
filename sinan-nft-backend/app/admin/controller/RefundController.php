@@ -115,6 +115,48 @@ class RefundController extends BaseController
             return $this->fail(4220, '拒绝退款必须填写审批意见');
         }
 
+        // 大额退款审批中心复核：金额 ≥ 阈值时不直接批准，生成审批单
+        // （驳回不受金额限制，可直接驳回；发起人 = 当前审批人，复核人须为他人）
+        if ($action === 'approve') {
+            $threshold = (float) (Db::name('system_configs')
+                ->where('config_key', 'large_refund_approval_threshold')->value('config_value') ?: 1000);
+            if ((float) $refund['amount'] >= $threshold) {
+                $exists = Db::name('approval_requests')
+                    ->where('target_type', 'refund')->where('target_id', $id)
+                    ->where('status', 1)->count();
+                if ($exists === 0) {
+                    $order = Db::name('orders')->where('id', $refund['order_id'])->find();
+                    $approvalNo = 'AP' . date('YmdHis') . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
+                    Db::name('approval_requests')->insert([
+                        'approval_no'    => $approvalNo,
+                        'type'           => 'large_refund',
+                        'title'          => '大额退款复核：' . $refund['refund_no'] . '（' . $refund['amount'] . ' 元）',
+                        'detail'         => json_encode([
+                            'refund_no'   => $refund['refund_no'],
+                            'order_no'    => $order['order_no'] ?? '',
+                            'amount'      => $refund['amount'],
+                            'reason'      => $refund['reason'],
+                            'applicant'   => $this->adminName(),
+                        ], JSON_UNESCAPED_UNICODE),
+                        'amount'         => (float) $refund['amount'],
+                        'target_type'    => 'refund',
+                        'target_id'      => $id,
+                        'applicant_id'   => $this->adminId(),
+                        'applicant_name' => $this->adminName(),
+                        'status'         => 1,
+                        'created_at'     => date('Y-m-d H:i:s'),
+                        'updated_at'     => date('Y-m-d H:i:s'),
+                    ]);
+                    $this->audit('refund', 'approval_submit',
+                        '大额退款 ' . $refund['refund_no'] . '（' . $refund['amount'] . ' 元）已提交审批中心复核',
+                        ['approval_threshold' => $threshold], 'refund', $id);
+                    return $this->success(null,
+                        '退款金额 ' . $refund['amount'] . ' 元 ≥ 审批阈值 ' . $threshold . ' 元，已提交审批中心复核，通过后方可执行退款');
+                }
+                return $this->fail(4220, '该退款单已存在待复核的审批单，请等待审批中心处理');
+            }
+        }
+
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {

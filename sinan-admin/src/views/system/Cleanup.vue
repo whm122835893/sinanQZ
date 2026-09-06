@@ -1,50 +1,97 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { cleanupPlatform } from '@/api'
-import { verifyAdminPassword } from '@/api'
+import {
+  getCleanupPreview,
+  sendCleanupCode,
+  executeCleanup,
+  getCleanupLogs,
+  verifyAdminPassword
+} from '@/api'
 
-const step = ref(0)                       // 0 未开始 / 1 输入确认文本 / 2 密码 / 3 验证码 / 4 结果
+// ============================================================
+// 平台清库（真实后端四步流）
+// 预览（GET cleanup-preview）→ 确认文本+原因 → 管理员密码
+// → 短信验证码（发至当前管理员绑定手机）→ 执行（备份+事务清库）
+// ============================================================
+
+const loading = ref(true)
+const preview = ref(null)          // { tables, totalRows, protected, smsRequired }
+const maskedPhone = ref('')        // 后端返回的脱敏手机号
+
+const step = ref(0)                // 0 未开始 / 1 确认文本+原因 / 2 密码 / 3 验证码 / 4 结果
 const confirmText = ref('')
+const reason = ref('')
 const password = ref('')
 const smsCode = ref('')
-const smsSent = ref(false)
 const smsCountdown = ref(0)
+const sending = ref(false)
 const executing = ref(false)
-const result = ref(null)
+const result = ref(null)           // { backupPath, affectedUsers, affectedOrders, executionTime }
+
+// 清库日志
+const logs = ref([])
+const logsTotal = ref(0)
+const logsPage = ref(1)
 
 const canNext = computed(() => {
-  if (step.value === 1) return confirmText.value.trim() === '确认清除'
+  if (step.value === 1) {
+    return confirmText.value.trim() === '确认清除' && reason.value.trim().length >= 5
+  }
   if (step.value === 2) return password.value.length >= 6
   if (step.value === 3) return /^\d{6}$/.test(smsCode.value)
   return false
 })
 
+async function load() {
+  loading.value = true
+  const res = await getCleanupPreview()
+  loading.value = false
+  if (res.code === 0) preview.value = res.data
+}
+
+async function loadLogs() {
+  const res = await getCleanupLogs({ page: logsPage.value, page_size: 10 })
+  if (res.code === 0) {
+    logs.value = res.data?.list || []
+    logsTotal.value = res.data?.total || 0
+  }
+}
+
+onMounted(() => {
+  load()
+  loadLogs()
+})
+
 function start() {
   step.value = 1
   confirmText.value = ''
+  reason.value = ''
   password.value = ''
   smsCode.value = ''
-  smsSent.value = false
   result.value = null
 }
 
-// ---- Step1 → Step2 ----
+// ---- 步骤推进 ----
 async function next() {
   if (step.value === 1) {
     if (confirmText.value.trim() !== '确认清除') {
       return ElMessage.warning('请手动输入「确认清除」以继续')
     }
+    if (reason.value.trim().length < 5) {
+      return ElMessage.warning('清库原因不能少于 5 字')
+    }
     step.value = 2
     return
   }
   if (step.value === 2) {
-    // 密码验证
     const res = await verifyAdminPassword(password.value)
     if (!(res.code === 0 && res.data)) {
-      return ElMessage.error('管理员密码验证失败')
+      return ElMessage.error(res.message || '管理员密码验证失败')
     }
     step.value = 3
+    // 密码通过后自动发一次验证码
+    if (!smsCode.value) sendSms()
     return
   }
   if (step.value === 3) {
@@ -52,30 +99,40 @@ async function next() {
   }
 }
 
-// ---- 发送验证码（超管绑定手机 138****0001） ----
+// ---- 发送验证码（后端仅允许发至当前管理员绑定手机） ----
 async function sendSms() {
-  smsSent.value = true
-  smsCountdown.value = 60
-  const timer = setInterval(() => {
-    smsCountdown.value--
-    if (smsCountdown.value <= 0) clearInterval(timer)
-  }, 1000)
-  ElMessage.success('验证码已发送至超管绑定手机 138****0001（Mock 任意 6 位数字可过）')
+  if (sending.value || smsCountdown.value > 0) return
+  sending.value = true
+  const res = await sendCleanupCode('')
+  sending.value = false
+  if (res.code === 0) {
+    maskedPhone.value = res.data?.phone || ''
+    smsCountdown.value = 60
+    const timer = setInterval(() => {
+      smsCountdown.value--
+      if (smsCountdown.value <= 0) clearInterval(timer)
+    }, 1000)
+    ElMessage.success(`验证码已发送至管理员绑定手机 ${maskedPhone.value || ''}`)
+  } else {
+    ElMessage.error(res.message || '验证码发送失败')
+  }
 }
 
-// ---- Step4 最终执行 ----
+// ---- 最终执行 ----
 async function execute() {
   await ElMessageBox.confirm(
-    '这是最终确认！执行后所有用户数据将被清除且不可恢复，请再次确认。',
+    '这是最终确认！执行后所有用户业务数据将被清除（执行前自动全库备份），请再次确认。',
     '最终确认执行',
     { type: 'error', confirmButtonText: '确认执行', confirmButtonClass: 'el-button--danger' }
   )
   executing.value = true
-  const res = await cleanupPlatform({ confirmText: '确认清除' })
+  const res = await executeCleanup({ code: smsCode.value.trim(), reason: reason.value.trim() })
   executing.value = false
   if (res.code === 0) {
-    result.value = res.data
+    result.value = res.data || {}
     step.value = 4
+    load()        // 刷新预览（数据已清零）
+    loadLogs()    // 刷新日志
   } else {
     ElMessage.error(res.message || '执行失败')
   }
@@ -84,61 +141,114 @@ async function execute() {
 function finish() {
   step.value = 0
 }
+
+function onLogsPage(p) {
+  logsPage.value = p
+  loadLogs()
+}
+
+const LOG_STATUS = { 1: '成功', 2: '失败' }
 </script>
 
 <template>
   <div class="adm-page cl">
-    <!-- 说明卡片 -->
-    <div class="adm-card">
-      <div class="adm-card__title">平台数据清除（最高风险操作）</div>
-      <el-alert
-        type="error"
-        :closable="false"
-        show-icon
-        title="该操作将永久清除全部用户业务数据，不可恢复！执行前系统自动全库备份，操作人 / IP / 时间 / 原因完整记录审计日志。"
-        class="cl__alert"
-      />
+    <el-skeleton v-if="loading" :rows="6" animated style="padding: 20px" />
+    <template v-else>
+      <!-- 说明卡片 -->
+      <div class="adm-card">
+        <div class="adm-card__title">平台数据清除（最高风险操作）</div>
+        <el-alert
+          type="error"
+          :closable="false"
+          show-icon
+          :title="`该操作将永久清除全部用户业务数据，不可恢复！执行前系统自动全库备份，操作人 / IP / 时间 / 原因完整记录审计日志。当前待清除数据共 ${preview?.totalRows ?? 0} 行。`"
+          class="cl__alert"
+        />
 
-      <div class="cl__grid">
-        <div class="cl__panel is-danger">
-          <div class="cl__panel-title">清除范围（不可恢复）</div>
-          <ul class="cl__list">
-            <li>所有用户账号与邀请关系</li>
-            <li>用户钱包与钱包流水</li>
-            <li>藏品 / 盲盒持有记录</li>
-            <li>全部订单与支付流水</li>
-            <li>转赠、寄售挂单记录</li>
-            <li>签到 / 抽奖 / 邀请 / 空投 / 合成 / 盲盒开启记录</li>
-            <li>实名认证信息</li>
-            <li>退款记录</li>
-          </ul>
+        <div class="cl__grid">
+          <div class="cl__panel is-danger">
+            <div class="cl__panel-title">清除范围（共 {{ preview?.totalRows ?? 0 }} 行业务数据）</div>
+            <div class="cl__tables">
+              <div v-for="t in (preview?.tables || []).slice(0, 18)" :key="t.table" class="cl__table-row">
+                <code>{{ t.table }}</code>
+                <span>{{ t.rows }} 行</span>
+              </div>
+              <div v-if="(preview?.tables || []).length > 18" class="t-tertiary" style="font-size:12px">
+                … 及其余 {{ (preview?.tables || []).length - 18 }} 张业务表
+              </div>
+            </div>
+          </div>
+          <div class="cl__panel is-keep">
+            <div class="cl__panel-title">受保护配置（绝不触碰）</div>
+            <ul class="cl__list">
+              <li v-for="p in (preview?.protected || [])" :key="p">{{ p }}</li>
+            </ul>
+            <div class="cl__sms-tip">
+              <el-tag v-if="preview?.smsRequired" type="warning" effect="plain" size="small">
+                短信验证码强制开启
+              </el-tag>
+              <el-tag v-else type="info" effect="plain" size="small">
+                短信验证码已关闭（测试环境）
+              </el-tag>
+            </div>
+          </div>
         </div>
-        <div class="cl__panel is-keep">
-          <div class="cl__panel-title">保留内容</div>
-          <ul class="cl__list">
-            <li>管理员账号与角色权限</li>
-            <li>藏品元数据（库存重置为发行总量）</li>
-            <li>盲盒元数据（盲盒库存重置为发行总量）</li>
-            <li>CMS 内容（公告 / 轮播 / 社群 / 文物展馆）</li>
-            <li>系统配置（支付 / 区块链 / 存储）</li>
-          </ul>
+
+        <div class="cl__actions">
+          <el-button type="danger" size="large" @click="start">进入清除流程</el-button>
         </div>
       </div>
 
-      <div class="cl__actions">
-        <el-button type="danger" size="large" @click="start">进入清除流程</el-button>
+      <!-- 清库日志 -->
+      <div class="adm-card">
+        <div class="adm-card__title">清库执行日志</div>
+        <el-table :data="logs" size="default">
+          <el-table-column label="时间" prop="createdAt" width="170" />
+          <el-table-column label="操作人" prop="adminName" width="110" />
+          <el-table-column label="手机号" prop="adminPhone" width="130" />
+          <el-table-column label="原因" prop="reason" min-width="180" show-overflow-tooltip />
+          <el-table-column label="影响用户" prop="affectedUsers" width="90" align="right" />
+          <el-table-column label="影响订单" prop="affectedOrders" width="90" align="right" />
+          <el-table-column label="耗时" width="80" align="right">
+            <template #default="{ row }">{{ row.executionTime }}s</template>
+          </el-table-column>
+          <el-table-column label="状态" width="80">
+            <template #default="{ row }">
+              <el-tag :type="row.status === 1 ? 'success' : 'danger'" effect="plain" size="small">
+                {{ LOG_STATUS[row.status] || row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="备份文件" prop="backupPath" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="cl__backup">{{ row.backupPath }}</span>
+            </template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="暂无清库记录" :image-size="60" />
+          </template>
+        </el-table>
+        <div v-if="logsTotal > 10" class="cl__pager">
+          <el-pagination
+            layout="total, prev, pager, next"
+            :total="logsTotal"
+            :page-size="10"
+            :current-page="logsPage"
+            @current-change="onLogsPage"
+          />
+        </div>
       </div>
-    </div>
+    </template>
 
     <!-- 四重安全确认弹窗 -->
     <el-dialog
       :model-value="step > 0 && step < 4"
       title="平台数据清除 · 安全确认"
-      width="480px"
+      width="500px"
       :close-on-click-modal="false"
       :show-close="!executing"
     >
-      <!-- Step 1：输入确认文本 -->
+      <!-- Step 1：确认文本 + 清库原因 -->
       <template v-if="step === 1">
         <div class="cl__step-tip">
           <el-alert
@@ -155,6 +265,16 @@ function finish() {
               placeholder="请手动输入「确认清除」"
               maxlength="4"
               clearable
+            />
+          </el-form-item>
+          <el-form-item label="清库原因">
+            <el-input
+              v-model="reason"
+              type="textarea"
+              :rows="2"
+              placeholder="不少于 5 字，将写入清库日志与审计记录"
+              maxlength="255"
+              show-word-limit
             />
           </el-form-item>
         </el-form>
@@ -178,12 +298,15 @@ function finish() {
 
       <!-- Step 3：短信验证码 -->
       <template v-else-if="step === 3">
-        <div class="cl__step-tip">第 3 / 3 步：短信验证码将发送至超管绑定手机 138****0001。</div>
+        <div class="cl__step-tip">
+          第 3 / 3 步：短信验证码将发送至当前管理员绑定手机
+          <b v-if="maskedPhone">{{ maskedPhone }}</b>（仅限本人手机，不可指定其他号码）。
+        </div>
         <el-form label-width="110px">
           <el-form-item label="短信验证码">
             <div class="cl__sms">
               <el-input v-model="smsCode" placeholder="6 位验证码" maxlength="6" />
-              <el-button :disabled="smsCountdown > 0" @click="sendSms">
+              <el-button :disabled="smsCountdown > 0 || sending" :loading="sending" @click="sendSms">
                 {{ smsCountdown > 0 ? `${smsCountdown}s 后重发` : '获取验证码' }}
               </el-button>
             </div>
@@ -199,14 +322,14 @@ function finish() {
     </el-dialog>
 
     <!-- 执行结果 -->
-    <el-dialog :model-value="step === 4" title="清除完成" width="440px" :close-on-click-modal="false">
-      <el-result icon="success" title="平台数据已清除" sub-title="执行结果已写入审计日志，备份文件已生成">
+    <el-dialog :model-value="step === 4" title="清除完成" width="460px" :close-on-click-modal="false">
+      <el-result icon="success" title="平台数据已清除" sub-title="执行结果已写入清库日志与审计日志，备份文件已生成">
         <template #extra>
           <div class="cl__result">
-            <div class="cl__kv"><span>清除用户</span><b>{{ result?.clearedUsers ?? 0 }} 个</b></div>
-            <div class="cl__kv"><span>清除订单</span><b>{{ result?.clearedOrders ?? 0 }} 笔</b></div>
-            <div class="cl__kv"><span>重置藏品库存</span><b>{{ result?.resetCollectibles ?? 0 }} 个</b></div>
-            <div class="cl__kv"><span>全库备份</span><b class="cl__backup">{{ result?.backupFile }}</b></div>
+            <div class="cl__kv"><span>清除用户</span><b>{{ result?.affectedUsers ?? 0 }} 个</b></div>
+            <div class="cl__kv"><span>清除订单</span><b>{{ result?.affectedOrders ?? 0 }} 笔</b></div>
+            <div class="cl__kv"><span>执行耗时</span><b>{{ result?.executionTime ?? 0 }}s</b></div>
+            <div class="cl__kv"><span>全库备份</span><b class="cl__backup">{{ result?.backupPath || '—' }}</b></div>
           </div>
         </template>
       </el-result>
@@ -248,12 +371,34 @@ function finish() {
   }
 }
 
+.cl__tables {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.cl__table-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 3px 0;
+  color: $color-text-secondary;
+
+  code {
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    font-size: 11px;
+  }
+}
+
 .cl__list {
   margin: 0;
   padding-left: 18px;
   font-size: 12px;
   color: $color-text-secondary;
   line-height: 1.9;
+}
+
+.cl__sms-tip {
+  margin-top: 10px;
 }
 
 .cl__actions {
@@ -295,6 +440,13 @@ function finish() {
 .cl__backup {
   font-family: 'JetBrains Mono', Consolas, monospace;
   font-size: 12px;
+  word-break: break-all;
+}
+
+.cl__pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 @media (max-width: 768px) {

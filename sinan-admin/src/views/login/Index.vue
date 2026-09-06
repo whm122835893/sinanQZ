@@ -90,7 +90,7 @@ async function onSubmit() {
       </el-form>
 
       <div class="login__hint">
-        演示账号：admin / admin123（当前为纯前端 Mock，未联调后端）
+        默认账号：admin / admin123（超级管理员，已接入后端）
       </div>
     </div>
 

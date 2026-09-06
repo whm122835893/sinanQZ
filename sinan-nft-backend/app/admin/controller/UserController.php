@@ -44,11 +44,19 @@ class UserController extends BaseController
         }
         $status = $this->request->param('status');
         if ($status !== null && $status !== '') {
-            $query->where('u.status', (int) $status);
+            // 前端语义化状态映射：normal → 1，frozen → 0
+            $statusMap = ['normal' => 1, 'frozen' => 0];
+            $query->where('u.status', $statusMap[$status] ?? (int) $status);
         }
-        $isRealname = $this->request->param('isRealname');
-        if ($isRealname !== null && $isRealname !== '') {
-            $query->where('u.is_realname', (int) $isRealname);
+        // 实名语义化状态（realname_status：0未提交 1待审核 2已通过 3已驳回）
+        $realnameStatus = trim((string) $this->request->param('realnameStatus', ''));
+        if ($realnameStatus !== '') {
+            $realnameMap = ['none' => 0, 'pending' => 1, 'approved' => 2, 'rejected' => 3];
+            if (isset($realnameMap[$realnameStatus])) {
+                $query->where('u.realname_status', $realnameMap[$realnameStatus]);
+            }
+        } elseif ($this->request->param('isRealname') !== null && $this->request->param('isRealname') !== '') {
+            $query->where('u.is_realname', (int) $this->request->param('isRealname'));
         }
         $isBlacklisted = $this->request->param('isBlacklisted');
         if ($isBlacklisted !== null && $isBlacklisted !== '') {
@@ -61,15 +69,38 @@ class UserController extends BaseController
         }
 
         $total = (clone $query)->count();
-        $rows = $query->field('u.id, u.uid, u.phone, u.username, u.avatar, u.is_realname, u.status,
-                               u.is_blacklisted, u.last_login_at, u.login_count, u.created_at')
+        $rows = $query->field('u.id, u.uid, u.phone, u.username, u.avatar, u.is_realname, u.status, u.realname_status,
+                               u.real_name, u.id_card, u.is_blacklisted, u.blacklist_reason,
+                               u.last_login_at, u.login_count, u.created_at,
+                               IFNULL(w.balance, 0) AS balance, IFNULL(w.points, 0) AS points,
+                               (SELECT COUNT(*) FROM nft_user_collectibles uc
+                                 WHERE uc.user_id = u.id AND uc.status = \'held\') AS collectible_count,
+                               (SELECT COUNT(*) FROM nft_orders o
+                                 WHERE o.user_id = u.id) AS order_count')
+            ->leftJoin('wallets w', 'w.user_id = u.id')
             ->order('u.id', 'desc')
             ->page($page, $pageSize)
             ->select()->toArray();
 
         $canFull = $this->canViewFull();
+        $statusText = [0 => 'none', 1 => 'pending', 2 => 'approved', 3 => 'rejected'];
         foreach ($rows as &$row) {
             $row['phone'] = $canFull ? (string) $row['phone'] : mask_phone((string) $row['phone']);
+
+            // 实名信息（默认脱敏；realname:full 权限可见全量）
+            $rnName = $row['real_name'] ? (aes_decrypt((string) $row['real_name']) ?? '') : '';
+            $rnId   = $row['id_card'] ? (aes_decrypt((string) $row['id_card']) ?? '') : '';
+            if (!$canFull) {
+                $rnName = $rnName !== '' ? mb_substr($rnName, 0, 1) . str_repeat('*', max(0, mb_strlen($rnName) - 1)) : '';
+                $rnId   = $rnId !== '' ? substr($rnId, 0, 4) . str_repeat('*', 10) . substr($rnId, -4) : '';
+            }
+            $row['real_name'] = $rnName;
+            $row['id_card']   = $rnId;
+
+            // 语义化状态（视图直接渲染）
+            $row['realname_status'] = $statusText[(int) $row['realname_status']] ?? 'none';
+            $row['status']    = (int) $row['status'] === 1 ? 'normal' : 'frozen';
+            $row['is_blacklisted'] = (int) $row['is_blacklisted'];
         }
 
         return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
@@ -88,10 +119,10 @@ class UserController extends BaseController
 
         $canFull = $this->canViewFull();
 
-        // 实名信息：按权限解密或脱敏
+        // 实名信息：按权限解密或脱敏（含待审核材料）
         $realName = '';
         $idCard   = '';
-        if ((int) $user['is_realname'] === 1) {
+        if (!empty($user['real_name']) || !empty($user['id_card'])) {
             $realName = (string) ($user['real_name'] ? (aes_decrypt((string) $user['real_name']) ?? '') : '');
             $idCard   = (string) ($user['id_card'] ? (aes_decrypt((string) $user['id_card']) ?? '') : '');
             if (!$canFull) {
@@ -136,10 +167,12 @@ class UserController extends BaseController
             'phone'       => $canFull ? (string) $user['phone'] : mask_phone((string) $user['phone']),
             'username'    => $user['username'],
             'avatar'      => $user['avatar'],
-            'status'      => (int) $user['status'],
+            'status'      => (int) $user['status'] === 1 ? 'normal' : 'frozen',
             'isRealname'  => (int) $user['is_realname'],
+            'realnameStatus' => ['0' => 'none', '1' => 'pending', '2' => 'approved', '3' => 'rejected'][(string) (int) $user['realname_status']] ?? 'none',
             'realName'    => $realName,
             'idCard'      => $idCard,
+            'rejectReason' => (string) ($user['realname_reject_reason'] ?? ''),
             'isBlacklisted' => (int) $user['is_blacklisted'],
             'blacklistReason' => $blacklisted ? $blacklisted['reason'] : null,
             'hasTransactionPassword' => !empty($user['transaction_password']),

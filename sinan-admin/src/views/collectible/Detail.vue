@@ -8,7 +8,8 @@ import {
   destroyCollectible,
   addQuota,
   toggleQuota,
-  releaseCollectible
+  releaseCollectible,
+  toggleCollectibleStatus
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import PasswordVerify from '@/components/PasswordVerify.vue'
@@ -153,6 +154,33 @@ async function onReleaseSubmit() {
     load()
   }
 }
+
+// ---- 上架售卖开关 ----
+async function onSaleSwitch(val) {
+  if (val) {
+    await ElMessageBox.confirm(
+      `确认上架售卖「${detail.value.name}」？上架后 C 端立即可见并可购买（需库存池大于 0）。`,
+      '上架售卖',
+      { type: 'warning' }
+    )
+    const res = await toggleCollectibleStatus(id, 'online')
+    if (res.code === 0) {
+      ElMessage.success('已上架售卖')
+      load()
+    }
+  } else {
+    await ElMessageBox.confirm(
+      `确认下架「${detail.value.name}」？下架后 C 端不再展示，未售出库存保留在库存池。`,
+      '下架藏品',
+      { type: 'warning' }
+    )
+    const res = await toggleCollectibleStatus(id, 'offline')
+    if (res.code === 0) {
+      ElMessage.success('已下架')
+      load()
+    }
+  }
+}
 </script>
 
 <template>
@@ -172,6 +200,15 @@ async function onReleaseSubmit() {
               </div>
               <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">
                 {{ detail.subtitle }} · {{ detail.category }} · {{ detail.issuer }}
+              </div>
+              <div class="cd__sale-row">
+                <span class="t-tertiary" style="font-size: 12px">上架售卖</span>
+                <el-switch
+                  :model-value="detail.status === 'onsale'"
+                  active-text="发售中"
+                  inactive-text="已下架"
+                  @change="onSaleSwitch"
+                />
               </div>
               <div class="cd__price price">¥{{ fmtMoney(detail.price) }}</div>
               <div class="cd__ops">
@@ -421,6 +458,13 @@ async function onReleaseSubmit() {
 }
 
 .cd__price { font-size: 20px; margin-top: 8px; }
+
+.cd__sale-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
 
 .cd__ops {
   display: flex;

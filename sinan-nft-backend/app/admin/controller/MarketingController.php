@@ -125,11 +125,19 @@ class MarketingController extends BaseController
 
     // ==================== 签到配置 ====================
 
+    /** 签到活动配置键（system_configs） */
+    private const CHECKIN_KEYS = ['checkin_enabled', 'checkin_activity_name', 'checkin_start_time', 'checkin_end_time'];
+
     /**
      * GET /admin/marketing/checkin
+     * 返回：活动开关/名称/起止时间 + 奖励规则 + 今日签到统计
      */
     public function checkinConfig()
     {
+        $configs = Db::name('system_configs')
+            ->whereIn('config_key', self::CHECKIN_KEYS)
+            ->column('config_value', 'config_key');
+
         $rewards = Db::name('system_configs')->where('config_key', 'checkin_rewards')->value('config_value');
         $rewards = $rewards ? json_decode((string) $rewards, true) : [];
 
@@ -139,6 +147,10 @@ class MarketingController extends BaseController
         $todayCount = Db::name('check_in_records')->whereBetweenTime('created_at', date('Y-m-d 00:00:00'), date('Y-m-d 23:59:59'))->count();
 
         return $this->success([
+            'enabled'     => (int) ($configs['checkin_enabled'] ?? 0) === 1,
+            'name'        => (string) ($configs['checkin_activity_name'] ?? '每日签到'),
+            'startTime'   => (string) ($configs['checkin_start_time'] ?? ''),
+            'endTime'     => (string) ($configs['checkin_end_time'] ?? ''),
             'rewards'     => $rewards ?: new \stdClass(),
             'todayCount'  => $todayCount,
             'trend'       => array_column($stats, 'cnt', 'd'),
@@ -146,34 +158,77 @@ class MarketingController extends BaseController
     }
 
     /**
-     * POST /admin/marketing/checkin { rewards: {1:5,...,7:30} }
+     * POST /admin/marketing/checkin
+     * 支持两种提交：
+     *   1) { rewards: {1:5,...} }             —— 仅更新奖励规则（兼容旧版）
+     *   2) { enabled?, name?, start_time?, end_time?, rewards? } —— 活动信息 + 规则
      */
     public function checkinSave()
     {
-        $rewards = $this->request->param('rewards');
-        if (!is_array($rewards) || !$rewards) {
-            return $this->fail(4220, '请提供 rewards 配置（天数 → 奖励）');
-        }
-        $clean = [];
-        foreach ($rewards as $day => $amount) {
-            $day = (int) $day;
-            $amount = (int) $amount;
-            if ($day < 1 || $day > 7) {
-                return $this->fail(4220, '连续签到天数仅支持 1~7');
-            }
-            if ($amount < 0 || $amount > 10000) {
-                return $this->fail(4220, '奖励数值需在 0~10000');
-            }
-            $clean[$day] = $amount;
-        }
-        ksort($clean);
-
         $now = date('Y-m-d H:i:s');
-        Db::name('system_configs')->where('config_key', 'checkin_rewards')
-            ->update(['config_value' => json_encode($clean), 'updated_at' => $now]);
+        $changed = [];
 
-        $this->audit('marketing', 'checkin_save', '更新签到奖励配置', ['rewards' => $clean]);
-        return $this->success(null, '签到奖励配置已保存');
+        // ---- 活动信息（enabled / name / start_time / end_time）----
+        if ($this->request->has('enabled')) {
+            $enabled = (int) $this->request->param('enabled') === 1 ? 1 : 0;
+            Db::name('system_configs')->where('config_key', 'checkin_enabled')
+                ->update(['config_value' => (string) $enabled, 'updated_at' => $now]);
+            $changed['enabled'] = $enabled === 1;
+        }
+        if ($this->request->has('name')) {
+            $name = mb_substr(trim((string) $this->request->param('name')), 0, 100);
+            if ($name === '') {
+                return $this->fail(4220, '签到活动名称不能为空');
+            }
+            Db::name('system_configs')->where('config_key', 'checkin_activity_name')
+                ->update(['config_value' => $name, 'updated_at' => $now]);
+            $changed['name'] = $name;
+        }
+        foreach (['start_time' => 'checkin_start_time', 'end_time' => 'checkin_end_time'] as $param => $key) {
+            if ($this->request->has($param)) {
+                $val = trim((string) $this->request->param($param, ''));
+                if ($val !== '' && !strtotime($val)) {
+                    return $this->fail(4220, $param . ' 时间格式不合法');
+                }
+                if ($val !== '') {
+                    $val = date('Y-m-d H:i:s', strtotime($val));
+                }
+                Db::name('system_configs')->where('config_key', $key)
+                    ->update(['config_value' => $val, 'updated_at' => $now]);
+                $changed[$param] = $val;
+            }
+        }
+
+        // ---- 奖励规则 ----
+        $rewards = $this->request->param('rewards');
+        if ($rewards !== null) {
+            if (!is_array($rewards) || !$rewards) {
+                return $this->fail(4220, '请提供 rewards 配置（天数 → 奖励）');
+            }
+            $clean = [];
+            foreach ($rewards as $day => $amount) {
+                $day = (int) $day;
+                $amount = (int) $amount;
+                if ($day < 1 || $day > 7) {
+                    return $this->fail(4220, '连续签到天数仅支持 1~7');
+                }
+                if ($amount < 0 || $amount > 10000) {
+                    return $this->fail(4220, '奖励数值需在 0~10000');
+                }
+                $clean[$day] = $amount;
+            }
+            ksort($clean);
+            Db::name('system_configs')->where('config_key', 'checkin_rewards')
+                ->update(['config_value' => json_encode($clean), 'updated_at' => $now]);
+            $changed['rewards'] = $clean;
+        }
+
+        if (!$changed) {
+            return $this->fail(4220, '无可保存内容（enabled/name/start_time/end_time/rewards 至少其一）');
+        }
+
+        $this->audit('marketing', 'checkin_save', '更新签到活动配置', $changed);
+        return $this->success(null, '签到活动配置已保存');
     }
 
     // ==================== 邀请活动 ====================
@@ -268,18 +323,44 @@ class MarketingController extends BaseController
             ->order('p.activity_id', 'asc')->order('p.sort_order', 'asc')
             ->select()->toArray();
 
+        // 活动实体表（名称/状态/时间）；兼容旧数据：无实体记录的活动兜底"第 N 期"且视为启用
+        $actEntities = Db::name('lucky_draw_activities')->whereNull('deleted_at')
+            ->column('name,status,start_time,end_time', 'id');
+
+        // 无奖项但已有活动实体的（新建活动尚未配奖项）也需展示
         $activities = [];
+        foreach ($actEntities as $actId => $ent) {
+            $activities[(int) $actId] = [
+                'activityId' => (int) $actId,
+                'name'       => (string) $ent['name'],
+                'status'     => (int) $ent['status'],
+                'startTime'  => $ent['start_time'],
+                'endTime'    => $ent['end_time'],
+                'totalStock' => 0,
+                'totalWon'   => 0,
+                'probabilitySum' => 0.0,
+                'drawCount'  => (int) Db::name('lucky_draw_records')->where('prize_id', 'in', function ($q) use ($actId) {
+                    // 注意：闭包子查询必须用 field() 指定单列（column() 会渲染成 SELECT * 触发基数违规）
+                    $q->name('lucky_draw_prizes')->where('activity_id', $actId)->field('id');
+                })->count(),
+                'prizes'     => [],
+            ];
+        }
         foreach ($prizes as $prize) {
             $actId = (int) $prize['activity_id'];
             if (!isset($activities[$actId])) {
                 $activities[$actId] = [
                     'activityId' => $actId,
                     'name'       => '第 ' . $actId . ' 期抽奖',
+                    'status'     => 1,
+                    'startTime'  => null,
+                    'endTime'    => null,
                     'totalStock' => 0,
                     'totalWon'   => 0,
                     'probabilitySum' => 0.0,
                     'drawCount'  => (int) Db::name('lucky_draw_records')->where('prize_id', 'in', function ($q) use ($actId) {
-                        $q->name('lucky_draw_prizes')->where('activity_id', $actId)->column('id');
+                        // 注意：闭包子查询必须用 field() 指定单列（column() 会渲染成 SELECT * 触发基数违规）
+                        $q->name('lucky_draw_prizes')->where('activity_id', $actId)->field('id');
                     })->count(),
                     'prizes'     => [],
                 ];
@@ -295,8 +376,75 @@ class MarketingController extends BaseController
             $act['probabilitySum'] = round($act['probabilitySum'], 4);
             $act['probabilityOk'] = abs($act['probabilitySum'] - 1) <= 0.0001;
         }
+        ksort($activities);
 
         return $this->success(array_values($activities));
+    }
+
+    /**
+     * POST /admin/marketing/lucky-activity { id?, name, status, start_time?, end_time? }
+     * 新建/编辑抽奖活动（新建后通过 lucky-save 为该活动配置奖项）
+     */
+    public function luckyActivitySave()
+    {
+        $missing = $this->missingParams(['name', 'status']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+        $name = mb_substr(trim((string) $this->request->param('name')), 0, 100);
+        if ($name === '') {
+            return $this->fail(4220, '活动名称不能为空');
+        }
+        $status = (int) $this->request->param('status');
+        if (!in_array($status, [0, 1], true)) {
+            return $this->fail(4220, 'status 仅允许 0（停用）/1（启用）');
+        }
+        $startTime = $this->optionalDate('start_time');
+        $endTime   = $this->optionalDate('end_time');
+        if ($startTime && $endTime && $startTime > $endTime) {
+            return $this->fail(4220, '开始时间不能晚于结束时间');
+        }
+
+        // 停用/启用联动校验：启用需已配置奖项（概率合计为 1）
+        $id = $this->positiveInt('id');
+        if ($status === 1 && $id !== null) {
+            $probSum = (float) Db::name('lucky_draw_prizes')->where('activity_id', $id)->whereNull('deleted_at')->sum('probability');
+            if (abs($probSum - 1) > 0.0001) {
+                return $this->fail(4220, '启用抽奖活动前需先配置完整奖项（概率合计=1，当前 ' . round($probSum, 4) . '）');
+            }
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $data = [
+            'name'       => $name,
+            'status'     => $status,
+            'start_time' => $startTime,
+            'end_time'   => $endTime,
+            'updated_at' => $now,
+        ];
+
+        Db::startTrans();
+        try {
+            if ($id !== null) {
+                $act = Db::name('lucky_draw_activities')->where('id', $id)->whereNull('deleted_at')->find();
+                if (!$act) {
+                    return $this->fail(4040, '抽奖活动不存在');
+                }
+                Db::name('lucky_draw_activities')->where('id', $id)->update($data);
+                $isNew = false;
+            } else {
+                $data['created_at'] = $now;
+                $id = (int) Db::name('lucky_draw_activities')->insertGetId($data);
+                $isNew = true;
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '保存失败：' . $e->getMessage());
+        }
+
+        $this->audit('marketing', 'lucky_activity_save', ($isNew ? '新建' : '保存') . '抽奖活动「' . $name . '」', ['id' => $id], 'lucky_activity', $id);
+        return $this->success(['id' => $id], '抽奖活动已保存');
     }
 
     /**
@@ -343,7 +491,18 @@ class MarketingController extends BaseController
             return $this->fail(4220, '概率合计必须为 1（当前 ' . round($probabilitySum, 4) . '）');
         }
 
+        // 活动实体兜底：旧数据仅 prizes 有 activity_id 无实体记录时自动补建（默认停用，名称"第N期"）
         $now = date('Y-m-d H:i:s');
+        if (!Db::name('lucky_draw_activities')->where('id', $activityId)->whereNull('deleted_at')->find()) {
+            Db::name('lucky_draw_activities')->insert([
+                'id'         => $activityId,
+                'name'       => '第 ' . $activityId . ' 期抽奖',
+                'status'     => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
         Db::startTrans();
         try {
             $existing = Db::name('lucky_draw_prizes')->where('activity_id', $activityId)->whereNull('deleted_at')
@@ -426,7 +585,7 @@ class MarketingController extends BaseController
 
         foreach ($rows as &$row) {
             $materials = Db::name('synthesis_materials')->alias('m')
-                ->field('m.count, c.name, c.image')
+                ->field('m.collectible_id, m.count, c.name, c.image')
                 ->join('collectibles c', 'c.id = m.collectible_id')
                 ->where('m.activity_id', $row['id'])
                 ->select()->toArray();
@@ -483,6 +642,7 @@ class MarketingController extends BaseController
             $data = [
                 'type'          => $type,
                 'title'         => mb_substr(trim((string) $this->request->param('title')), 0, 100),
+                'status'        => (int) $this->request->param('status', 1) === 1 ? 1 : 0,
                 'start_time'    => $this->optionalDate('start_time'),
                 'end_time'      => $this->optionalDate('end_time'),
                 'rules'         => (string) $this->request->param('rules'),

@@ -658,6 +658,130 @@ class CmsController extends BaseController
     }
 
     // ============================================================
+    // 官方社群（C 端「社区」页入口）
+    // ============================================================
+
+    /**
+     * GET /admin/cms/community
+     */
+    public function communityList()
+    {
+        $rows = Db::name('community_groups')->whereNull('deleted_at')
+            ->order('sort_order', 'asc')->order('id', 'asc')
+            ->select()->toArray();
+
+        $result = array_map(function ($row) {
+            return [
+                'id'          => (int) $row['id'],
+                'name'        => $row['name'],
+                'description' => (string) ($row['description'] ?? ''),
+                'icon'        => (string) $row['icon'],
+                'qrCode'      => (string) ($row['qr_code'] ?? ''),
+                'members'     => (int) $row['members'],
+                'sort'        => (int) $row['sort_order'],
+                'isActive'    => (int) $row['is_active'],
+                'createdAt'   => $row['created_at'],
+            ];
+        }, $rows);
+
+        return $this->success($result);
+    }
+
+    /**
+     * POST /admin/cms/community { name, description?, icon, qr_code?, members?, sort?, is_active? }
+     */
+    public function communityCreate()
+    {
+        $missing = $this->missingParams(['name', 'icon']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+        $name = trim((string) $this->request->param('name'));
+        if (mb_strlen($name) < 2 || mb_strlen($name) > 20) {
+            return $this->fail(4220, '社群名称长度需为 2~20 字符');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $id = Db::name('community_groups')->insertGetId([
+            'name'        => $name,
+            'description' => $this->optStr('description', 60),
+            'icon'        => mb_substr(trim((string) $this->request->param('icon')), 0, 255),
+            'qr_code'     => $this->optStr('qr_code', 255),
+            'members'     => max(0, (int) $this->request->param('members', 0)),
+            'sort_order'  => max(0, (int) $this->request->param('sort', 1)),
+            'is_active'   => (int) $this->request->param('is_active', 1) === 1 ? 1 : 0,
+            'created_at'  => $now,
+            'updated_at'  => $now,
+        ]);
+
+        $this->audit('cms', 'community_create', '新增官方社群「' . $name . '」', [], 'community', $id);
+        return $this->success(['id' => $id], '社群已创建');
+    }
+
+    /**
+     * PUT /admin/cms/community/:id（软删除数据不可更新）
+     */
+    public function communityUpdate(int $id)
+    {
+        $group = Db::name('community_groups')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$group) {
+            return $this->fail(4040, '社群不存在');
+        }
+
+        $update = ['updated_at' => date('Y-m-d H:i:s')];
+        if ($this->request->has('name')) {
+            $name = trim((string) $this->request->param('name'));
+            if (mb_strlen($name) < 2 || mb_strlen($name) > 20) {
+                return $this->fail(4220, '社群名称长度需为 2~20 字符');
+            }
+            $update['name'] = $name;
+        }
+        foreach (['description' => 60, 'qr_code' => 255] as $key => $limit) {
+            if ($this->request->has($key)) {
+                $update[$key] = $this->optStr($key, $limit);
+            }
+        }
+        if ($this->request->has('icon')) {
+            $icon = trim((string) $this->request->param('icon'));
+            if ($icon === '') {
+                return $this->fail(4220, '社群图标不能为空');
+            }
+            $update['icon'] = mb_substr($icon, 0, 255);
+        }
+        if ($this->request->has('members')) {
+            $update['members'] = max(0, (int) $this->request->param('members'));
+        }
+        if ($this->request->has('sort')) {
+            $update['sort_order'] = max(0, (int) $this->request->param('sort'));
+        }
+        if ($this->request->has('is_active')) {
+            $update['is_active'] = (int) $this->request->param('is_active') === 1 ? 1 : 0;
+        }
+
+        Db::name('community_groups')->where('id', $id)->update($update);
+        $this->audit('cms', 'community_update', '更新官方社群「' . $group['name'] . '」',
+            array_intersect_key($update, array_flip(['name', 'is_active', 'sort_order', 'members'])), 'community', $id);
+        return $this->success(null, '社群已更新');
+    }
+
+    /**
+     * DELETE /admin/cms/community/:id（软删除）
+     */
+    public function communityDelete(int $id)
+    {
+        $group = Db::name('community_groups')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$group) {
+            return $this->fail(4040, '社群不存在');
+        }
+        Db::name('community_groups')->where('id', $id)->update([
+            'is_active'  => 0,
+            'deleted_at' => date('Y-m-d H:i:s'),
+        ]);
+        $this->audit('cms', 'community_delete', '删除官方社群「' . $group['name'] . '」', [], 'community', $id);
+        return $this->success(null, '社群已删除');
+    }
+
+    // ============================================================
     // 辅助方法
     // ============================================================
 

@@ -24,7 +24,13 @@ Route::group('auth', function () {
     Route::get('profile', 'AuthController/profile');
     Route::post('logout', 'AuthController/logout');
     Route::post('change-password', 'AuthController/changePassword');
+    Route::post('verify-password', 'AuthController/verifyPassword');
 })->middleware(AdminAuth::class);
+
+// ---------------------------------------------------------------------------
+// 通用图片上传（仅需登录；具体业务写操作另有独立权限校验）
+// ---------------------------------------------------------------------------
+Route::post('upload/image', 'UploadController/image')->middleware(AdminAuth::class);
 
 // ---------------------------------------------------------------------------
 // 仪表盘（dashboard:view）
@@ -55,6 +61,7 @@ Route::group('users', function () {
 Route::group('realname', function () {
     Route::get('users', 'RealnameController/list');
     Route::get('users/:user_id', 'RealnameController/detail')->middleware(AdminPermission::class, 'realname:full');
+    Route::post('audit', 'RealnameController/doAudit')->middleware(AdminPermission::class, 'realname:audit');
     Route::get('stats', 'RealnameController/stats');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'realname:list');
 
@@ -65,6 +72,11 @@ Route::group('collectibles', function () {
     Route::get('', 'CollectibleController/list');
     // 静态路由需注册在 :id 通配路由之前（否则 /audit 会被 :id 吸收）
     Route::get('audit', 'CollectibleController/auditList')->middleware(AdminPermission::class, 'collectible:audit');
+    Route::get('qualifications', 'CollectibleController/qualificationList');
+    Route::get('qualification-whitelist/:configId', 'CollectibleController/qualificationWhitelist');
+    Route::post('qualification-whitelist', 'CollectibleController/qualificationWhitelistAdd')->middleware(AdminPermission::class, 'collectible:qualification');
+    Route::delete('qualification-whitelist/:id', 'CollectibleController/qualificationWhitelistRemove')->middleware(AdminPermission::class, 'collectible:qualification');
+    Route::post('quota/:id/toggle', 'CollectibleController/quotaToggle')->middleware(AdminPermission::class, 'collectible:quota');
     Route::get(':id', 'CollectibleController/detail')->middleware(AdminPermission::class, 'collectible:detail');
     Route::post('', 'CollectibleController/create')->middleware(AdminPermission::class, 'collectible:create');
     Route::put(':id', 'CollectibleController/update')->middleware(AdminPermission::class, 'collectible:edit');
@@ -152,6 +164,8 @@ Route::group('marketing', function () {
     // 抽奖
     Route::get('lucky', 'MarketingController/luckyList');
     Route::post('lucky', 'MarketingController/luckySave')->middleware(AdminPermission::class, 'marketing:lucky:manage');
+    // 抽奖活动（新建/编辑/开关）
+    Route::post('lucky-activity', 'MarketingController/luckyActivitySave')->middleware(AdminPermission::class, 'marketing:lucky:manage');
     // 合成
     Route::get('synthesis', 'MarketingController/synthesisList');
     Route::post('synthesis', 'MarketingController/synthesisSave')->middleware(AdminPermission::class, 'marketing:synthesis:manage');
@@ -168,6 +182,7 @@ Route::group('marketing', function () {
 // 钱包财务（wallet:*）
 // ---------------------------------------------------------------------------
 Route::group('wallet', function () {
+    Route::get('stats', 'WalletController/stats');
     Route::get('transactions', 'WalletController/transactions');
     Route::get('recharge', 'WalletController/recharge')->middleware(AdminPermission::class, 'wallet:recharge');
     Route::get('fee', 'WalletController/fee')->middleware(AdminPermission::class, 'wallet:fee');
@@ -199,6 +214,11 @@ Route::group('cms', function () {
     Route::post('artifacts', 'CmsController/artifactCreate');
     Route::put('artifacts/:id', 'CmsController/artifactUpdate');
     Route::delete('artifacts/:id', 'CmsController/artifactDelete');
+    // 官方社群（C 端社区页入口）
+    Route::get('community', 'CmsController/communityList');
+    Route::post('community', 'CmsController/communityCreate')->middleware(AdminPermission::class, 'cms:community');
+    Route::put('community/:id', 'CmsController/communityUpdate')->middleware(AdminPermission::class, 'cms:community');
+    Route::delete('community/:id', 'CmsController/communityDelete')->middleware(AdminPermission::class, 'cms:community');
     // 站点装修
     Route::get('decoration', 'CmsController/decorationList');
     Route::post('decoration', 'CmsController/decorationSave');
@@ -284,6 +304,37 @@ Route::group('reports', function () {
     Route::get('blindbox', 'ReportController/blindbox')->middleware(AdminPermission::class, 'report:blindbox');
     Route::get('finance', 'ReportController/finance')->middleware(AdminPermission::class, 'report:finance');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'report:sales');
+
+// ---------------------------------------------------------------------------
+// 区块链上链（chain:*）
+// 三链适配：文昌链（BSN-DDC）/ 联盟链（自建）/ 蚂蚁链（AntChain）
+// ---------------------------------------------------------------------------
+Route::group('chain', function () {
+    // 链网络配置（密钥 AES 加密存储，非空才更新）
+    Route::get('networks', 'ChainController/networks');
+    Route::put('networks/:id', 'ChainController/saveNetwork');
+    Route::post('networks/:id/test', 'ChainController/testNetwork');
+    // 合约登记（已产生链上交易的合约仅可停用不可删除）
+    Route::get('contracts', 'ChainController/contracts');
+    Route::post('contracts', 'ChainController/contractCreate')->middleware(AdminPermission::class, 'chain:contract');
+    Route::put('contracts/:id', 'ChainController/contractUpdate')->middleware(AdminPermission::class, 'chain:contract');
+    Route::post('contracts/:id/toggle', 'ChainController/contractToggle')->middleware(AdminPermission::class, 'chain:contract');
+    Route::delete('contracts/:id', 'ChainController/contractDelete')->middleware(AdminPermission::class, 'chain:contract');
+    // 链上交易流水
+    Route::get('transactions', 'ChainController/transactions');
+    // 藏品上链铸造（幂等：仅未上链持仓）
+    Route::post('mint/:id', 'ChainController/mint')->middleware(AdminPermission::class, 'chain:mint');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'chain:config');
+
+// ---------------------------------------------------------------------------
+// 审批中心（approval:*）— 大额退款复核等高风险操作
+// ---------------------------------------------------------------------------
+Route::group('approvals', function () {
+    Route::get('', 'ApprovalController/list');
+    Route::get('stats', 'ApprovalController/stats');
+    Route::get(':id', 'ApprovalController/detail');
+    Route::post(':id/handle', 'ApprovalController/handle')->middleware(AdminPermission::class, 'approval:manage');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'approval:list');
 
 // ---------------------------------------------------------------------------
 // 平台运维（platform:*）

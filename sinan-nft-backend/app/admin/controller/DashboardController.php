@@ -45,6 +45,29 @@ class DashboardController extends BaseController
         $ticketOpen      = Db::name('support_tickets')->whereIn('status', [1, 2])->count();
         $alertPending    = Db::name('risk_alerts')->where('status', 1)->count();
 
+        // 待办补充：实名待审核（realname_status=1）与异常订单（待支付已过期 + 退款中）
+        $realnamePending = Db::name('users')->whereNull('deleted_at')->where('realname_status', 1)->count();
+        $abnormalOrders  = Db::name('orders')
+            ->where(function ($q) {
+                $q->where(function ($q2) {
+                    $q2->where('status', 'pending')->where('expires_at', '<', date('Y-m-d H:i:s'));
+                })->whereOr('status', 'refunding');
+            })->count();
+
+        // 类目销量占比（饼图数据源）
+        $categoryShare = Db::name('collectibles')->alias('c')
+            ->field('cat.name AS label, SUM(c.sold) AS value')
+            ->join('categories cat', 'cat.id = c.category_id', 'LEFT')
+            ->whereNull('c.deleted_at')
+            ->where('c.sold', '>', 0)
+            ->group('cat.id')
+            ->order('value', 'desc')
+            ->limit(6)
+            ->select()->toArray();
+        foreach ($categoryShare as &$cat) {
+            $cat['value'] = (int) $cat['value'];
+        }
+
         return $this->success([
             'user' => [
                 'total' => $userTotal, 'today' => $userToday, 'realname' => $userRealname,
@@ -62,7 +85,9 @@ class DashboardController extends BaseController
             ],
             'todo' => [
                 'refundPending' => $refundPending, 'ticketOpen' => $ticketOpen, 'riskAlert' => $alertPending,
+                'realnamePending' => $realnamePending, 'abnormalOrders' => $abnormalOrders,
             ],
+            'categoryShare' => $categoryShare,
         ]);
     }
 

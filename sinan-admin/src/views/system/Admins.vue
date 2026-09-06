@@ -112,7 +112,7 @@ function openRole(role) {
           :closable="false"
           show-icon
           class="ad__tip"
-          title="角色权限为 Mock 演示，联调后由后端 RBAC 接口下发并强制校验；支持自定义角色与权限树动态分配"
+          title="权限由后端 RBAC 实时下发并强制校验（登录即时生效）；支持自定义角色与权限树动态分配"
         />
       </div>
     </template>

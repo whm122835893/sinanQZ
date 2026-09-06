@@ -63,7 +63,6 @@ const routes = [
       { path: 'content/banners', name: 'banners', component: () => import('@/views/content/Banners.vue'), meta: { title: '轮播管理', perm: 'content' } },
       { path: 'content/community', name: 'community', component: () => import('@/views/content/Community.vue'), meta: { title: '社区管理', perm: 'content' } },
       { path: 'content/artifacts', name: 'artifacts', component: () => import('@/views/content/Artifacts.vue'), meta: { title: '文物展馆', perm: 'content' } },
-      { path: 'content/audits', name: 'content-audits', component: () => import('@/views/content/Audits.vue'), meta: { title: '内容审核', perm: 'content' } },
 
       // ---- 区块链 ----
       { path: 'chain', name: 'chain', component: () => import('@/views/chain/Index.vue'), meta: { title: '链上交互', perm: 'chain' } },
@@ -72,7 +71,11 @@ const routes = [
       { path: 'system/admins', name: 'admins', component: () => import('@/views/system/Admins.vue'), meta: { title: '管理员', perm: 'system' } },
       { path: 'system/logs', name: 'logs', component: () => import('@/views/system/Logs.vue'), meta: { title: '操作日志', perm: 'system' } },
       { path: 'system/approvals', name: 'approvals', component: () => import('@/views/system/Approvals.vue'), meta: { title: '审批中心', perm: 'system' } },
-      { path: 'system/config', name: 'config', component: () => import('@/views/system/Config.vue'), meta: { title: '站点配置', perm: 'system' } },
+      { path: 'system/audits', name: 'data-audits', component: () => import('@/views/system/Audits.vue'), meta: { title: '数据审计', perm: 'system' } },
+      { path: 'system/config', name: 'config', component: () => import('@/views/system/Config.vue'), meta: { title: '全局参数', perm: 'system' } },
+      { path: 'system/sms', name: 'sms', component: () => import('@/views/system/Sms.vue'), meta: { title: '短信配置', perm: 'system' } },
+      { path: 'system/payment', name: 'payment', component: () => import('@/views/system/Payment.vue'), meta: { title: '支付渠道', perm: 'system' } },
+      { path: 'system/security', name: 'security', component: () => import('@/views/system/Security.vue'), meta: { title: '安全策略', perm: 'system' } },
       { path: 'system/cleanup', name: 'cleanup', component: () => import('@/views/system/Cleanup.vue'), meta: { title: '平台清库', perm: 'cleanup' } },
 
       // ---- 兜底 ----

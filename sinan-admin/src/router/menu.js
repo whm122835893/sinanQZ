@@ -66,8 +66,7 @@ export const menuGroups = [
       { path: '/content/announcements', title: '公告管理', icon: 'Bell', perm: 'content' },
       { path: '/content/banners', title: '轮播管理', icon: 'PictureFilled', perm: 'content' },
       { path: '/content/community', title: '社区管理', icon: 'ChatDotRound', perm: 'content' },
-      { path: '/content/artifacts', title: '文物展馆', icon: 'OfficeBuilding', perm: 'content' },
-      { path: '/content/audits', title: '内容审核', icon: 'View', perm: 'content' }
+      { path: '/content/artifacts', title: '文物展馆', icon: 'OfficeBuilding', perm: 'content' }
     ]
   },
   {
@@ -82,7 +81,11 @@ export const menuGroups = [
       { path: '/system/admins', title: '管理员', icon: 'UserFilled', perm: 'system' },
       { path: '/system/logs', title: '操作日志', icon: 'Document', perm: 'system' },
       { path: '/system/approvals', title: '审批中心', icon: 'Stamp', perm: 'system' },
-      { path: '/system/config', title: '站点配置', icon: 'Setting', perm: 'system' },
+      { path: '/system/audits', title: '数据审计', icon: 'DataAnalysis', perm: 'system' },
+      { path: '/system/config', title: '全局参数', icon: 'Setting', perm: 'system' },
+      { path: '/system/sms', title: '短信配置', icon: 'Message', perm: 'system' },
+      { path: '/system/payment', title: '支付渠道', icon: 'CreditCard', perm: 'system' },
+      { path: '/system/security', title: '安全策略', icon: 'Lock', perm: 'system' },
       { path: '/system/cleanup', title: '平台清库', icon: 'Delete', perm: 'cleanup' }
     ]
   }

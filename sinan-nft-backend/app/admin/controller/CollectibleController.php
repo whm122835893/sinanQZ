@@ -229,8 +229,9 @@ class CollectibleController extends BaseController
             'price'          => $price,
             'edition'        => $edition,
             'per_user_limit' => max(0, (int) $this->request->param('per_user_limit', 0)),
-            'is_transferable' => (int) $this->request->param('is_transferable', 1) === 1 ? 1 : 0,
-            'is_resaleable'  => (int) $this->request->param('is_resaleable', 1) === 1 ? 1 : 0,
+            // 转赠/寄售默认关闭：创建后由管理员在藏品列表或详情中按需开启（开启寄售后用户持仓方可上架市场）
+            'is_transferable' => (int) $this->request->param('is_transferable', 0) === 1 ? 1 : 0,
+            'is_resaleable'  => (int) $this->request->param('is_resaleable', 0) === 1 ? 1 : 0,
             'resale_price_mode' => (int) $this->request->param('resale_price_mode', 0),
             'resale_price_min' => $this->optionalPrice('resale_price_min'),
             'resale_price_max' => $this->optionalPrice('resale_price_max'),
@@ -808,6 +809,231 @@ class CollectibleController extends BaseController
 
         $this->audit('collectible', 'market_config', '寄售管控「' . $c['name'] . '」', $update, 'collectible', $id);
         return $this->success(null, '寄售配置已更新');
+    }
+
+    /**
+     * GET /admin/collectibles/qualifications
+     * 资格购配置列表（含白名单数量统计，营销中心-资格购管理数据源）
+     */
+    public function qualificationList()
+    {
+        $rows = Db::name('qualification_configs')->alias('q')
+            ->field('q.*, c.name AS collectible_name, c.image, c.price, c.status AS collectible_status')
+            ->join('collectibles c', 'c.id = q.collectible_id', 'INNER')
+            ->whereNull('c.deleted_at')
+            ->order('q.id', 'desc')
+            ->select()->toArray();
+
+        $result = array_map(function ($row) {
+            $configId = (int) $row['id'];
+            return [
+                'id'                     => $configId,
+                'collectibleId'         => (int) $row['collectible_id'],
+                'collectibleName'       => $row['collectible_name'],
+                'collectibleImage'      => $row['image'],
+                'price'                 => (float) $row['price'],
+                'isEnabled'             => (int) $row['is_enabled'],
+                'conditionType'          => (int) $row['condition_type'],
+                'requiredCollectibleIds' => json_decode((string) ($row['required_collectible_ids'] ?? '[]'), true) ?: [],
+                'requiredCheckinDays'   => (int) $row['required_checkin_days'],
+                'requiredInviteCount'   => (int) $row['required_invite_count'],
+                'validStartAt'          => $row['valid_start_at'],
+                'validEndAt'            => $row['valid_end_at'],
+                'whitelistCount'        => Db::name('qualification_whitelists')->where('config_id', $configId)->count(),
+                'whitelist'             => [],
+                'updatedAt'             => $row['updated_at'],
+            ];
+        }, $rows);
+
+        return $this->success($result);
+    }
+
+    /**
+     * GET /admin/collectibles/qualification-whitelist/:configId
+     * 资格购白名单明细
+     */
+    public function qualificationWhitelist(int $configId)
+    {
+        $config = Db::name('qualification_configs')->where('id', $configId)->find();
+        if (!$config) {
+            return $this->fail(4040, '资格购配置不存在');
+        }
+
+        $rows = Db::name('qualification_whitelists')->alias('w')
+            ->field('w.*, u.uid, u.username, u.nickname')
+            ->join('users u', 'u.id = w.user_id', 'LEFT')
+            ->where('w.config_id', $configId)
+            ->order('w.id', 'desc')
+            ->select()->toArray();
+
+        $result = array_map(function ($row) {
+            return [
+                'id'        => (int) $row['id'],
+                'userId'    => (int) $row['user_id'],
+                'nickname'  => $row['nickname'] ?: $row['username'] ?: ('用户' . $row['user_id']),
+                'phone'     => $row['phone'],
+                'expiresAt' => $row['expires_at'],
+                'createdAt' => $row['created_at'],
+            ];
+        }, $rows);
+
+        return $this->success($result);
+    }
+
+    /**
+     * POST /admin/collectibles/qualification-whitelist { config_id, phones(multi), expires_at? }
+     * 批量添加白名单：手机号必须为平台注册用户；幂等去重
+     */
+    public function qualificationWhitelistAdd()
+    {
+        $missing = $this->missingParams(['config_id', 'phones']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+
+        $configId = (int) $this->request->param('config_id');
+        $config   = Db::name('qualification_configs')->where('id', $configId)->find();
+        if (!$config) {
+            return $this->fail(4040, '资格购配置不存在');
+        }
+
+        $phones = $this->request->param('phones');
+        if (!is_array($phones)) {
+            $phones = preg_split('/[\n,，\s]+/', (string) $phones) ?: [];
+        }
+        $phones = array_values(array_unique(array_filter(array_map('trim', $phones))));
+        if (!$phones) {
+            return $this->fail(4220, '手机号列表为空');
+        }
+
+        $expiresAt = null;
+        $expiresRaw = trim((string) $this->request->param('expires_at', ''));
+        if ($expiresRaw !== '') {
+            $ts = strtotime($expiresRaw);
+            if ($ts === false) {
+                return $this->fail(4220, 'expires_at 日期格式不正确');
+            }
+            $expiresAt = date('Y-m-d H:i:s', $ts);
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $added = 0;
+        $errors = [];
+
+        Db::startTrans();
+        try {
+            foreach ($phones as $phone) {
+                if (!preg_match('/^1\d{10}$/', $phone)) {
+                    $errors[] = $phone . '：格式错误';
+                    continue;
+                }
+                $user = Db::name('users')->where('phone', $phone)->whereNull('deleted_at')->lock(true)->find();
+                if (!$user) {
+                    $errors[] = $phone . '：非平台注册用户';
+                    continue;
+                }
+                $exists = Db::name('qualification_whitelists')
+                    ->where('config_id', $configId)->where('user_id', $user['id'])->count();
+                if ($exists > 0) {
+                    continue; // 幂等：已存在跳过
+                }
+                Db::name('qualification_whitelists')->insert([
+                    'config_id'  => $configId,
+                    'user_id'    => $user['id'],
+                    'phone'      => $phone,
+                    'expires_at' => $expiresAt,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+                $added++;
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '白名单写入失败：' . $e->getMessage());
+        }
+
+        $this->audit('collectible', 'qualification_whitelist_add',
+            '资格购白名单批量添加（配置 #' . $configId . '）：成功 ' . $added . ' 条',
+            ['added' => $added, 'errors' => $errors], 'collectible', (int) $config['collectible_id']);
+
+        return $this->success(['added' => $added, 'errors' => $errors],
+            $added > 0 ? '已添加 ' . $added . ' 位用户' . ($errors ? '（部分失败：' . implode('；', $errors) . '）' : '') : '未添加任何用户（' . implode('；', $errors) . '）');
+    }
+
+    /**
+     * DELETE /admin/collectibles/qualification-whitelist/:id
+     * 移除白名单（支持 query config_id 校验归属）
+     */
+    public function qualificationWhitelistRemove(int $id)
+    {
+        $row = Db::name('qualification_whitelists')->where('id', $id)->find();
+        if (!$row) {
+            return $this->fail(4040, '白名单记录不存在');
+        }
+
+        $config = Db::name('qualification_configs')->where('id', (int) $row['config_id'])->find();
+        Db::name('qualification_whitelists')->where('id', $id)->delete();
+
+        $this->audit('collectible', 'qualification_whitelist_remove',
+            '移除资格购白名单（用户 #' . $row['user_id'] . ' ' . $row['phone'] . '）',
+            [], 'collectible', $config ? (int) $config['collectible_id'] : null);
+
+        return $this->success(null, '已移除白名单');
+    }
+
+    /**
+     * POST /admin/collectibles/quota/:id/toggle
+     * 配额启停：停用时释放 reserved_count 回库存池（保持恒等式）
+     */
+    public function quotaToggle(int $id)
+    {
+        $quota = Db::name('inventory_quotas')->where('id', $id)->find();
+        if (!$quota) {
+            return $this->fail(4040, '配额不存在');
+        }
+
+        $newStatus = (int) $quota['status'] === 1 ? 0 : 1;
+        $collectibleId = (int) $quota['collectible_id'];
+        $c = Db::name('collectibles')->where('id', $collectibleId)->whereNull('deleted_at')->find();
+        if (!$c) {
+            return $this->fail(4040, '藏品不存在');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        Db::startTrans();
+        try {
+            Db::name('inventory_quotas')->where('id', $id)->update([
+                'status'     => $newStatus,
+                'updated_at' => $now,
+            ]);
+
+            // 停用：释放未使用部分回库存池；启用：重新预留未使用部分
+            $unused = (int) $quota['planned_quantity'] - (int) $quota['used_quantity'];
+            if ($newStatus === 0 && $unused > 0) {
+                Db::name('collectibles')->where('id', $collectibleId)
+                    ->update(['reserved_count' => Db::raw('GREATEST(0, reserved_count - ' . $unused . ')')]);
+            } elseif ($newStatus === 1 && $unused > 0) {
+                // 启用前校验库存池充足
+                $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
+                      - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
+                if ($pool < $unused) {
+                    throw new \Exception('库存池不足：当前可分配 ' . $pool . ' 份，需要 ' . $unused . ' 份');
+                }
+                Db::name('collectibles')->where('id', $collectibleId)->inc('reserved_count', $unused)->update();
+            }
+            Db::name('collectibles')->where('id', $collectibleId)->update(['updated_at' => $now]);
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '配额启停失败：' . $e->getMessage());
+        }
+
+        $this->audit('collectible', 'quota_toggle',
+            ($newStatus === 1 ? '启用' : '停用') . '配额「' . $quota['quota_name'] . '」（藏品「' . $c['name'] . '」）',
+            ['status' => $newStatus], 'collectible', $collectibleId);
+
+        return $this->success(['status' => $newStatus], $newStatus === 1 ? '配额已启用' : '配额已停用（未使用量已回冲库存池）');
     }
 
     /**

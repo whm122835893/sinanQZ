@@ -43,8 +43,6 @@ const filters = [
 
 // ---- 状态操作 ----
 const actionMap = {
-  online: { title: '上架藏品', msg: (c) => `确认上架「${c.name}」？上架后 C 端立即可见。`, type: 'warning' },
-  offline: { title: '下架藏品', msg: (c) => `确认下架「${c.name}」？下架后 C 端不再展示。`, type: 'warning' },
   forceSoldout: { title: '强制售罄', msg: (c) => `确认将「${c.name}」标记为已售罄？发售停止，未售出的发售剩余保留在库存池中（${stockPool(c)} 份），不清零。`, type: 'error' }
 }
 
@@ -55,6 +53,33 @@ async function onAction(c, action) {
   if (res.code === 0) {
     c.status = res.data
     ElMessage.success('操作成功')
+  }
+}
+
+// ---- 上架售卖开关（创建后不自动发售，由此开关控制）----
+async function onSaleSwitch(c, val) {
+  if (val) {
+    await ElMessageBox.confirm(
+      `确认上架售卖「${c.name}」？上架后 C 端立即可见并可购买（需库存池大于 0）。`,
+      '上架售卖',
+      { type: 'warning' }
+    )
+    const res = await toggleCollectibleStatus(c.id, 'online')
+    if (res.code === 0) {
+      c.status = 'onsale'
+      ElMessage.success('已上架售卖')
+    }
+  } else {
+    await ElMessageBox.confirm(
+      `确认下架「${c.name}」？下架后 C 端不再展示，未售出库存保留在库存池。`,
+      '下架藏品',
+      { type: 'warning' }
+    )
+    const res = await toggleCollectibleStatus(c.id, 'offline')
+    if (res.code === 0) {
+      c.status = 'off'
+      ElMessage.success('已下架')
+    }
   }
 }
 
@@ -169,9 +194,19 @@ async function onPriceVerified() {
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="90">
+        <el-table-column label="状态" width="120">
           <template #default="{ row }">
-            <StatusTag :value="row.status" :map="COLLECTIBLE_STATUS" />
+            <div class="col-status">
+              <StatusTag :value="row.status" :map="COLLECTIBLE_STATUS" />
+              <el-switch
+                :model-value="row.status === 'onsale'"
+                size="small"
+                inline-prompt
+                active-text="售"
+                inactive-text="售"
+                @change="(v) => onSaleSwitch(row, v)"
+              />
+            </div>
           </template>
         </el-table-column>
 
@@ -198,24 +233,15 @@ async function onPriceVerified() {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="router.push(`/collectible/detail/${row.id}`)">详情</el-button>
-            <el-button
-              v-if="row.status === 'offline' || row.status === 'soldout'"
-              link type="success" size="small"
-              @click="onAction(row, 'online')"
-            >重新上架</el-button>
+            <el-button link type="primary" size="small" @click="router.push(`/collectible/edit/${row.id}`)">编辑</el-button>
             <el-button
               v-if="row.status === 'onsale'"
               link type="warning" size="small"
               @click="onAction(row, 'forceSoldout')"
             >强制售罄</el-button>
-            <el-button
-              v-if="row.status === 'onsale'"
-              link size="small"
-              @click="onAction(row, 'offline')"
-            >下架</el-button>
           </template>
         </el-table-column>
       </template>
@@ -302,6 +328,12 @@ async function onPriceVerified() {
 .col-switches {
   display: flex;
   justify-content: center;
+  gap: 8px;
+}
+
+.col-status {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 

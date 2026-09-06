@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getCheckinConfig, saveCheckinRules, toggleCheckin } from '@/api'
+import { getCheckinConfig, saveCheckinRules, saveCheckinActivity, toggleCheckin } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import { ACTIVITY_STATUS } from '@/utils/maps'
 import { fmtNumber } from '@/utils/format'
@@ -14,6 +14,10 @@ const config = ref(null)
 const editShow = ref(false)
 const editingRule = ref(null)
 const ruleForm = ref({ day: 1, type: 'points', label: '' })
+
+// ---- 活动信息编辑 ----
+const infoShow = ref(false)
+const infoForm = ref({ name: '', startTime: '', endTime: '' })
 
 // 奖励类型统一（全平台奖励下拉同构）
 const REWARD_TYPES = {
@@ -31,22 +35,43 @@ onMounted(load)
 async function load() {
   loading.value = true
   const res = await getCheckinConfig()
-  config.value = res.data
+  config.value = res.data || null
   loading.value = false
 }
 
 // ---- 签到全局启停 ----
 async function onToggle() {
-  const enabling = config.value.enabled !== 1
+  const enabling = config.value.enabled !== true
   await ElMessageBox.confirm(
     enabling ? '确认开启签到功能？C 端将展示签到入口。' : '确认关闭签到功能？C 端签到入口隐藏，连续天数冻结。',
     '签到功能',
     { type: 'warning' }
   )
-  const res = await toggleCheckin()
+  const res = await toggleCheckin(enabling ? 1 : 0)
   if (res.code === 0) {
-    config.value.enabled = res.data
-    ElMessage.success(res.data === 1 ? '已开启签到' : '已关闭签到')
+    config.value.enabled = enabling
+    ElMessage.success(enabling ? '已开启签到' : '已关闭签到')
+  }
+}
+
+// ---- 活动信息编辑 ----
+function openInfo() {
+  infoForm.value = {
+    name: config.value.name || '每日签到',
+    startTime: config.value.startTime || '',
+    endTime: config.value.endTime || ''
+  }
+  infoShow.value = true
+}
+
+async function onSaveInfo() {
+  const f = infoForm.value
+  if (!f.name.trim()) return ElMessage.warning('请输入活动名称')
+  const res = await saveCheckinActivity({ name: f.name.trim(), startTime: f.startTime.trim(), endTime: f.endTime.trim() })
+  if (res.code === 0) {
+    ElMessage.success('活动信息已保存')
+    infoShow.value = false
+    load()
   }
 }
 
@@ -101,16 +126,30 @@ async function onRemoveRule(r) {
           <div class="adm-card">
             <div class="adm-card__title">
               签到功能
-              <StatusTag :value="config.enabled === 1 ? 'enabled' : 'disabled'" :map="ACTIVITY_STATUS" />
+              <span style="display: inline-flex; align-items: center; gap: 8px; margin-left: auto">
+                <el-button link type="primary" size="small" @click="openInfo">编辑活动信息</el-button>
+              </span>
+            </div>
+            <div class="ck__act-info">
+              <div>
+                <div class="ck__toggle-label">{{ config.name || '每日签到' }}</div>
+                <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
+                  <template v-if="config.startTime || config.endTime">
+                    活动时间：{{ config.startTime || '不限' }} ~ {{ config.endTime || '不限' }}
+                  </template>
+                  <template v-else>活动时间：长期有效（未设置起止时间）</template>
+                </div>
+              </div>
+              <StatusTag :value="config.enabled ? 'enabled' : 'disabled'" :map="ACTIVITY_STATUS" />
             </div>
             <div class="ck__toggle">
               <div>
-                <div class="ck__toggle-label">{{ config.enabled === 1 ? '签到功能已开启' : '签到功能已关闭' }}</div>
+                <div class="ck__toggle-label">{{ config.enabled ? '签到功能已开启' : '签到功能已关闭' }}</div>
                 <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
                   关闭后 C 端签到入口隐藏，连续天数冻结
                 </div>
               </div>
-              <el-switch :model-value="config.enabled === 1" size="default" @change="onToggle" />
+              <el-switch :model-value="config.enabled" size="default" @change="onToggle" />
             </div>
             <div class="ck__stats">
               <div class="ck__stat">
@@ -174,7 +213,7 @@ async function onRemoveRule(r) {
         <!-- 右列：连签榜 -->
         <div class="adm-card">
           <div class="adm-card__title">连续签到榜 TOP</div>
-          <div v-for="(u, i) in config.streakTop" :key="u.nickname" class="ck__rank-item">
+          <div v-for="(u, i) in config.streakTop || []" :key="u.nickname" class="ck__rank-item">
             <div class="ck__rank" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</div>
             <div class="ck__rank-name">{{ u.nickname }}</div>
             <div class="ck__rank-streak">
@@ -182,7 +221,7 @@ async function onRemoveRule(r) {
               <span class="t-tertiary" style="font-size: 12px"> 天</span>
             </div>
           </div>
-          <el-empty v-if="!config.streakTop.length" description="暂无签到数据" :image-size="60" />
+          <el-empty v-if="!(config.streakTop || []).length" description="暂无签到数据" :image-size="60" />
         </div>
       </div>
 
@@ -212,6 +251,31 @@ async function onRemoveRule(r) {
           <el-button type="primary" @click="onSaveRule">保存</el-button>
         </template>
       </el-dialog>
+
+      <!-- 活动信息编辑弹窗 -->
+      <el-dialog v-model="infoShow" title="编辑签到活动信息" width="480px" :close-on-click-modal="false">
+        <el-form label-width="100px">
+          <el-form-item label="活动名称">
+            <el-input v-model="infoForm.name" placeholder="如：每日签到 · 九月篇" maxlength="50" show-word-limit />
+          </el-form-item>
+          <el-form-item label="开始时间">
+            <el-input v-model="infoForm.startTime" placeholder="如 2026-09-01 00:00:00，留空不限" />
+          </el-form-item>
+          <el-form-item label="结束时间">
+            <el-input v-model="infoForm.endTime" placeholder="如 2026-09-30 23:59:59，留空不限" />
+          </el-form-item>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="活动信息仅影响 C 端展示文案与活动周期；签到开关独立控制入口显隐"
+          />
+        </el-form>
+        <template #footer>
+          <el-button @click="infoShow = false">取消</el-button>
+          <el-button type="primary" @click="onSaveInfo">保存</el-button>
+        </template>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -226,6 +290,17 @@ async function onRemoveRule(r) {
   @media (max-width: 992px) {
     grid-template-columns: 1fr;
   }
+}
+
+.ck__act-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: $color-surface;
+  margin-top: 10px;
 }
 
 .ck__toggle {

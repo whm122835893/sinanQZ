@@ -100,6 +100,48 @@ class AuthController extends BaseController
     }
 
     /**
+     * POST /admin/auth/verify-password { password }
+     * 敏感操作二次验证：校验当前管理员登录密码（平台清库/大额审批等前置）
+     * 每次验证均写审计日志（无论成败）
+     */
+    public function verifyPassword()
+    {
+        $missing = $this->missingParams(['password']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+
+        $password = (string) $this->request->param('password');
+        $adminId  = $this->adminId();
+
+        $admin = Db::name('admin_users')->where('id', $adminId)->whereNull('deleted_at')->find();
+        $ok    = $admin && password_verify($password, (string) $admin['password_hash']);
+
+        // 防爆破：连续失败 5 次锁定 15 分钟
+        if (!$ok) {
+            $fails = (int) ($admin['login_fail_count'] ?? 0) + 1;
+            $lock  = $fails >= 5 ? date('Y-m-d H:i:s', time() + 900) : null;
+            Db::name('admin_users')->where('id', $adminId)->update([
+                'login_fail_count' => $fails,
+                'locked_until'     => $lock,
+                'updated_at'       => date('Y-m-d H:i:s'),
+            ]);
+            $this->audit('auth', 'verify_password_fail', '二次密码验证失败（第 ' . $fails . ' 次）');
+            return $this->fail(4004, '密码验证失败' . ($fails >= 5 ? '，账号已临时锁定 15 分钟' : ''));
+        }
+
+        // 成功即重置失败计数
+        Db::name('admin_users')->where('id', $adminId)->update([
+            'login_fail_count' => 0,
+            'locked_until'     => null,
+            'updated_at'      => date('Y-m-d H:i:s'),
+        ]);
+        $this->audit('auth', 'verify_password', '二次密码验证通过（敏感操作前置）');
+
+        return $this->success(['verified' => true], '密码验证通过');
+    }
+
+    /**
      * POST /admin/auth/change-password { old_password, new_password, confirm_password }
      */
     public function changePassword()

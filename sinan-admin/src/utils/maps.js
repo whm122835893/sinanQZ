@@ -7,9 +7,9 @@ export const ORDER_STATUS = {
   pending:   { label: '待支付', type: 'warning' },
   paid:      { label: '已支付', type: 'primary' },
   completed: { label: '已完成', type: 'success' },
-  cancelled: { label: '已取消', type: 'default' },
+  cancelled: { label: '已取消', type: 'info' },
   refunding: { label: '退款中', type: 'warning' },
-  refunded:  { label: '已退款', type: 'default' },
+  refunded:  { label: '已退款', type: 'info' },
   abnormal:  { label: '异常', type: 'danger' }
 }
 
@@ -22,28 +22,28 @@ export const REALNAME_STATUS = {
   approved: { label: '已实名', type: 'success' },
   pending:  { label: '待审核', type: 'warning' },
   rejected: { label: '已驳回', type: 'danger' },
-  none:    { label: '未实名', type: 'default' }
+  none:    { label: '未实名', type: 'info' }
 }
 
 export const COLLECTIBLE_STATUS = {
   onsale:   { label: '发售中', type: 'success' },
   upcoming: { label: '待发售', type: 'warning' },
   soldout:  { label: '已售罄', type: 'danger' },
-  offline:  { label: '已下架', type: 'default' }
+  offline:  { label: '已下架', type: 'info' }
 }
 
 export const RESALE_STATUS = {
   onsale:   { label: '挂单中', type: 'primary' },
   frozen:   { label: '已冻结', type: 'warning' },
   sold:     { label: '已成交', type: 'success' },
-  cancelled:{ label: '已取消', type: 'default' },
+  cancelled:{ label: '已取消', type: 'info' },
   system_delisted: { label: '系统下架', type: 'danger' }
 }
 
 export const TRANSFER_STATUS = {
   pending:   { label: '待接收', type: 'warning' },
   completed: { label: '已完成', type: 'success' },
-  rejected:  { label: '已拒绝', type: 'default' },
+  rejected:  { label: '已拒绝', type: 'info' },
   revoked:   { label: '已撤销', type: 'danger' }
 }
 
@@ -55,12 +55,12 @@ export const REFUND_STATUS = {
 
 export const ACTIVITY_STATUS = {
   enabled:  { label: '进行中', type: 'success' },
-  disabled: { label: '已停用', type: 'default' }
+  disabled: { label: '已停用', type: 'info' }
 }
 
 export const CONTENT_STATUS = {
   published: { label: '已发布', type: 'success' },
-  draft:     { label: '草稿', type: 'default' }
+  draft:     { label: '草稿', type: 'info' }
 }
 
 export const NOTICE_TYPE = {
@@ -73,7 +73,7 @@ export const WALLET_TYPE = {
   recharge: { label: '充值', type: 'primary' },
   reward:   { label: '奖励', type: 'success' },
   consume:  { label: '消费', type: 'warning' },
-  refund:   { label: '退款', type: 'default' }
+  refund:   { label: '退款', type: 'info' }
 }
 
 // 配额类型（与后端 quota_type 枚举一致）
