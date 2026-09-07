@@ -902,6 +902,61 @@ class MarketingController extends BaseController
         return $this->success(['id' => $id], '合成活动已保存');
     }
 
+    /**
+     * GET /admin/marketing/synthesis-records
+     * 合成记录列表（多合/错合定位与对账）
+     * 筛选：activityId、userId、时间区间（startDate/endDate 作用于合成时间）
+     * 每行含：用户、活动、产物资产（含当前状态，可判断是否已被回收）、消耗明细、该用户在该活动的累计合成次数（对比限次标红）
+     */
+    public function synthesisRecords()
+    {
+        [$page, $pageSize] = $this->pageParams();
+
+        $query = Db::name('synthesis_records')->alias('sr')
+            ->join('users u', 'u.id = sr.user_id')
+            ->join('synthesis_activities a', 'a.id = sr.activity_id')
+            ->join('user_collectibles ruc', 'ruc.id = sr.result_user_collectible_id')
+            ->join('collectibles rc', 'rc.id = ruc.collectible_id', 'LEFT');
+
+        $activityId = $this->positiveInt('activityId');
+        if ($activityId !== null) {
+            $query->where('sr.activity_id', $activityId);
+        }
+        $userId = $this->positiveInt('userId');
+        if ($userId !== null) {
+            $query->where('sr.user_id', $userId);
+        }
+        $range = $this->dateRange();
+        if ($range) {
+            if ($range[0] !== '') $query->where('sr.created_at', '>=', $range[0]);
+            if ($range[1] !== '') $query->where('sr.created_at', '<=', $range[1]);
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->field("sr.id, sr.user_id, sr.activity_id, sr.result_user_collectible_id, sr.created_at,
+                               u.uid, u.username, u.phone,
+                               a.title AS activity_title, a.per_user_limit,
+                               ruc.serial AS result_serial, ruc.status AS result_status, ruc.source AS result_source,
+                               rc.name AS result_name, rc.image AS result_image,
+                               (SELECT COUNT(*) FROM nft_synthesis_records sr2
+                                 WHERE sr2.user_id = sr.user_id AND sr2.activity_id = sr.activity_id) AS user_activity_count")
+            ->order('sr.id', 'desc')
+            ->page($page, $pageSize)
+            ->select()->toArray();
+
+        // 消耗明细（管理页低频对账查询，逐行取一次可接受；与活动列表素材查询同模式）
+        foreach ($rows as &$row) {
+            $row['consumed'] = Db::name('synthesis_record_items')->alias('sri')
+                ->join('user_collectibles uc', 'uc.id = sri.user_collectible_id', 'LEFT')
+                ->join('collectibles c', 'c.id = uc.collectible_id', 'LEFT')
+                ->where('sri.synthesis_record_id', $row['id'])
+                ->field('sri.user_collectible_id, uc.serial, c.name')
+                ->select()->toArray();
+        }
+
+        return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
+    }
+
     // ==================== 活动空投 ====================
 
     /**

@@ -723,14 +723,19 @@ class InventoryService
             case 'synthesis':
                 // 配额消耗回退：used_quantity −1（quota_type 6抽奖 / 7其他-合成）
                 $quotaType = $source === 'lucky_draw' ? 6 : 7;
-                self::revertQuotaUsage($collectibleId, $quotaType);
-                $ok = Db::name('collectibles')
-                    ->where('id', $collectibleId)
-                    ->where('circulate', '>=', 1)
-                    ->update([
-                        'circulate'  => Db::raw('circulate - 1'),
-                        'updated_at' => $now,
-                    ]);
+                $quotaReverted = self::revertQuotaUsage($collectibleId, $quotaType);
+                // 仅走配额路径发放的资产才回退 circulate：
+                // C 端直接合成/抽奖发放不经过配额，发放时未计入 circulate，无条件回减会导致流通量虚低
+                $ok = false;
+                if ($quotaReverted) {
+                    $ok = Db::name('collectibles')
+                        ->where('id', $collectibleId)
+                        ->where('circulate', '>=', 1)
+                        ->update([
+                            'circulate'  => Db::raw('circulate - 1'),
+                            'updated_at' => $now,
+                        ]);
+                }
                 $detail['counter'] = "quota[{$quotaType}].used_quantity";
                 break;
 
@@ -745,8 +750,9 @@ class InventoryService
 
     /**
      * 回退配额已使用量（找类型匹配且 used>0 的配额扣减 1）
+     * @return bool 是否实际回退（false=无匹配配额，发放未走配额路径）
      */
-    private static function revertQuotaUsage(int $collectibleId, int $quotaType): void
+    private static function revertQuotaUsage(int $collectibleId, int $quotaType): bool
     {
         $quota = Db::name('inventory_quotas')
             ->where('collectible_id', $collectibleId)
@@ -755,15 +761,17 @@ class InventoryService
             ->order('id')
             ->find();
         if ($quota) {
-            Db::name('inventory_quotas')
+            $ok = Db::name('inventory_quotas')
                 ->where('id', $quota['id'])
                 ->where('used_quantity', '>=', 1)
                 ->update([
                     'used_quantity' => Db::raw('used_quantity - 1'),
                     'updated_at'    => date('Y-m-d H:i:s'),
                 ]);
+            return (bool) $ok;
         }
-        // 无配额记录（历史数据/未配置配额）时静默跳过，仅回退 circulate
+        // 无配额记录（历史数据/C 端直接发放）时静默跳过
+        return false;
     }
 
     // =====================================================================

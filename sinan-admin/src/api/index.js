@@ -209,9 +209,37 @@ export function removeBlacklist(id, reason = '') {
   return post(`/users/${id}/blacklist`, { action: 'remove', reason })
 }
 
-/** 强制回收藏品（用户资产异常时冻结回收） */
-export function recoverUserCollectible({ userId, serial }) {
-  return post('/users/recover', { user_collectible_id: serial, reason: '管理员强制回收' })
+/**
+ * 强制回收藏品（超卖/错空投/多合等资产异常处置）
+ * 回收后按资产来源自动回退计数器（sold/airdropped_count/配额）与流通量
+ */
+export function recoverUserCollectible({ id, reason }) {
+  return post('/users/recover', { user_collectible_id: id, reason })
+}
+
+/** 用户资产列表（详情抽屉-回收入口数据源；params.status 缺省=有效持仓） */
+export async function getUserAssets(id, params = {}) {
+  const res = await get(`/users/assets/${id}`, params)
+  if (res.code !== 0) return res
+  const d = res.data || {}
+  return {
+    code: 0,
+    message: res.message,
+    data: {
+      list: (d.list || []).map((a) => ({
+        id: n(a.id),
+        serial: s(a.serial),
+        status: s(a.status),
+        source: s(a.source),
+        price: n(a.acquiredPrice),
+        acquiredTime: s(a.acquiredAt),
+        collectibleId: n(a.collectibleId),
+        name: s(a.collectibleName),
+        cover: s(a.collectibleImage)
+      })),
+      total: n(d.total)
+    }
+  }
 }
 
 // ============================================================
@@ -1042,6 +1070,37 @@ export async function getSynthesisList(params) {
           grantMode: s(act.grantMode) || 'realtime'
         }
       }),
+      total: n(d.total)
+    }
+  }
+}
+
+/** 合成记录列表（多合/错合定位与对账；筛选 activityId/userId/startDate/endDate） */
+export async function getSynthesisRecords(params = {}) {
+  const res = await get('/marketing/synthesis-records', params)
+  if (res.code !== 0) return res
+  const d = res.data || {}
+  return {
+    code: 0,
+    message: res.message,
+    data: {
+      list: (d.list || []).map((r) => ({
+        id: n(r.id),
+        userId: n(r.userId),
+        username: s(r.username),
+        phone: s(r.phone),
+        activityId: n(r.activityId),
+        activityTitle: s(r.activityTitle),
+        perUserLimit: n(r.perUserLimit),
+        resultId: n(r.resultUserCollectibleId),
+        resultSerial: s(r.resultSerial),
+        resultStatus: s(r.resultStatus),
+        resultName: s(r.resultName),
+        resultCover: s(r.resultImage),
+        userActivityCount: n(r.userActivityCount),
+        consumed: (r.consumed || []).map((c) => ({ id: n(c.userCollectibleId), serial: s(c.serial), name: s(c.name) })),
+        createTime: s(r.createdAt)
+      })),
       total: n(d.total)
     }
   }

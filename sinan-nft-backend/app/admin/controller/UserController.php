@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
+use app\service\InventoryService;
 use think\facade\Db;
 
 /**
@@ -389,7 +390,8 @@ class UserController extends BaseController
 
     /**
      * POST /admin/user/recover { user_collectible_id, reason }
-     * 强制回收藏品：支持在持有/寄售中状态；回写库存与流通量；记录审计
+     * 强制回收藏品：支持在持有/寄售中/冻结中状态（超卖/错空投/多合等异常处置）
+     * 单一事务：取消寄售挂单 → 状态置 recovered → 按资产来源回退计数器（文档 4.3.4）
      */
     public function recover()
     {
@@ -400,22 +402,27 @@ class UserController extends BaseController
         $ucid  = (int) $this->request->param('user_collectible_id');
         $reason = trim((string) $this->request->param('reason', ''));
 
-        $uc = Db::name('user_collectibles')->alias('uc')
-            ->field('uc.*, c.name AS collectible_name, c.circulate')
-            ->join('collectibles c', 'c.id = uc.collectible_id')
-            ->where('uc.id', $ucid)
-            ->find();
-        if (!$uc) {
-            return $this->fail(4040, '藏品持有记录不存在');
-        }
-        if (!in_array($uc['status'], ['held', 'consigned', 'frozen'], true)) {
-            return $this->fail(4220, '仅持有中/寄售中/冻结中的藏品可强制回收（当前：' . $uc['status'] . '）');
-        }
-
         $now = date('Y-m-d H:i:s');
+        $revert = ['source' => '', 'reverted' => false, 'counter' => ''];
 
         Db::startTrans();
         try {
+            // 行锁 + 事务内复核，防并发重复回收
+            $uc = Db::name('user_collectibles')->alias('uc')
+                ->field('uc.*, c.name AS collectible_name')
+                ->join('collectibles c', 'c.id = uc.collectible_id')
+                ->where('uc.id', $ucid)
+                ->lock(true)
+                ->find();
+            if (!$uc) {
+                Db::rollback();
+                return $this->fail(4040, '藏品持有记录不存在');
+            }
+            if (!in_array($uc['status'], ['held', 'consigned', 'frozen'], true)) {
+                Db::rollback();
+                return $this->fail(4220, '仅持有中/寄售中/冻结中的藏品可强制回收（当前：' . $uc['status'] . '）');
+            }
+
             // 若在寄售：取消挂单
             if ($uc['status'] === 'consigned') {
                 $listing = Db::name('resale_listings')->where('user_collectible_id', $ucid)
@@ -438,8 +445,8 @@ class UserController extends BaseController
                 'updated_at'  => $now,
             ]);
 
-            // 藏品流通量 -1（回收退出流通）
-            Db::name('collectibles')->where('id', $uc['collectible_id'])->dec('circulate')->update();
+            // 按资产来源回退计数器（sold/airdropped_count/盲盒台账/配额）与 circulate（文档 4.3.4）
+            $revert = InventoryService::revertOnRecover($uc);
 
             Db::commit();
         } catch (\Throwable $e) {
@@ -447,9 +454,49 @@ class UserController extends BaseController
             return $this->fail(5000, '回收失败：' . $e->getMessage());
         }
 
-        $this->audit('user', 'recover', '强制回收藏品「' . $uc['collectible_name'] . '」',
-            ['reason' => $reason, 'serial' => $uc['serial']], 'user_collectible', $ucid);
+        $this->audit('user', 'recover', '强制回收藏品「' . $uc['collectible_name'] . '」（来源 ' . $revert['source']
+            . '，回退 ' . ($revert['reverted'] ? $revert['counter'] : '无（计数器守卫拦截）') . '）',
+            ['reason' => $reason, 'serial' => $uc['serial'], 'revert' => $revert], 'user_collectible', $ucid);
 
-        return $this->success(null, '藏品已强制回收');
+        return $this->success([
+            'revertSource'    => $revert['source'],
+            'counterReverted' => (bool) $revert['reverted'],
+            'counter'         => $revert['counter'],
+        ], '藏品已强制回收');
+    }
+
+    /**
+     * GET /admin/user/assets/:id
+     * 用户资产列表（详情抽屉-回收入口数据源）
+     * 筛选：status（缺省=有效持仓 held/consigned/frozen；可指定 recovered/consumed/transferred 查历史）
+     */
+    public function assets(int $id)
+    {
+        [$page, $pageSize] = $this->pageParams();
+
+        if (!Db::name('users')->where('id', $id)->whereNull('deleted_at')->count()) {
+            return $this->fail(4040, '用户不存在');
+        }
+
+        $query = Db::name('user_collectibles')->alias('uc')
+            ->join('collectibles c', 'c.id = uc.collectible_id', 'LEFT')
+            ->where('uc.user_id', $id);
+
+        $status = trim((string) $this->request->param('status', ''));
+        if ($status !== '' && in_array($status, ['held', 'consigned', 'frozen', 'transferred', 'consumed', 'recovered'], true)) {
+            $query->where('uc.status', $status);
+        } else {
+            $query->whereIn('uc.status', ['held', 'consigned', 'frozen']);
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->field('uc.id, uc.serial, uc.status, uc.source, uc.acquired_price, uc.acquired_at,
+                               uc.order_id, uc.airdrop_record_id,
+                               c.id AS collectible_id, c.name AS collectible_name, c.image AS collectible_image')
+            ->order('uc.id', 'desc')
+            ->page($page, $pageSize)
+            ->select()->toArray();
+
+        return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }
 }

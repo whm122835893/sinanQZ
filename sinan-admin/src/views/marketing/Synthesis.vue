@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getSynthesisList, toggleSynthesis, saveSynthesis, getCollectibleList } from '@/api'
+import { getSynthesisList, toggleSynthesis, saveSynthesis, getCollectibleList, getSynthesisRecords, recoverUserCollectible } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import EligibilityEditor from '@/components/EligibilityEditor.vue'
 import { ACTIVITY_STATUS } from '@/utils/maps'
@@ -127,6 +127,79 @@ function removeMaterial(idx) {
   form.value.materials.splice(idx, 1)
 }
 
+// ---- 合成记录（多合/错合定位与对账） ----
+const RESULT_STATUS = {
+  held: { label: '持有中', type: 'success' },
+  consigned: { label: '寄售中', type: 'warning' },
+  frozen: { label: '冻结中', type: 'info' },
+  recovered: { label: '已回收', type: 'danger' },
+  consumed: { label: '已消耗', type: 'info' },
+  transferred: { label: '已转赠', type: 'info' }
+}
+
+const recShow = ref(false)
+const recLoading = ref(false)
+const recList = ref([])
+const recTotal = ref(0)
+const recPage = ref(1)
+const recFilters = ref({ activityId: '', userId: '', range: null })
+
+function openRecords() {
+  recShow.value = true
+  if (!recList.value.length) {
+    recPage.value = 1
+    loadRecords()
+  }
+}
+
+async function loadRecords() {
+  recLoading.value = true
+  try {
+    const [start, end] = recFilters.value.range || []
+    const res = await getSynthesisRecords({
+      page: recPage.value,
+      pageSize: 10,
+      activityId: recFilters.value.activityId,
+      userId: recFilters.value.userId,
+      startDate: start || '',
+      endDate: end || ''
+    })
+    if (res.code === 0) {
+      recList.value = res.data.list
+      recTotal.value = res.data.total
+    }
+  } finally {
+    recLoading.value = false
+  }
+}
+
+function onRecSearch() {
+  if (recFilters.value.userId && !/^\d+$/.test(recFilters.value.userId.trim())) {
+    return ElMessage.warning('用户 ID 需为纯数字')
+  }
+  recPage.value = 1
+  loadRecords()
+}
+
+/** 回收多合/错合的合成产物（走统一回收接口，计数器按来源回退） */
+async function onRecRecover(r) {
+  const { value } = await ElMessageBox.prompt(
+    `确认回收合成产物「${r.resultName}」（${r.resultSerial}，用户 ID ${r.userId}）？回收后产物退出该用户账户。`,
+    '回收合成产物',
+    {
+      type: 'warning',
+      confirmButtonText: '确认回收',
+      inputPlaceholder: '回收原因（必填，写入审计日志）',
+      inputValidator: (v) => (v && v.trim() ? true : '回收原因必填')
+    }
+  )
+  const res = await recoverUserCollectible({ id: r.resultId, reason: value.trim() })
+  if (res.code === 0) {
+    ElMessage.success('合成产物已回收')
+    loadRecords()
+  }
+}
+
 async function onSave() {
   const f = form.value
   if (!f.title.trim()) return ElMessage.warning('请输入活动名称')
@@ -177,7 +250,10 @@ async function onSave() {
         <div class="t-tertiary" style="font-size: 12px">
           合成材料从用户仓库扣除，产物实时校验库存；建议新活动创建后先停用观察再开启
         </div>
-        <el-button type="primary" :icon="Plus" @click="openCreate">新建活动</el-button>
+        <div>
+          <el-button plain @click="openRecords">合成记录</el-button>
+          <el-button type="primary" :icon="Plus" @click="openCreate">新建活动</el-button>
+        </div>
       </div>
 
       <el-empty v-if="!list.length" description="暂无合成活动，点击右上角「新建活动」创建" />
@@ -342,6 +418,99 @@ async function onSave() {
           </el-button>
         </template>
       </el-dialog>
+
+      <!-- 合成记录（多合/错合定位与对账） -->
+      <el-dialog v-model="recShow" title="合成记录" width="960px" top="6vh">
+        <div class="rec__filters">
+          <el-select v-model="recFilters.activityId" clearable placeholder="全部活动" style="width: 200px">
+            <el-option v-for="a in list" :key="a.id" :value="a.id" :label="a.title" />
+          </el-select>
+          <el-input v-model="recFilters.userId" clearable placeholder="用户 ID" style="width: 130px" />
+          <el-date-picker
+            v-model="recFilters.range"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            style="width: 240px"
+          />
+          <el-button type="primary" plain @click="onRecSearch">查询</el-button>
+          <span class="t-tertiary rec__tip">累计/限次超限标红；产物为可回收状态时可在此直接回收（多合处置）</span>
+        </div>
+
+        <el-table :data="recList" v-loading="recLoading" stripe>
+          <el-table-column label="合成时间" width="165">
+            <template #default="{ row }">{{ row.createTime.slice(0, 19) }}</template>
+          </el-table-column>
+          <el-table-column label="用户" min-width="140">
+            <template #default="{ row }">
+              <div>{{ row.username || '—' }}</div>
+              <div class="t-tertiary rec__sub">ID {{ row.userId }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="活动" min-width="130" prop="activityTitle" show-overflow-tooltip />
+          <el-table-column label="合成产物" min-width="190">
+            <template #default="{ row }">
+              <div class="rec__result">
+                <img v-if="row.resultCover" class="rec__cover" :src="row.resultCover" :alt="row.resultName" />
+                <div class="rec__result-info">
+                  <div class="rec__result-name">{{ row.resultName || '—' }}</div>
+                  <div class="t-tertiary rec__sub">{{ row.resultSerial }}</div>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="产物状态" width="90">
+            <template #default="{ row }">
+              <StatusTag :value="row.resultStatus" :map="RESULT_STATUS" />
+            </template>
+          </el-table-column>
+          <el-table-column label="累计/限次" width="95" align="center">
+            <template #default="{ row }">
+              <span
+                class="rec__count"
+                :class="{ 'rec__count--over': row.perUserLimit > 0 && row.userActivityCount > row.perUserLimit }"
+              >{{ row.userActivityCount }} / {{ row.perUserLimit > 0 ? row.perUserLimit : '不限' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="消耗素材" min-width="120">
+            <template #default="{ row }">
+              <el-popover v-if="row.consumed.length" placement="left" :width="260" trigger="hover">
+                <template #reference>
+                  <el-button link type="primary" size="small">已消耗 {{ row.consumed.length }} 件</el-button>
+                </template>
+                <div v-for="c in row.consumed" :key="c.id" class="rec__consumed">
+                  {{ c.name || '已删除藏品' }}（{{ c.serial }}）
+                </div>
+              </el-popover>
+              <span v-else class="t-tertiary">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                v-if="['held', 'consigned', 'frozen'].includes(row.resultStatus)"
+                v-permission="'user:recover'"
+                link
+                type="danger"
+                size="small"
+                @click="onRecRecover(row)"
+              >回收</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="rec__pager">
+          <el-pagination
+            v-model:current-page="recPage"
+            :total="recTotal"
+            :page-size="10"
+            layout="total, prev, pager, next"
+            @current-change="loadRecords"
+          />
+        </div>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -385,6 +554,63 @@ async function onSave() {
   font-size: 12px;
   color: $color-text-secondary;
   margin-top: 6px;
+}
+
+.rec__filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.rec__tip { font-size: 12px; }
+
+.rec__sub { font-size: 12px; }
+
+.rec__result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rec__cover {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid $color-border;
+}
+
+.rec__result-info { min-width: 0; }
+.rec__result-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: $color-text-primary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rec__count { font-size: 13px; }
+.rec__count--over {
+  color: #f56c6c;
+  font-weight: 700;
+}
+
+.rec__consumed {
+  font-size: 12px;
+  padding: 2px 0;
+  border-bottom: 1px dashed $color-border;
+  &:last-child { border-bottom: none; }
+}
+
+.rec__pager {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
 }
 
 .sy__formula {

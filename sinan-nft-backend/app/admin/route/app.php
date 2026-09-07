@@ -50,6 +50,8 @@ Route::group('dashboard', function () {
 // ---------------------------------------------------------------------------
 Route::group('users', function () {
     Route::get('', 'UserController/list');
+    // 静态路由需注册在 :id 通配路由之前（否则 /assets/1 会被 :id 吸收）
+    Route::get('assets/:id', 'UserController/assets')->middleware(AdminPermission::class, 'user:detail');
     Route::get(':id', 'UserController/detail')->middleware(AdminPermission::class, 'user:detail');
     Route::post(':id/freeze', 'UserController/freeze')->middleware(AdminPermission::class, 'user:freeze');
     Route::post(':id/reset-transaction-password', 'UserController/resetTransactionPassword')->middleware(AdminPermission::class, 'user:manage');
@@ -172,6 +174,8 @@ Route::group('marketing', function () {
     // 合成
     Route::get('synthesis', 'MarketingController/synthesisList');
     Route::post('synthesis', 'MarketingController/synthesisSave')->middleware(AdminPermission::class, 'marketing:synthesis:manage');
+    // 合成记录（多合/错合定位与对账）
+    Route::get('synthesis-records', 'MarketingController/synthesisRecords');
     // 活动空投
     Route::get('airdrop', 'MarketingController/airdropList');
     Route::post('airdrop', 'MarketingController/airdropSave')->middleware(AdminPermission::class, 'marketing:airdrop');
