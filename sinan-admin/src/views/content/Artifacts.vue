@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getArtifacts, saveArtifact } from '@/api'
+import { getArtifacts, saveArtifact, uploadImage } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 
 const filters = [
@@ -28,27 +28,72 @@ const filters = [
 const listRef = ref(null)
 const editShow = ref(false)
 const editing = ref(null)
-const form = ref({ name: '', dynasty: '战国', museum: '', level: '国家一级文物', material: '', status: 1 })
+const uploading = ref(false)
+const form = ref(emptyForm())
 
 const dynasties = ['新石器时代', '商', '西周', '春秋', '战国', '秦', '西汉', '东汉', '唐', '宋', '元', '明', '清']
 
+function emptyForm() {
+  return {
+    name: '',
+    dynasty: '战国',
+    museum: '',
+    level: '国家一级文物',
+    material: '',
+    image: '',
+    imgHeight: 150,
+    status: 1
+  }
+}
+
 function openCreate() {
   editing.value = null
-  form.value = { name: '', dynasty: '战国', museum: '', level: '国家一级文物', material: '', status: 1 }
+  form.value = emptyForm()
   editShow.value = true
 }
 
 function openEdit(a) {
   editing.value = a
-  form.value = { name: a.name, dynasty: a.dynasty, museum: a.museum, level: a.level, material: a.material, status: a.status }
+  form.value = {
+    name: a.name,
+    dynasty: a.dynasty,
+    museum: a.museum,
+    level: a.level,
+    material: a.material,
+    image: a.image || '',
+    imgHeight: a.imgHeight || 150,
+    status: a.status
+  }
   editShow.value = true
+}
+
+// ---- 文物图上传（JPG/PNG/WEBP/GIF，≤5MB）----
+async function onUploadImage({ file }) {
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
+  uploading.value = true
+  const res = await uploadImage(file, 'artifact')
+  uploading.value = false
+  if (res.code === 0 && res.data?.url) {
+    form.value.image = res.data.url
+    ElMessage.success('文物图已上传')
+  } else {
+    ElMessage.error(res.message || '上传失败，请重试')
+  }
 }
 
 async function onSave() {
   const f = form.value
   if (!f.name.trim()) return ElMessage.warning('请输入文物名称')
   if (!f.museum.trim()) return ElMessage.warning('请输入收藏博物馆')
-  const res = await saveArtifact({ id: editing.value?.id, ...f })
+  if (!f.image) return ElMessage.warning('请上传文物图片')
+  const res = await saveArtifact({
+    id: editing.value?.id,
+    ...f,
+    img_height: f.imgHeight
+  })
   if (res.code === 0) {
     ElMessage.success('已保存')
     editShow.value = false
@@ -109,6 +154,37 @@ async function onSave() {
     <!-- 编辑弹窗 -->
     <el-dialog v-model="editShow" :title="editing ? '编辑文物' : '新增文物'" width="520px" :close-on-click-modal="false">
       <el-form label-width="100px">
+        <el-form-item label="文物图片" required>
+          <div class="af__upload">
+            <div v-if="form.image" class="af__preview">
+              <img :src="form.image" :alt="form.name" />
+              <div class="af__preview-ops">
+                <el-upload
+                  :show-file-list="false"
+                  :http-request="onUploadImage"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                >
+                  <el-button link type="primary" size="small" :loading="uploading">重新上传</el-button>
+                </el-upload>
+                <el-button link type="danger" size="small" @click="form.image = ''">删除</el-button>
+              </div>
+            </div>
+            <el-upload
+              v-else
+              class="af__uploader"
+              drag
+              :show-file-list="false"
+              :http-request="onUploadImage"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+            >
+              <div class="af__uploader-box">
+                <el-icon :size="26"><Plus /></el-icon>
+                <div class="t-tertiary" style="font-size: 12px">{{ uploading ? '上传中…' : '上传文物图片' }}</div>
+                <div class="t-tertiary" style="font-size: 11px; opacity: 0.7">JPG / PNG / WEBP / GIF，≤5MB</div>
+              </div>
+            </el-upload>
+          </div>
+        </el-form-item>
         <el-form-item label="文物名称" required>
           <el-input v-model="form.name" placeholder="文物全名" maxlength="30" show-word-limit />
         </el-form-item>
@@ -125,6 +201,10 @@ async function onSave() {
         </el-form-item>
         <el-form-item label="文物等级">
           <el-input v-model="form.level" placeholder="如：国家一级文物" />
+        </el-form-item>
+        <el-form-item label="图片高度">
+          <el-input-number v-model="form.imgHeight" :min="50" :max="2000" :step="10" style="width: 140px" />
+          <span class="t-tertiary" style="font-size: 12px; margin-left: 8px">px · C 端瀑布流展示高度</span>
         </el-form-item>
         <el-form-item label="展示状态">
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
@@ -157,5 +237,41 @@ async function onSave() {
 .af__name {
   font-weight: 600;
   color: $color-text-primary;
+}
+
+.af__upload { width: 100%; }
+
+.af__preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+
+  img {
+    width: 120px;
+    height: 120px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: $color-surface;
+  }
+}
+
+.af__preview-ops { display: flex; gap: 4px; }
+
+.af__uploader {
+  width: 100%;
+
+  :deep(.el-upload-dragger) {
+    padding: 18px 0;
+    border-radius: 8px;
+  }
+}
+
+.af__uploader-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--el-text-color-secondary);
 }
 </style>

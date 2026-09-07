@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { getSynthesisList, toggleSynthesis, saveSynthesis, getCollectibleList } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
+import EligibilityEditor from '@/components/EligibilityEditor.vue'
 import { ACTIVITY_STATUS } from '@/utils/maps'
 import { fmtNumber } from '@/utils/format'
 
@@ -13,24 +14,23 @@ const list = ref([])
 // ---- 藏品下拉（材料/产物选择）----
 const collectibles = ref([])
 
-// ---- 限次编辑 ----
+// ---- 新建/编辑活动 ----
 const editShow = ref(false)
 const editing = ref(null)
-const form = ref({ perUserLimit: 1, totalLimit: null })
-
-// ---- 新建活动 ----
-const actShow = ref(false)
-const actSubmitting = ref(false)
-const actForm = ref({
+const submitting = ref(false)
+const form = ref({
   title: '',
   type: 'permanent',
   rules: '',
   materials: [{ collectibleId: null, count: 1 }],
   resultCollectibleId: null,
+  resultQuantity: 1,
   perUserLimit: 1,
   totalLimit: null,
   startTime: '',
   endTime: '',
+  eligibility: { type: 'all', config: {} },
+  grantMode: 'realtime',
   enabled: false
 })
 
@@ -47,6 +47,18 @@ async function load() {
   // 适配层返回 { list, total }；失败/空数据时回退空数组（防止空白页）
   list.value = (res.code === 0 && res.data && Array.isArray(res.data.list)) ? res.data.list : []
   loading.value = false
+}
+
+function eligibilityText(e) {
+  const c = e?.config || {}
+  switch (e?.type) {
+    case 'realname': return '已实名用户'
+    case 'checkin': return `累计签到 ${c.days ?? 1} 天`
+    case 'invite': return `累计邀请 ${c.count ?? 1} 人`
+    case 'hold': return `持有指定藏品（${c.match === 'all' ? '全部' : '任一'} ${(c.collectibleIds || []).length} 个）`
+    case 'checkin_rank': return `签到前 ${c.rank ?? 100} 名`
+    default: return '所有人'
+  }
 }
 
 // ---- 活动启停 ----
@@ -66,68 +78,57 @@ async function onToggle(a) {
   }
 }
 
-// ---- 限次编辑 ----
-function openEdit(a) {
-  editing.value = a
-  form.value = { perUserLimit: a.perUserLimit, totalLimit: a.totalLimit }
-  editShow.value = true
-}
-
-async function onSaveLimit() {
-  const f = form.value
-  if (!Number.isInteger(f.perUserLimit) || f.perUserLimit < 1) return ElMessage.warning('每人限次需为正整数')
-  if (f.totalLimit !== null && (!Number.isInteger(f.totalLimit) || f.totalLimit < editing.value.usedCount)) {
-    return ElMessage.warning(`总限次不可低于已合成数量（已合成 ${fmtNumber(editing.value.usedCount)} 份）`)
-  }
-  // 后端为全量更新：连同活动原配置一起提交，仅覆盖限次字段
-  const a = editing.value
-  const res = await saveSynthesis({
-    id: a.id,
-    type: a.type,
-    title: a.title,
-    rules: a.rules || a.title,
-    materials: (a.materials || []).map((m) => ({ collectibleId: m.collectibleId, count: m.count })),
-    result: { collectibleId: a.result?.collectibleId },
-    perUserLimit: f.perUserLimit,
-    totalLimit: f.totalLimit,
-    startTime: a.startTime,
-    endTime: a.endTime,
-    status: a.status
-  })
-  if (res.code === 0) {
-    ElMessage.success('限次配置已保存')
-    editShow.value = false
-    load()
-  }
-}
-
-// ---- 新建活动 ----
+// ---- 新建/编辑 ----
 function openCreate() {
-  actForm.value = {
+  editing.value = null
+  form.value = {
     title: '',
     type: 'permanent',
     rules: '',
     materials: [{ collectibleId: null, count: 1 }],
     resultCollectibleId: null,
+    resultQuantity: 1,
     perUserLimit: 1,
     totalLimit: null,
     startTime: '',
     endTime: '',
+    eligibility: { type: 'all', config: {} },
+    grantMode: 'realtime',
     enabled: false
   }
-  actShow.value = true
+  editShow.value = true
+}
+
+function openEdit(a) {
+  editing.value = a
+  form.value = {
+    title: a.title,
+    type: a.type,
+    rules: a.rules || a.title,
+    materials: (a.materials || []).map((m) => ({ collectibleId: m.collectibleId, count: m.count })),
+    resultCollectibleId: a.result?.collectibleId || null,
+    resultQuantity: a.result?.quantity || 1,
+    perUserLimit: a.perUserLimit,
+    totalLimit: a.totalLimit,
+    startTime: a.startTime || '',
+    endTime: a.endTime || '',
+    eligibility: JSON.parse(JSON.stringify(a.eligibility || { type: 'all', config: {} })),
+    grantMode: a.grantMode || 'realtime',
+    enabled: a.status === 'enabled'
+  }
+  editShow.value = true
 }
 
 function addMaterial() {
-  actForm.value.materials.push({ collectibleId: null, count: 1 })
+  form.value.materials.push({ collectibleId: null, count: 1 })
 }
 
 function removeMaterial(idx) {
-  actForm.value.materials.splice(idx, 1)
+  form.value.materials.splice(idx, 1)
 }
 
-async function onCreateActivity() {
-  const f = actForm.value
+async function onSave() {
+  const f = form.value
   if (!f.title.trim()) return ElMessage.warning('请输入活动名称')
   if (!f.rules.trim()) return ElMessage.warning('请输入活动规则说明（C 端展示）')
   const mats = f.materials.filter((m) => m.collectibleId)
@@ -135,30 +136,37 @@ async function onCreateActivity() {
   if (mats.some((m) => !Number.isInteger(m.count) || m.count < 1)) return ElMessage.warning('材料数量需为正整数')
   if (!f.resultCollectibleId) return ElMessage.warning('请选择合成产物藏品')
   if (f.type === 'limited' && !f.endTime) return ElMessage.warning('限时活动需填写截止时间')
-  actSubmitting.value = true
+  if (f.eligibility.type === 'hold' && !(f.eligibility.config.collectibleIds || []).filter(Boolean).length) {
+    return ElMessage.warning('持有藏品资格需至少选择一个藏品')
+  }
+  if (editing.value && f.totalLimit !== null && f.totalLimit < editing.value.usedCount) {
+    return ElMessage.warning(`总限次不可低于已合成数量（已合成 ${fmtNumber(editing.value.usedCount)} 份）`)
+  }
+  submitting.value = true
   const res = await saveSynthesis({
+    id: editing.value?.id,
     title: f.title.trim(),
     type: f.type,
     rules: f.rules.trim(),
     materials: mats.map((m) => ({ collectibleId: m.collectibleId, count: m.count })),
-    result: { collectibleId: f.resultCollectibleId },
+    result: { collectibleId: f.resultCollectibleId, quantity: f.resultQuantity },
     perUserLimit: f.perUserLimit,
     totalLimit: f.totalLimit,
     startTime: f.startTime.trim(),
     endTime: f.endTime.trim(),
+    eligibility: f.eligibility,
+    grantMode: f.grantMode,
     status: f.enabled ? 'enabled' : 'disabled'
   })
-  actSubmitting.value = false
+  submitting.value = false
   if (res.code === 0) {
-    ElMessage.success('合成活动已创建')
-    actShow.value = false
+    ElMessage.success(editing.value ? '合成活动已更新' : '合成活动已创建')
+    editShow.value = false
     load()
   } else if (res.message) {
     ElMessage.error(res.message)
   }
 }
-
-const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏品 #${id}`
 </script>
 
 <template>
@@ -184,7 +192,7 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
             <StatusTag :value="a.status" :map="ACTIVITY_STATUS" />
           </div>
           <div class="sy__head-ops">
-            <el-button link type="primary" size="small" @click="openEdit(a)">限次配置</el-button>
+            <el-button link type="primary" size="small" @click="openEdit(a)">编辑</el-button>
             <el-switch :model-value="a.status === 'enabled'" @change="onToggle(a)" />
           </div>
         </div>
@@ -203,7 +211,7 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
           <div class="sy__result">
             <img :src="a.result.cover" :alt="a.result.name" />
             <div class="sy__mat-name">{{ a.result.name }}</div>
-            <div class="t-tertiary" style="font-size: 11px">合成产物</div>
+            <div class="t-tertiary" style="font-size: 11px">产物 ×{{ a.result.quantity || 1 }}</div>
           </div>
         </div>
 
@@ -211,50 +219,21 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
           <span>每人限合成 <b class="price">{{ a.perUserLimit }}</b> 次</span>
           <span>总量 <b class="price">{{ a.totalLimit === null ? '不限' : fmtNumber(a.totalLimit) }}</b></span>
           <span>已合成 <b class="price">{{ fmtNumber(a.usedCount) }}</b></span>
+          <span>参与资格：{{ eligibilityText(a.eligibility) }}</span>
+          <span>奖励发放：{{ a.grantMode === 'manual' ? '记录名单 · 统一发放' : '实时到账' }}</span>
           <span v-if="a.type === 'limited' && a.endTime" class="t-tertiary">截止 {{ a.endTime }}</span>
         </div>
       </div>
 
-      <!-- 限次编辑弹窗 -->
-      <el-dialog v-model="editShow" :title="`限次配置 · ${editing?.title || ''}`" width="440px" :close-on-click-modal="false">
-        <el-form label-width="100px">
-          <el-form-item label="每人限次">
-            <el-input-number v-model="form.perUserLimit" :min="1" style="width: 180px" />
-          </el-form-item>
-          <el-form-item label="总限次">
-            <el-input-number
-              v-model="form.totalLimit"
-              :min="editing ? editing.usedCount : 1"
-              :step="100"
-              style="width: 180px"
-              placeholder="留空表示不限"
-            />
-            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
-              清空 / null 表示不限总量；已合成 {{ editing ? fmtNumber(editing.usedCount) : 0 }} 份，总限次不可低于该值
-            </div>
-          </el-form-item>
-        </el-form>
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          title="合成消耗时实时校验产物库存池 / 配额预留，不足则拦截；材料从用户仓库扣除并记录合成流水"
-        />
-        <template #footer>
-          <el-button @click="editShow = false">取消</el-button>
-          <el-button type="primary" @click="onSaveLimit">保存</el-button>
-        </template>
-      </el-dialog>
-
-      <!-- 新建活动弹窗 -->
-      <el-dialog v-model="actShow" title="新建合成活动" width="620px" :close-on-click-modal="false">
+      <!-- 新建/编辑活动弹窗 -->
+      <el-dialog v-model="editShow" :title="editing ? `编辑合成活动 · ${editing.title}` : '新建合成活动'" width="660px" :close-on-click-modal="false">
         <el-form label-width="110px">
           <el-form-item label="活动名称">
-            <el-input v-model="actForm.title" placeholder="如：四象聚宝 · 材料合成" maxlength="50" show-word-limit />
+            <el-input v-model="form.title" placeholder="如：四象聚宝 · 材料合成" maxlength="50" show-word-limit />
           </el-form-item>
 
           <el-form-item label="活动类型">
-            <el-radio-group v-model="actForm.type">
+            <el-radio-group v-model="form.type">
               <el-radio value="permanent">常驻</el-radio>
               <el-radio value="limited">限时</el-radio>
             </el-radio-group>
@@ -265,7 +244,7 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
 
           <el-form-item label="活动规则">
             <el-input
-              v-model="actForm.rules"
+              v-model="form.rules"
               type="textarea"
               :rows="2"
               maxlength="200"
@@ -276,7 +255,7 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
 
           <el-form-item label="合成材料">
             <div class="sy__mat-edit">
-              <div v-for="(m, idx) in actForm.materials" :key="idx" class="sy__mat-row">
+              <div v-for="(m, idx) in form.materials" :key="idx" class="sy__mat-row">
                 <el-select
                   v-model="m.collectibleId"
                   clearable
@@ -291,7 +270,7 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
                   link
                   type="danger"
                   size="small"
-                  :disabled="actForm.materials.length <= 1"
+                  :disabled="form.materials.length <= 1"
                   @click="removeMaterial(idx)"
                 >移除</el-button>
               </div>
@@ -301,7 +280,7 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
 
           <el-form-item label="合成产物">
             <el-select
-              v-model="actForm.resultCollectibleId"
+              v-model="form.resultCollectibleId"
               clearable
               filterable
               placeholder="选择合成产物藏品"
@@ -314,32 +293,53 @@ const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏�
             </div>
           </el-form-item>
 
+          <el-form-item label="产出数量">
+            <el-input-number v-model="form.resultQuantity" :min="1" :max="100" style="width: 160px" />
+            <span class="t-tertiary" style="font-size: 12px; margin-left: 8px">份 / 每次合成</span>
+          </el-form-item>
+
           <el-form-item label="每人限次">
-            <el-input-number v-model="actForm.perUserLimit" :min="1" style="width: 160px" />
+            <el-input-number v-model="form.perUserLimit" :min="1" style="width: 160px" />
           </el-form-item>
 
           <el-form-item label="总限次">
-            <el-input-number v-model="actForm.totalLimit" :min="1" :step="100" placeholder="留空不限" style="width: 160px" />
+            <el-input-number v-model="form.totalLimit" :min="1" :step="100" placeholder="留空不限" style="width: 160px" />
             <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
               留空表示不限合成总量
             </div>
           </el-form-item>
 
           <el-form-item label="起止时间">
-            <el-input v-model="actForm.startTime" placeholder="开始时间（可留空）" style="width: 46%; margin-right: 4px" />
-            <el-input v-model="actForm.endTime" placeholder="截止时间（限时活动必填）" style="width: 48%" />
+            <el-input v-model="form.startTime" placeholder="开始时间（可留空）" style="width: 46%; margin-right: 4px" />
+            <el-input v-model="form.endTime" placeholder="截止时间（限时活动必填）" style="width: 48%" />
+          </el-form-item>
+
+          <el-form-item label="参与资格">
+            <EligibilityEditor v-model="form.eligibility" :collectibles="collectibles" />
+          </el-form-item>
+
+          <el-form-item label="奖励发放">
+            <el-radio-group v-model="form.grantMode">
+              <el-radio value="realtime">实时到账</el-radio>
+              <el-radio value="manual">记录名单 · 统一发放</el-radio>
+            </el-radio-group>
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
+              实时到账：合成成功立即发放产物；记录名单：进入「奖励名单」页导出 CSV 统一发放
+            </div>
           </el-form-item>
 
           <el-form-item label="活动状态">
-            <el-switch v-model="actForm.enabled" active-text="启用" inactive-text="停用" />
+            <el-switch v-model="form.enabled" active-text="启用" inactive-text="停用" />
             <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
               建议创建时保持停用，确认材料/产物配置无误后再开启
             </div>
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="actShow = false">取消</el-button>
-          <el-button type="primary" :loading="actSubmitting" @click="onCreateActivity">创建活动</el-button>
+          <el-button @click="editShow = false">取消</el-button>
+          <el-button type="primary" :loading="submitting" @click="onSave">
+            {{ editing ? '保存修改' : '创建活动' }}
+          </el-button>
         </template>
       </el-dialog>
     </template>

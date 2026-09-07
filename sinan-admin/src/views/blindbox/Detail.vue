@@ -11,7 +11,7 @@ import {
   airdropBlindBox,
   destroyBlindBox,
   releaseBlindBox,
-  toggleBlindBoxOpenable
+  setBlindBoxOpenable
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import PasswordVerify from '@/components/PasswordVerify.vue'
@@ -130,10 +130,10 @@ async function onToggleOpen(val) {
     '开启开关',
     { type: 'warning' }
   )
-  const res = await toggleBlindBoxOpenable(id)
+  const res = await setBlindBoxOpenable(id, val)
   if (res.code === 0) {
-    detail.value.isOpenable = res.data
-    ElMessage.success(res.data === 1 ? '已允许开启' : '已暂停开启')
+    detail.value.isOpenable = val
+    ElMessage.success(val ? '已允许开启' : '已暂停开启')
   }
 }
 
@@ -269,13 +269,13 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
             </div>
             <div class="adm-kv">
               <span class="k">允许开启</span>
-              <el-switch :model-value="detail.isOpenable === 1" size="small" @change="onToggleOpen" />
+              <el-switch :model-value="!!detail.isOpenable" size="small" @change="onToggleOpen" />
             </div>
             <div class="adm-kv">
               <span class="k">转赠 / 寄售开关</span>
               <span class="v">
                 {{ detail.isTransferable ? '转赠已开启' : '转赠已关闭' }} ·
-                {{ detail.isResaleable ? `寄售已开启（${detail.resalePriceMode === 'limit' ? `限价 ¥${detail.resalePriceMin}-¥${detail.resalePriceMax}` : '不限价'}）` : '寄售已关闭' }}
+                {{ detail.isResaleable ? `寄售已开启（${detail.resalePriceMode === 1 ? `固定价 ¥${detail.resalePriceMin}` : detail.resalePriceMode === 2 ? `限价 ¥${detail.resalePriceMin}-¥${detail.resalePriceMax}` : '不限价'}）` : '寄售已关闭' }}
               </span>
             </div>
           </div>

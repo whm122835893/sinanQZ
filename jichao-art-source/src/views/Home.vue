@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
 import { useIconThemeStore } from '@/stores/iconTheme'
+import { useSiteStore } from '@/stores/site'
 import { useLoginGate } from '@/utils/loginGate'
 import AppButton from '@/components/AppButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -12,6 +13,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
 const iconTheme = useIconThemeStore()
+const site = useSiteStore()
 const { requireLogin } = useLoginGate()
 const featured = store.featured
 
@@ -222,10 +224,11 @@ function onSign() {
 
     </section>
 
-    <!-- 品牌卡片 -->
+    <!-- 品牌卡片（站点装修配置：头像 + 名称动态化） -->
     <div class="brand-card">
-      <img class="brand-card__logo" src="/images/brand-logo.png" alt="" draggable="false" @contextmenu.prevent />
-      <img class="brand-card__text" src="/images/brand-text-xiaozhuan.png" alt="千年司南｜一器载道" draggable="false" @contextmenu.prevent />
+      <img class="brand-card__logo" :src="site.siteAvatar || site.siteLogo || '/images/brand-logo.png'" alt="" draggable="false" @contextmenu.prevent />
+      <img v-if="!site.siteName" class="brand-card__text" src="/images/brand-text-xiaozhuan.png" alt="千年司南｜一器载道" draggable="false" @contextmenu.prevent />
+      <div v-else class="brand-card__name calligraphy">{{ site.siteName }}</div>
     </div>
 
     <!-- 公告流动区 -->
@@ -438,6 +441,17 @@ function onSign() {
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
     -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+  }
+  &__name {
+    position: relative;
+    z-index: 1;
+    margin: 4px auto 0;
+    height: 19px;
+    line-height: 19px;
+    font-size: 14px;
+    letter-spacing: 4px;
+    color: $color-dark;
+    -webkit-user-drag: none; user-select: none;
   }
 }
 

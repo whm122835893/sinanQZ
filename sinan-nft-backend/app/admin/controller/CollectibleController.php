@@ -61,6 +61,8 @@ class CollectibleController extends BaseController
                                c.price, c.edition, c.circulate, c.sold, c.locked_quantity,
                                c.airdropped_count, c.destroyed_count, c.reserved_count,
                                c.status, c.is_release, c.featured, c.onsale_at, c.off_sale_at, c.created_at,
+                               c.is_transferable, c.is_resaleable,
+                               c.resale_price_mode, c.resale_price_min, c.resale_price_max,
                                (bb.id IS NOT NULL) AS is_blind_box')
             ->join('categories cat', 'cat.id = c.category_id', 'LEFT')
             ->join('blind_boxes bb', 'bb.collectible_id = c.id', 'LEFT')
@@ -110,6 +112,17 @@ class CollectibleController extends BaseController
         $destroys = Db::name('destroy_records')->where('target_type', 1)->where('target_id', $id)->order('id', 'desc')->limit(20)->select()->toArray();
         $qual = Db::name('qualification_configs')->where('collectible_id', $id)->find();
 
+        // 持有人 TOP5（活跃持仓：持有/寄售中/冻结）
+        $holders = Db::name('user_collectibles')->alias('uc')
+            ->field('uc.user_id, IFNULL(NULLIF(u.username, \'\'), CONCAT(\'用户\', uc.user_id)) AS nickname, COUNT(*) AS quantity, MIN(uc.serial) AS serial')
+            ->join('users u', 'u.id = uc.user_id', 'LEFT')
+            ->where('uc.collectible_id', $id)
+            ->whereIn('uc.status', ['held', 'consigned', 'frozen'])
+            ->group('uc.user_id, nickname')
+            ->order('quantity', 'desc')
+            ->limit(5)
+            ->select()->toArray();
+
         $audit = $this->auditCollectible($id);
 
         $data = camelize_keys($c);
@@ -118,6 +131,7 @@ class CollectibleController extends BaseController
         $data['quotas']      = camelize_keys($quotas);
         $data['destroyRecords'] = camelize_keys($destroys);
         $data['qualification']  = $qual ? camelize_keys($qual) : null;
+        $data['holders']        = $holders;
         $data['inventoryAudit'] = $audit;
 
         $this->audit('collectible', 'view_detail', '查看藏品详情「' . $c['name'] . '」', [], 'collectible', $id);
@@ -243,6 +257,8 @@ class CollectibleController extends BaseController
             'chain_type'     => mb_substr(trim((string) $this->request->param('chain_type', '')), 0, 20) ?: null,
             'token_standard' => mb_substr(trim((string) $this->request->param('token_standard', '')), 0, 20) ?: null,
             'release_date'   => $this->optionalDate('release_date'),
+            'is_scheduled'   => (int) $this->request->param('is_scheduled', 0) === 1 ? 1 : 0,
+            'schedule_time'  => $this->optionalDate('schedule_time'),
             'tag'            => mb_substr(trim((string) $this->request->param('tag', '')), 0, 50) ?: null,
             'featured'       => (int) $this->request->param('featured', 0) === 1 ? 1 : 0,
             'description'    => (string) $this->request->param('description', '') ?: null,
@@ -320,6 +336,8 @@ class CollectibleController extends BaseController
             'chain_type' => fn ($v) => trim((string) $v),
             'token_standard' => fn ($v) => trim((string) $v),
             'release_date' => fn ($v) => $v,
+            'is_scheduled' => fn ($v) => (int) $v === 1 ? 1 : 0,
+            'schedule_time' => fn ($v) => $v,
             'tag' => fn ($v) => trim((string) $v),
             'featured' => fn ($v) => (int) $v === 1 ? 1 : 0,
             'description' => fn ($v) => (string) $v,
@@ -756,8 +774,8 @@ class CollectibleController extends BaseController
     }
 
     /**
-     * POST /admin/collectible/market-config { id, is_resaleable, resale_price_mode, resale_price_min?, resale_price_max? }
-     * 寄售开关与价格管控
+     * POST /admin/collectible/market-config { id, is_transferable?, is_resaleable?, resale_price_mode?, resale_price_min?, resale_price_max? }
+     * 转赠/寄售开关与价格管控（藏品创建后于列表/详情页配置）
      */
     public function marketConfig()
     {
@@ -771,6 +789,9 @@ class CollectibleController extends BaseController
         }
 
         $update = [];
+        if ($this->request->param('is_transferable') !== null) {
+            $update['is_transferable'] = (int) $this->request->param('is_transferable') === 1 ? 1 : 0;
+        }
         if ($this->request->param('is_resaleable') !== null) {
             $update['is_resaleable'] = (int) $this->request->param('is_resaleable') === 1 ? 1 : 0;
         }
@@ -860,7 +881,7 @@ class CollectibleController extends BaseController
         }
 
         $rows = Db::name('qualification_whitelists')->alias('w')
-            ->field('w.*, u.uid, u.username, u.nickname')
+            ->field('w.*, u.uid, u.username')
             ->join('users u', 'u.id = w.user_id', 'LEFT')
             ->where('w.config_id', $configId)
             ->order('w.id', 'desc')
@@ -870,7 +891,7 @@ class CollectibleController extends BaseController
             return [
                 'id'        => (int) $row['id'],
                 'userId'    => (int) $row['user_id'],
-                'nickname'  => $row['nickname'] ?: $row['username'] ?: ('用户' . $row['user_id']),
+                'nickname'  => $row['username'] ?: ('用户' . $row['user_id']),
                 'phone'     => $row['phone'],
                 'expiresAt' => $row['expires_at'],
                 'createdAt' => $row['created_at'],

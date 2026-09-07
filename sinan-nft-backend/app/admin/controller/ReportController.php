@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
+use app\admin\traits\ExcelExport;
 use think\facade\Db;
 
 /**
@@ -20,6 +21,7 @@ use think\facade\Db;
  */
 class ReportController extends BaseController
 {
+    use ExcelExport;
     /**
      * GET /admin/reports/sales
      */
@@ -446,5 +448,156 @@ class ReportController extends BaseController
     private function isMonthly(string $start, string $end): bool
     {
         return (strtotime($end) - strtotime($start)) > 92 * 86400;
+    }
+
+    // ============================================================
+    // Excel 导出 —— 直接调用对应的 report 方法取原始数据，再格式化
+    // ============================================================
+
+    public function exportSales()
+    {
+        $json = json_decode(json_encode($this->sales()->getData(true)), true);
+        $data = $json['data'] ?? [];
+
+        $trendRows = array_map(fn ($r) => [
+            $r['stat_date'], $r['order_count'], round((float) $r['gmv'], 2), $r['quantity']
+        ], $data['trend'] ?? []);
+
+        $sourceMap = [1 => '发售', 2 => '市场寄售', 3 => '优先购', 4 => '资格购'];
+        $sourceRows = array_map(fn ($r) => [
+            $sourceMap[$r['source']] ?? '来源' . $r['source'], $r['order_count'], round((float) $r['gmv'], 2)
+        ], $data['sources'] ?? []);
+
+        $payRows = array_map(fn ($r) => [
+            $r['payment_method'], $r['pay_count'], round((float) $r['amount'], 2)
+        ], $data['payments'] ?? []);
+
+        $topRows = array_map(fn ($r) => [
+            $r['name'], $r['order_count'], round((float) $r['gmv'], 2), $r['quantity']
+        ], $data['topCollectibles'] ?? []);
+
+        return $this->excelExport('销售报表_' . date('Ymd_His'), [
+            ['sheet' => '汇总', 'headers' => ['区间', '订单总数', 'GMV', '件数', '买家数', '客单价'], 'rows' => [[
+                ($data['range']['start'] ?? '') . ' ~ ' . ($data['range']['end'] ?? ''),
+                $data['summary']['orderTotal'] ?? 0,
+                $data['summary']['gmvTotal'] ?? 0,
+                $data['summary']['quantityTotal'] ?? 0,
+                $data['summary']['buyerCount'] ?? 0,
+                $data['summary']['avgOrderAmount'] ?? 0,
+            ]]],
+            ['sheet' => '趋势', 'headers' => ['日期', '订单量', 'GMV', '件数'], 'rows' => $trendRows],
+            ['sheet' => '来源分布', 'headers' => ['来源', '订单量', 'GMV'], 'rows' => $sourceRows],
+            ['sheet' => '支付方式', 'headers' => ['支付方式', '笔数', '金额'], 'rows' => $payRows],
+            ['sheet' => 'TOP藏品', 'headers' => ['藏品', '订单数', 'GMV', '件数'], 'rows' => $topRows],
+        ]);
+    }
+
+    public function exportUsers()
+    {
+        $json = json_decode(json_encode($this->users()->getData(true)), true);
+        $data = $json['data'] ?? [];
+
+        $regRows = array_map(fn ($r) => [$r['stat_date'], $r['reg_count']], $data['regTrend'] ?? []);
+        $holdingRows = array_map(fn ($b) => [$b['label'], $b['count']], $data['holdingBuckets'] ?? []);
+        $topInvRows = array_map(fn ($r) => [$r['username'] ?? $r['uid'] ?? '', $r['invite_count']], $data['topInviters'] ?? []);
+
+        return $this->excelExport('用户报表_' . date('Ymd_His'), [
+            ['sheet' => '汇总', 'headers' => ['区间', '总用户', '实名用户', '实名率', '冻结', '黑名单', '区间新增', '持仓用户'], 'rows' => [[
+                ($data['range']['start'] ?? '') . ' ~ ' . ($data['range']['end'] ?? ''),
+                $data['summary']['total'] ?? 0,
+                $data['summary']['realname'] ?? 0,
+                ($data['summary']['realnameRate'] ?? 0) . '%',
+                $data['summary']['frozen'] ?? 0,
+                $data['summary']['blacklisted'] ?? 0,
+                $data['summary']['newInRange'] ?? 0,
+                $data['summary']['holdingUsers'] ?? 0,
+            ]]],
+            ['sheet' => '注册趋势', 'headers' => ['日期', '注册数'], 'rows' => $regRows],
+            ['sheet' => '持仓分层', 'headers' => ['层级', '人数'], 'rows' => $holdingRows],
+            ['sheet' => '邀请TOP', 'headers' => ['邀请人', '邀请数'], 'rows' => $topInvRows],
+        ]);
+    }
+
+    public function exportCollectibles()
+    {
+        $json = json_decode(json_encode($this->collectibles()->getData(true)), true);
+        $data = $json['data'] ?? [];
+
+        $catRows = array_map(fn ($r) => [$r['category_name'], $r['cnt'], $r['sold_total'], $r['circulate_total']], $data['categories'] ?? []);
+        $issueRows = array_map(fn ($r) => [$r['stat_date'], $r['new_count'], $r['edition_total']], $data['issueTrend'] ?? []);
+        $topCircRows = array_map(fn ($r) => [$r['name'], $r['edition'], $r['sold'], $r['circulate'], $r['destroyed_count'], $r['airdropped_count']], $data['topCirculate'] ?? []);
+
+        return $this->excelExport('藏品报表_' . date('Ymd_His'), [
+            ['sheet' => '总览', 'headers' => ['区间', '总藏品', '在售中', '已售罄', '已下架', '盲盒数量', '寄售中', '寄售GMV', '已成交GMV', '平台手续费'], 'rows' => [[
+                ($data['range']['start'] ?? '') . ' ~ ' . ($data['range']['end'] ?? ''),
+                $data['summary']['total'] ?? 0,
+                $data['summary']['onsale'] ?? 0,
+                $data['summary']['soldout'] ?? 0,
+                $data['summary']['delisted'] ?? 0,
+                $data['summary']['isBlindbox'] ?? 0,
+                $data['market']['selling'] ?? 0,
+                $data['market']['sellingAmount'] ?? 0,
+                $data['market']['soldAmount'] ?? 0,
+                $data['market']['feeAmount'] ?? 0,
+            ]]],
+            ['sheet' => '分类分布', 'headers' => ['分类', '藏品数', '累计售出', '累计流通'], 'rows' => $catRows],
+            ['sheet' => '发售趋势', 'headers' => ['日期', '新增', '发行总量'], 'rows' => $issueRows],
+            ['sheet' => 'TOP流通', 'headers' => ['藏品', '发行量', '已售', '流通量', '销毁', '空投'], 'rows' => $topCircRows],
+        ]);
+    }
+
+    public function exportBlindbox()
+    {
+        $json = json_decode(json_encode($this->blindbox()->getData(true)), true);
+        $data = $json['data'] ?? [];
+
+        $openRows = array_map(fn ($r) => [$r['stat_date'], $r['open_count']], $data['openTrend'] ?? []);
+        $prizeRows = array_map(fn ($r) => [$r['prize_name'], $r['distributed_total'], $r['limit_total']], $data['prizes'] ?? []);
+        $rankingRows = array_map(fn ($r) => [$r['name'], $r['opened_count'], $r['price'], $r['prize_count']], $data['boxRanking'] ?? []);
+
+        return $this->excelExport('盲盒报表_' . date('Ymd_His'), [
+            ['sheet' => '汇总', 'headers' => ['区间', '盲盒总数', '累计开盒', '奖品总数'], 'rows' => [[
+                ($data['range']['start'] ?? '') . ' ~ ' . ($data['range']['end'] ?? ''),
+                $data['summary']['total'] ?? 0,
+                $data['summary']['openedTotal'] ?? 0,
+                ($data['summary']['prizeTotal'] ?? ''),
+            ]]],
+            ['sheet' => '开盒趋势', 'headers' => ['日期', '开盒数'], 'rows' => $openRows],
+            ['sheet' => '奖池分布', 'headers' => ['奖品', '已发放', '限量'], 'rows' => $prizeRows],
+            ['sheet' => '盲盒排行', 'headers' => ['盲盒', '开盒数', '价格', '奖品数'], 'rows' => $rankingRows],
+        ]);
+    }
+
+    public function exportFinance()
+    {
+        $json = json_decode(json_encode($this->finance()->getData(true)), true);
+        $data = $json['data'] ?? [];
+
+        $ledgerRows = [[
+            $data['ledger']['rechargeIn'] ?? 0,
+            $data['ledger']['rewardIn'] ?? 0,
+            $data['ledger']['buyOut'] ?? 0,
+            $data['ledger']['withdrawOut'] ?? 0,
+            $data['ledger']['refundAmount'] ?? 0,
+            $data['ledger']['feeIncome'] ?? 0,
+        ]];
+
+        $channelRows = array_map(fn ($r) => [
+            $r['payment_method'] ?? $r['method'] ?? '', $r['payCount'] ?? 0, $r['amountTotal'] ?? 0,
+            $r['refundCount'] ?? 0, $r['refundAmount'] ?? 0, $r['netAmount'] ?? 0,
+        ], $data['channels'] ?? []);
+
+        $balanceRows = [[
+            $data['balanceSnapshot']['balanceTotal'] ?? 0,
+            $data['balanceSnapshot']['availableTotal'] ?? 0,
+            $data['balanceSnapshot']['frozenTotal'] ?? 0,
+            $data['balanceSnapshot']['walletCount'] ?? 0,
+        ]];
+
+        return $this->excelExport('财务报表_' . date('Ymd_His'), [
+            ['sheet' => '资金总账', 'headers' => ['充值入账', '奖励入账', '购买支出', '提现支出', '退款总额', '手续费收入'], 'rows' => $ledgerRows],
+            ['sheet' => '渠道对账', 'headers' => ['支付方式', '支付笔数', '支付金额', '退款笔数', '退款金额', '净额'], 'rows' => $channelRows],
+            ['sheet' => '余额快照', 'headers' => ['总余额', '可用余额', '冻结余额', '钱包数'], 'rows' => $balanceRows],
+        ]);
     }
 }

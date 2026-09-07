@@ -45,6 +45,8 @@ class BlindBoxController extends BaseController
         $rows = $query->field('bb.id, bb.collectible_id, c.name, c.image, c.price, c.edition, c.sold,
                                c.locked_quantity, c.airdropped_count, c.destroyed_count, c.status,
                                c.onsale_at, bb.is_openable, bb.opened_count, c.created_at,
+                               c.is_transferable, c.is_resaleable,
+                               c.resale_price_mode, c.resale_price_min, c.resale_price_max,
                                (SELECT COUNT(*) FROM nft_blind_box_items x WHERE x.blind_box_id = bb.id AND x.deleted_at IS NULL) AS item_count,
                                (SELECT SUM(x.probability) FROM nft_blind_box_items x WHERE x.blind_box_id = bb.id AND x.deleted_at IS NULL) AS probability_sum')
             ->order('bb.id', 'desc')
@@ -70,6 +72,8 @@ class BlindBoxController extends BaseController
         $bb = Db::name('blind_boxes')->alias('bb')
             ->field('bb.*, c.name, c.image, c.price, c.edition, c.sold, c.locked_quantity,
                      c.airdropped_count, c.destroyed_count, c.status, c.onsale_at, c.off_sale_at,
+                     c.is_transferable, c.is_resaleable,
+                     c.resale_price_mode, c.resale_price_min, c.resale_price_max,
                      cat.name AS category_name')
             ->join('collectibles c', 'c.id = bb.collectible_id')
             ->join('categories cat', 'cat.id = c.category_id', 'LEFT')
@@ -156,7 +160,7 @@ class BlindBoxController extends BaseController
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
-            // 1. 盲盒资产（collectibles 记录）
+            // 1. 盲盒资产（collectibles 记录；转赠/寄售默认关闭，创建后由管理员在列表/详情中按需开启，与藏品一致）
             $collectibleId = (int) Db::name('collectibles')->insertGetId([
                 'category_id'    => (int) $this->request->param('category_id'),
                 'name'          => trim((string) $this->request->param('name')),
@@ -168,6 +172,8 @@ class BlindBoxController extends BaseController
                 'status'        => 'upcoming',
                 'tag'           => 'blindbox',
                 'description'   => (string) $this->request->param('description', '') ?: null,
+                'is_transferable' => 0,
+                'is_resaleable'  => 0,
                 'created_at'    => $now,
                 'updated_at'    => $now,
             ]);

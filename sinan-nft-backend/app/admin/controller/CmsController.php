@@ -180,6 +180,11 @@ class CmsController extends BaseController
         if ($type !== null) {
             $query->where('type', $type);
         }
+        // 状态筛选：draft 草稿 / published 已发布（含定时待生效）
+        $status = $this->enumParam('status', ['draft', 'published']);
+        if ($status !== null) {
+            $query->where('status', $status);
+        }
         $keyword = trim((string) $this->request->param('keyword', ''));
         if ($keyword !== '') {
             $query->whereLike('title', '%' . $keyword . '%');
@@ -218,6 +223,10 @@ class CmsController extends BaseController
         }
 
         $now = date('Y-m-d H:i:s');
+        $publishTime = $this->publishTimeParam();
+        if ($publishTime === false) {
+            return $this->fail(4220, '定时发布时间格式须为 Y-m-d H:i:s');
+        }
         $id = (int) Db::name('announcements')->insertGetId([
             'title'       => $title,
             'summary'     => $this->request->param('summary') !== null
@@ -229,13 +238,15 @@ class CmsController extends BaseController
             'subtype'     => $this->enumParam('subtype', ['activity', 'compose', 'operation']),
             'tag_color'   => $this->request->param('tag_color') !== null
                 ? mb_substr(trim((string) $this->request->param('tag_color')), 0, 20) : null,
+            'status'      => $this->enumParam('status', ['draft', 'published']) ?? 'draft',
+            'publish_time' => $publishTime,
             'is_top'      => (int) $this->request->param('is_top', 0) === 1 ? 1 : 0,
             'created_at'  => $now,
             'updated_at'  => $now,
         ]);
 
         $this->audit('cms', 'announcement_create', '发布公告「' . $title . '」', ['type' => $type], 'announcement', $id);
-        return $this->success(['id' => $id], '公告已发布');
+        return $this->success(['id' => $id], '公告已保存');
     }
 
     /**
@@ -283,6 +294,16 @@ class CmsController extends BaseController
         }
         if ($this->request->param('tag_color') !== null) {
             $update['tag_color'] = mb_substr(trim((string) $this->request->param('tag_color')), 0, 20);
+        }
+        if ($this->request->param('status') !== null) {
+            $update['status'] = $this->enumParam('status', ['draft', 'published']) ?? 'draft';
+        }
+        if ($this->request->param('publish_time') !== null) {
+            $publishTime = $this->publishTimeParam();
+            if ($publishTime === false) {
+                return $this->fail(4220, '定时发布时间格式须为 Y-m-d H:i:s');
+            }
+            $update['publish_time'] = $publishTime;
         }
         if ($this->request->param('is_top') !== null) {
             $update['is_top'] = (int) $this->request->param('is_top') === 1 ? 1 : 0;
@@ -447,6 +468,11 @@ class CmsController extends BaseController
         if ($dynasty !== '') {
             $query->where('dynasty', $dynasty);
         }
+        // 展示状态筛选：1展示中 0已隐藏
+        $status = $this->request->param('status');
+        if ($status !== null && $status !== '') {
+            $query->where('status', (int) $status === 1 ? 1 : 0);
+        }
 
         $total = (clone $query)->count();
         $items = $query->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
@@ -459,23 +485,28 @@ class CmsController extends BaseController
      */
     public function artifactCreate()
     {
-        $missing = $this->missingParams(['name', 'dynasty', 'image', 'material', 'period', 'story']);
+        // period/story 可选：管理端简表未填时，period 缺省取朝代、story 缺省空串
+        $missing = $this->missingParams(['name', 'dynasty', 'image', 'material']);
         if ($missing) {
             return $this->failMissing($missing);
         }
 
+        $name    = mb_substr(trim((string) $this->request->param('name')), 0, 100);
+        $dynasty = mb_substr(trim((string) $this->request->param('dynasty')), 0, 50);
+
         $data = [
-            'name'       => mb_substr(trim((string) $this->request->param('name')), 0, 100),
-            'dynasty'    => mb_substr(trim((string) $this->request->param('dynasty')), 0, 50),
+            'name'       => $name,
+            'dynasty'    => $dynasty,
             'image'      => mb_substr(trim((string) $this->request->param('image')), 0, 255),
             'img_height' => max(50, min(2000, (int) $this->request->param('img_height', 150))),
             'material'   => mb_substr(trim((string) $this->request->param('material')), 0, 50),
-            'period'     => mb_substr(trim((string) $this->request->param('period')), 0, 100),
+            'period'     => $this->optStr('period', 100) ?? $dynasty,
             'size'       => $this->optStr('size', 100),
             'origin'     => $this->optStr('origin', 100),
             'museum'     => $this->optStr('museum', 100),
             'level'      => $this->optStr('level', 20),
-            'story'      => (string) $this->request->param('story'),
+            'story'      => (string) ($this->request->param('story') ?? ''),
+            'status'     => (int) $this->request->param('status', 1) === 0 ? 0 : 1,
         ];
 
         foreach (['specs', 'tags'] as $jsonField) {
@@ -529,6 +560,9 @@ class CmsController extends BaseController
         if ($this->request->param('story') !== null && $this->request->param('story') !== '') {
             $update['story'] = (string) $this->request->param('story');
         }
+        if ($this->request->param('status') !== null) {
+            $update['status'] = (int) $this->request->param('status') === 1 ? 1 : 0;
+        }
         if ($this->request->param('img_height') !== null) {
             $update['img_height'] = max(50, min(2000, (int) $this->request->param('img_height')));
         }
@@ -580,6 +614,7 @@ class CmsController extends BaseController
     private const DECORATION_KEYS = [
         'site_name'       => ['basic', '站点名称'],
         'site_logo'       => ['basic', '站点 Logo'],
+        'site_avatar'     => ['basic', '平台头像'],
         'theme_color'     => ['theme', '主题色'],
         'bg_color'        => ['theme', '背景色'],
         'button_color'    => ['button', '按钮色'],
@@ -588,6 +623,27 @@ class CmsController extends BaseController
         'seo_description' => ['seo', 'SEO 描述'],
         'seo_keywords'    => ['seo', 'SEO 关键词'],
     ];
+
+    /** 颜色类配置键（HEX 校验） */
+    private const COLOR_KEYS = ['theme_color', 'bg_color', 'button_color'];
+
+    /**
+     * GET /admin/site-brand（公开）
+     * 管理后台登录页/侧边栏品牌展示：站点名 + 头像（C 端装修配置同步）
+     */
+    public function siteBrand()
+    {
+        $rows = Db::name('site_settings')
+            ->whereIn('setting_key', ['site_name', 'site_logo', 'site_avatar', 'theme_color'])
+            ->column('setting_value', 'setting_key');
+
+        return $this->success([
+            'siteName'   => $rows['site_name'] ?? '司南珍藏',
+            'siteLogo'   => $rows['site_logo'] ?? '',
+            'siteAvatar' => $rows['site_avatar'] ?? '',
+            'themeColor' => $rows['theme_color'] ?? '',
+        ]);
+    }
 
     /**
      * GET /admin/cms/decoration
@@ -629,6 +685,18 @@ class CmsController extends BaseController
                 continue; // 静默跳过非白名单键（严谨：不报错也不落库未知键）
             }
             $value = mb_substr(trim((string) $value), 0, 5000);
+
+            // 颜色键校验：空值放行（沿用默认），非空必须为合法 HEX 颜色
+            if (in_array($key, self::COLOR_KEYS, true)) {
+                if ($value !== '' && !preg_match('/^#[0-9A-Fa-f]{6}$/', $value)) {
+                    return $this->fail(4220, self::DECORATION_KEYS[$key][1] . ' 需为 #RRGGBB 格式的颜色值');
+                }
+            }
+            // 按钮圆角：0~24px
+            if ($key === 'button_radius' && $value !== '' && (!ctype_digit($value) || (int) $value > 24)) {
+                return $this->fail(4220, '按钮圆角需为 0~24 的整数');
+            }
+
             $exists = Db::name('site_settings')->where('setting_key', $key)->find();
             if ($exists) {
                 Db::name('site_settings')->where('setting_key', $key)->update([
@@ -807,5 +875,21 @@ class CmsController extends BaseController
         $html = preg_replace('#\son\w+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $html) ?? $html;
         $html = preg_replace('#(href|src)\s*=\s*(["\']?)\s*javascript:[^"\'>\s]*\2#i', '$1=$2$2', $html) ?? $html;
         return $html;
+    }
+
+    /**
+     * 定时发布时间参数：空字符串 → NULL（立即生效）；格式错误返回 false（由调用方 fail）
+     */
+    private function publishTimeParam()
+    {
+        $raw = trim((string) $this->request->param('publish_time', ''));
+        if ($raw === '') {
+            return null;
+        }
+        $d = \DateTime::createFromFormat('Y-m-d H:i:s', $raw);
+        if (!$d || $d->format('Y-m-d H:i:s') !== $raw) {
+            return false;
+        }
+        return $raw;
     }
 }

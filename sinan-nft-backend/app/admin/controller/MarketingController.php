@@ -3,13 +3,15 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
+use app\service\ActivityRewardService;
+use app\service\RewardGrantService;
 use think\facade\Db;
 
 /**
  * 管理后台营销活动控制器
  *
  * 覆盖：优先购活动与白名单、签到奖励配置、邀请活动、抽奖活动与奖项、
- * 合成活动与素材、活动空投发放、注册福利配置。
+ * 合成活动与素材、活动空投发放、注册活动（实名前N名档位）、奖励名单导出与统一发放。
  */
 class MarketingController extends BaseController
 {
@@ -126,11 +128,14 @@ class MarketingController extends BaseController
     // ==================== 签到配置 ====================
 
     /** 签到活动配置键（system_configs） */
-    private const CHECKIN_KEYS = ['checkin_enabled', 'checkin_activity_name', 'checkin_start_time', 'checkin_end_time'];
+    private const CHECKIN_KEYS = [
+        'checkin_enabled', 'checkin_activity_name', 'checkin_start_time', 'checkin_end_time',
+        'checkin_eligibility_type', 'checkin_eligibility_config', 'checkin_grant_mode',
+    ];
 
     /**
      * GET /admin/marketing/checkin
-     * 返回：活动开关/名称/起止时间 + 奖励规则 + 今日签到统计
+     * 返回：活动开关/名称/起止时间 + 奖励规则（旧版司南币 + 新版六类奖励）+ 参与资格 + 发放方式 + 今日签到统计
      */
     public function checkinConfig()
     {
@@ -140,6 +145,13 @@ class MarketingController extends BaseController
 
         $rewards = Db::name('system_configs')->where('config_key', 'checkin_rewards')->value('config_value');
         $rewards = $rewards ? json_decode((string) $rewards, true) : [];
+
+        // 新版奖励配置：{day: [rewards...]}（六类奖励，覆盖旧版纯司南币）
+        $rewardConfig = Db::name('system_configs')->where('config_key', 'checkin_reward_config')->value('config_value');
+        $rewardConfig = $rewardConfig ? json_decode((string) $rewardConfig, true) : [];
+
+        $eligibilityConfig = (string) ($configs['checkin_eligibility_config'] ?? '');
+        $eligibilityConfig = $eligibilityConfig ? json_decode($eligibilityConfig, true) : new \stdClass();
 
         $stats = Db::name('check_in_records')->field("DATE(created_at) AS d, COUNT(*) AS cnt")
             ->where('created_at', '>=', date('Y-m-d 00:00:00', strtotime('-29 days')))
@@ -152,6 +164,10 @@ class MarketingController extends BaseController
             'startTime'   => (string) ($configs['checkin_start_time'] ?? ''),
             'endTime'     => (string) ($configs['checkin_end_time'] ?? ''),
             'rewards'     => $rewards ?: new \stdClass(),
+            'rewardConfig' => $rewardConfig ?: new \stdClass(),
+            'eligibilityType'  => (string) ($configs['checkin_eligibility_type'] ?? 'all'),
+            'eligibilityConfig' => $eligibilityConfig,
+            'grantMode'   => (string) ($configs['checkin_grant_mode'] ?? 'realtime'),
             'todayCount'  => $todayCount,
             'trend'       => array_column($stats, 'cnt', 'd'),
         ]);
@@ -159,9 +175,11 @@ class MarketingController extends BaseController
 
     /**
      * POST /admin/marketing/checkin
-     * 支持两种提交：
-     *   1) { rewards: {1:5,...} }             —— 仅更新奖励规则（兼容旧版）
-     *   2) { enabled?, name?, start_time?, end_time?, rewards? } —— 活动信息 + 规则
+     * 支持提交：
+     *   { enabled?, name?, start_time?, end_time?,
+     *     rewards?: {1:5,...}（旧版司南币）,
+     *     reward_config?: {1:[{type,...}], 7:[{type,...}]}（新版六类奖励，覆盖旧版）,
+     *     eligibility_type?, eligibility_config?, grant_mode? }
      */
     public function checkinSave()
     {
@@ -171,8 +189,7 @@ class MarketingController extends BaseController
         // ---- 活动信息（enabled / name / start_time / end_time）----
         if ($this->request->has('enabled')) {
             $enabled = (int) $this->request->param('enabled') === 1 ? 1 : 0;
-            Db::name('system_configs')->where('config_key', 'checkin_enabled')
-                ->update(['config_value' => (string) $enabled, 'updated_at' => $now]);
+            $this->upsertConfig('checkin_enabled', (string) $enabled);
             $changed['enabled'] = $enabled === 1;
         }
         if ($this->request->has('name')) {
@@ -180,8 +197,7 @@ class MarketingController extends BaseController
             if ($name === '') {
                 return $this->fail(4220, '签到活动名称不能为空');
             }
-            Db::name('system_configs')->where('config_key', 'checkin_activity_name')
-                ->update(['config_value' => $name, 'updated_at' => $now]);
+            $this->upsertConfig('checkin_activity_name', $name);
             $changed['name'] = $name;
         }
         foreach (['start_time' => 'checkin_start_time', 'end_time' => 'checkin_end_time'] as $param => $key) {
@@ -193,15 +209,36 @@ class MarketingController extends BaseController
                 if ($val !== '') {
                     $val = date('Y-m-d H:i:s', strtotime($val));
                 }
-                Db::name('system_configs')->where('config_key', $key)
-                    ->update(['config_value' => $val, 'updated_at' => $now]);
+                $this->upsertConfig($key, $val);
                 $changed[$param] = $val;
             }
         }
 
-        // ---- 奖励规则 ----
+        // ---- 参与资格 / 发放方式 ----
+        if ($this->request->has('eligibility_type')) {
+            try {
+                $eligibilityConfig = $this->request->param('eligibility_config', []);
+                $eligibility = ActivityRewardService::validateEligibility(
+                    (string) $this->request->param('eligibility_type', 'all'),
+                    is_array($eligibilityConfig) ? $eligibilityConfig : []
+                );
+            } catch (\Throwable $e) {
+                return $this->fail(4220, $e->getMessage());
+            }
+            $this->upsertConfig('checkin_eligibility_type', $eligibility['type']);
+            $this->upsertConfig('checkin_eligibility_config', $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : '');
+            $changed['eligibility'] = $eligibility['type'];
+        }
+        if ($this->request->has('grant_mode')) {
+            $grantMode = in_array($this->request->param('grant_mode', 'realtime'), ['realtime', 'manual'], true)
+                ? (string) $this->request->param('grant_mode', 'realtime') : 'realtime';
+            $this->upsertConfig('checkin_grant_mode', $grantMode);
+            $changed['grant_mode'] = $grantMode;
+        }
+
+        // ---- 奖励规则（旧版：天数 → 司南币）----
         $rewards = $this->request->param('rewards');
-        if ($rewards !== null) {
+        if ($rewards !== null && $this->request->has('rewards') && !$this->request->has('reward_config')) {
             if (!is_array($rewards) || !$rewards) {
                 return $this->fail(4220, '请提供 rewards 配置（天数 → 奖励）');
             }
@@ -218,17 +255,53 @@ class MarketingController extends BaseController
                 $clean[$day] = $amount;
             }
             ksort($clean);
-            Db::name('system_configs')->where('config_key', 'checkin_rewards')
-                ->update(['config_value' => json_encode($clean), 'updated_at' => $now]);
+            $this->upsertConfig('checkin_rewards', json_encode($clean));
             $changed['rewards'] = $clean;
         }
 
-        if (!$changed) {
-            return $this->fail(4220, '无可保存内容（enabled/name/start_time/end_time/rewards 至少其一）');
+        // ---- 奖励规则（新版：天数 → 六类奖励列表）----
+        if ($this->request->has('reward_config')) {
+            $rewardConfig = $this->request->param('reward_config', []);
+            if (!is_array($rewardConfig)) {
+                return $this->fail(4220, 'reward_config 格式不合法（天数 → 奖励列表）');
+            }
+            $clean = [];
+            foreach ($rewardConfig as $day => $rewardsList) {
+                $day = (int) $day;
+                if ($day < 1 || $day > 7) {
+                    return $this->fail(4220, '连续签到天数仅支持 1~7');
+                }
+                if (!is_array($rewardsList) || !$rewardsList) {
+                    continue; // 该天无奖励
+                }
+                try {
+                    $clean[$day] = ActivityRewardService::normalizeRewards($rewardsList);
+                } catch (\Throwable $e) {
+                    return $this->fail(4220, "第 {$day} 天奖励配置错误：" . $e->getMessage());
+                }
+            }
+            ksort($clean);
+            $this->upsertConfig('checkin_reward_config', json_encode($clean, JSON_UNESCAPED_UNICODE));
+            $changed['reward_config'] = $clean;
         }
 
-        $this->audit('marketing', 'checkin_save', '更新签到活动配置', $changed);
+        if (!$changed) {
+            return $this->fail(4220, '无可保存内容（enabled/name/start_time/end_time/rewards/reward_config/eligibility/grant_mode 至少其一）');
+        }
+
+        $this->audit('marketing', 'checkin_save', '更新签到活动配置', array_keys($changed));
         return $this->success(null, '签到活动配置已保存');
+    }
+
+    /** system_configs upsert（键存在更新，不存在插入） */
+    private function upsertConfig(string $key, string $value): void
+    {
+        $now = date('Y-m-d H:i:s');
+        if (Db::name('system_configs')->where('config_key', $key)->find()) {
+            Db::name('system_configs')->where('config_key', $key)->update(['config_value' => $value, 'updated_at' => $now]);
+        } else {
+            Db::name('system_configs')->insert(['config_key' => $key, 'config_value' => $value, 'created_at' => $now, 'updated_at' => $now]);
+        }
     }
 
     // ==================== 邀请活动 ====================
@@ -250,7 +323,13 @@ class MarketingController extends BaseController
     }
 
     /**
-     * POST /admin/marketing/invite-save { id?, name, status, inviter_collectible_id?, inviter_quantity, invitee_collectible_id?, invitee_quantity, airdrop_mode, total_limit?, start_time?, end_time?, description? }
+     * POST /admin/marketing/invite-save
+     * { id?, name, status, start_time?, end_time?, total_limit?, description?,
+     *   tiers?: [{inviteCount:1-50, rewards:[{type,...}]}],
+     *   invitee_reward_config?: {type, ...},
+     *   invitee_conditions?: ['realname','wallet','checkin','consume'],
+     *   grant_mode?: realtime|manual,
+     *   —— 兼容旧字段：inviter_collectible_id?, inviter_quantity, invitee_collectible_id?, invitee_quantity, airdrop_mode }
      */
     public function inviteSave()
     {
@@ -264,17 +343,74 @@ class MarketingController extends BaseController
             return $this->fail(4220, 'status 仅允许 disabled/enabled');
         }
 
-        // 启用校验：必须配置至少一方空投
+        // ---- 新版：档位奖励（1-50人）+ 被邀请人奖励与完成条件 + 发放方式 ----
+        $tiers = $this->request->param('tiers', []);
+        $inviteeReward = $this->request->param('invitee_reward_config');
+        $inviteeConditions = $this->request->param('invitee_conditions', []);
+        $hasNewConfig = (is_array($tiers) && $tiers) || (is_array($inviteeReward) && $inviteeReward);
+
+        try {
+            $cleanTiers = [];
+            if (is_array($tiers) && $tiers) {
+                if (count($tiers) > 20) {
+                    throw new \Exception('邀请档位最多 20 档');
+                }
+                $seenCounts = [];
+                foreach ($tiers as $tier) {
+                    $inviteCount = (int) ($tier['inviteCount'] ?? 0);
+                    if ($inviteCount < 1 || $inviteCount > 50) {
+                        throw new \Exception('邀请档位人数需在 1~50');
+                    }
+                    if (isset($seenCounts[$inviteCount])) {
+                        throw new \Exception('邀请档位人数重复：' . $inviteCount);
+                    }
+                    $seenCounts[$inviteCount] = true;
+                    $rewards = (array) ($tier['rewards'] ?? []);
+                    if (!$rewards) {
+                        throw new \Exception('每档需至少配置一项奖励');
+                    }
+                    $cleanTiers[] = [
+                        'inviteCount' => $inviteCount,
+                        'rewards'     => ActivityRewardService::normalizeRewards($rewards),
+                    ];
+                }
+                usort($cleanTiers, fn ($a, $b) => $a['inviteCount'] <=> $b['inviteCount']);
+            }
+            $cleanInviteeReward = null;
+            if (is_array($inviteeReward) && !empty($inviteeReward['type'])) {
+                $cleanInviteeReward = RewardGrantService::validate((string) $inviteeReward['type'], $inviteeReward);
+            }
+            $cleanConditions = [];
+            if (is_array($inviteeConditions)) {
+                $cleanConditions = array_values(array_intersect(
+                    array_map('strval', $inviteeConditions),
+                    ActivityRewardService::INVITEE_CONDITIONS
+                ));
+            }
+        } catch (\Throwable $e) {
+            return $this->fail(4220, $e->getMessage());
+        }
+
+        // 启用校验：新版需档位或被邀请人奖励至少其一；旧版需至少一方空投藏品
         $inviterCid = $this->positiveInt('inviter_collectible_id');
         $inviteeCid = $this->positiveInt('invitee_collectible_id');
-        if ($status === 'enabled' && $inviterCid === null && $inviteeCid === null) {
-            return $this->fail(4220, '启用邀请活动需配置邀请人/被邀请人至少一方的空投藏品');
+        if ($status === 'enabled') {
+            if ($hasNewConfig) {
+                if (!$cleanTiers && !$cleanInviteeReward) {
+                    return $this->fail(4220, '启用邀请活动需配置邀请档位奖励或被邀请人奖励至少其一');
+                }
+            } elseif ($inviterCid === null && $inviteeCid === null) {
+                return $this->fail(4220, '启用邀请活动需配置邀请人/被邀请人至少一方的空投藏品');
+            }
         }
         foreach ([['inviter', $inviterCid], ['invitee', $inviteeCid]] as [$label, $cid]) {
             if ($cid !== null && !Db::name('collectibles')->where('id', $cid)->whereNull('deleted_at')->find()) {
                 return $this->fail(4220, $label . ' 空投藏品不存在');
             }
         }
+
+        $grantMode = in_array($this->request->param('grant_mode', 'realtime'), ['realtime', 'manual'], true)
+            ? (string) $this->request->param('grant_mode', 'realtime') : 'realtime';
 
         $now = date('Y-m-d H:i:s');
         $data = [
@@ -288,20 +424,33 @@ class MarketingController extends BaseController
             'invitee_quantity' => max(1, (int) $this->request->param('invitee_quantity', 1)),
             'airdrop_mode'  => in_array($this->request->param('airdrop_mode', 'realtime'), ['realtime', 'batch'], true)
                 ? (string) $this->request->param('airdrop_mode', 'realtime') : 'realtime',
+            'tiers'                 => $cleanTiers ? json_encode($cleanTiers, JSON_UNESCAPED_UNICODE) : null,
+            'invitee_reward_config' => $cleanInviteeReward ? json_encode($cleanInviteeReward, JSON_UNESCAPED_UNICODE) : null,
+            'invitee_conditions'    => $cleanConditions ? json_encode($cleanConditions, JSON_UNESCAPED_UNICODE) : null,
+            'grant_mode'    => $grantMode,
             'total_limit'   => $this->positiveInt('total_limit'),
             'description'   => (string) $this->request->param('description', '') ?: null,
             'updated_at'    => $now,
         ];
 
         $id = $this->positiveInt('id');
-        if ($id !== null) {
-            if (!Db::name('invite_activities')->where('id', $id)->find()) {
-                return $this->fail(4040, '邀请活动不存在');
+        Db::startTrans();
+        try {
+            if ($id !== null) {
+                if (!Db::name('invite_activities')->where('id', $id)->whereNull('deleted_at')->find()) {
+                    Db::rollback();
+                    return $this->fail(4040, '邀请活动不存在');
+                }
+                Db::name('invite_activities')->where('id', $id)->update($data);
+            } else {
+                $data['used_count'] = 0;
+                $data['created_at'] = $now;
+                $id = (int) Db::name('invite_activities')->insertGetId($data);
             }
-            Db::name('invite_activities')->where('id', $id)->update($data);
-        } else {
-            $data['created_at'] = $now;
-            $id = (int) Db::name('invite_activities')->insertGetId($data);
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '保存失败：' . $e->getMessage());
         }
 
         $this->audit('marketing', 'invite_save', '保存邀请活动「' . $name . '」', ['id' => $id], 'invite_activity', $id);
@@ -323,19 +472,23 @@ class MarketingController extends BaseController
             ->order('p.activity_id', 'asc')->order('p.sort_order', 'asc')
             ->select()->toArray();
 
-        // 活动实体表（名称/状态/时间）；兼容旧数据：无实体记录的活动兜底"第 N 期"且视为启用
+        // 活动实体表（名称/状态/时间/参与资格/发放方式）；兼容旧数据：无实体记录的活动兜底"第 N 期"且视为启用
         $actEntities = Db::name('lucky_draw_activities')->whereNull('deleted_at')
-            ->column('name,status,start_time,end_time', 'id');
+            ->column('name,status,start_time,end_time,eligibility_type,eligibility_config,grant_mode', 'id');
 
         // 无奖项但已有活动实体的（新建活动尚未配奖项）也需展示
         $activities = [];
         foreach ($actEntities as $actId => $ent) {
+            $eligibilityConfig = json_decode((string) ($ent['eligibility_config'] ?? ''), true);
             $activities[(int) $actId] = [
                 'activityId' => (int) $actId,
                 'name'       => (string) $ent['name'],
                 'status'     => (int) $ent['status'],
                 'startTime'  => $ent['start_time'],
                 'endTime'    => $ent['end_time'],
+                'eligibilityType'   => (string) ($ent['eligibility_type'] ?: 'all'),
+                'eligibilityConfig' => $eligibilityConfig ?: new \stdClass(),
+                'grantMode'  => (string) ($ent['grant_mode'] ?: 'realtime'),
                 'totalStock' => 0,
                 'totalWon'   => 0,
                 'probabilitySum' => 0.0,
@@ -382,7 +535,8 @@ class MarketingController extends BaseController
     }
 
     /**
-     * POST /admin/marketing/lucky-activity { id?, name, status, start_time?, end_time? }
+     * POST /admin/marketing/lucky-activity
+     * { id?, name, status, start_time?, end_time?, eligibility_type?, eligibility_config?, grant_mode? }
      * 新建/编辑抽奖活动（新建后通过 lucky-save 为该活动配置奖项）
      */
     public function luckyActivitySave()
@@ -405,6 +559,20 @@ class MarketingController extends BaseController
             return $this->fail(4220, '开始时间不能晚于结束时间');
         }
 
+        // 参与资格 / 发放方式
+        try {
+            $eligibilityType = (string) $this->request->param('eligibility_type', 'all');
+            $eligibilityConfig = $this->request->param('eligibility_config');
+            $eligibility = ActivityRewardService::validateEligibility(
+                $eligibilityType,
+                is_array($eligibilityConfig) ? $eligibilityConfig : []
+            );
+            $grantMode = in_array($this->request->param('grant_mode', 'realtime'), ['realtime', 'manual'], true)
+                ? (string) $this->request->param('grant_mode', 'realtime') : 'realtime';
+        } catch (\Throwable $e) {
+            return $this->fail(4220, $e->getMessage());
+        }
+
         // 停用/启用联动校验：启用需已配置奖项（概率合计为 1）
         $id = $this->positiveInt('id');
         if ($status === 1 && $id !== null) {
@@ -420,6 +588,9 @@ class MarketingController extends BaseController
             'status'     => $status,
             'start_time' => $startTime,
             'end_time'   => $endTime,
+            'eligibility_type'   => $eligibility['type'],
+            'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : null,
+            'grant_mode' => $grantMode,
             'updated_at' => $now,
         ];
 
@@ -448,8 +619,11 @@ class MarketingController extends BaseController
     }
 
     /**
-     * POST /admin/marketing/lucky-save { activity_id, prizes: [{id?, tier_name, prize_type, collectible_id?, coin_amount?, total, probability, sort_order?}] }
+     * POST /admin/marketing/lucky-save
+     * { activity_id, prizes: [{id?, tier_name, prize_name?, prize_image?, prize_type, collectible_id?, coin_amount?, reward_config?, total, probability, sort_order?}] }
      * 奖项整体覆盖式保存（概率合计必须为 1）
+     * prize_type：collectible/points/draw_chance/priority_qualification/eligibility_qualification/blindbox/none
+     * reward_config：非藏品类奖项的奖励配置（按类型：amount/quantity/prioritySaleId/collectibleId/blindboxId/expiresAt）
      */
     public function luckySave()
     {
@@ -467,25 +641,37 @@ class MarketingController extends BaseController
         }
 
         $probabilitySum = 0.0;
+        $validatedPrizes = [];
         foreach ($prizes as $prize) {
             $type = (string) ($prize['prize_type'] ?? 'collectible');
-            if (!in_array($type, ['collectible', 'points', 'none'], true)) {
-                return $this->fail(4220, 'prize_type 仅允许 collectible/points/none');
+            $allowedTypes = array_merge(RewardGrantService::TYPES, ['none']);
+            if (!in_array($type, $allowedTypes, true)) {
+                return $this->fail(4220, 'prize_type 仅允许：' . implode('/', $allowedTypes));
             }
-            if ($type === 'collectible') {
-                $cid = (int) ($prize['collectible_id'] ?? 0);
-                if ($cid <= 0 || !Db::name('collectibles')->where('id', $cid)->whereNull('deleted_at')->find()) {
-                    return $this->fail(4220, '奖品藏品不存在（ID ' . $cid . '）');
+            $rewardConfig = null;
+            if ($type !== 'none') {
+                try {
+                    // 藏品类奖项兼容旧参数 collectible_id；其余走 reward_config
+                    $cfg = is_array($prize['reward_config'] ?? null) ? $prize['reward_config'] : [];
+                    if ($type === 'collectible' && !empty($prize['collectible_id'])) {
+                        $cfg['collectibleId'] = (int) $prize['collectible_id'];
+                    }
+                    if ($type === 'points' && isset($prize['coin_amount'])) {
+                        $cfg['amount'] = (float) $prize['coin_amount'];
+                    }
+                    $cfg['quantity'] = (int) ($cfg['quantity'] ?? 1);
+                    $rewardConfig = RewardGrantService::validate($type, $cfg);
+                } catch (\Throwable $e) {
+                    return $this->fail(4220, '奖项「' . ($prize['tier_name'] ?? '') . '」配置错误：' . $e->getMessage());
                 }
-            }
-            if ($type === 'points' && (float) ($prize['coin_amount'] ?? 0) <= 0) {
-                return $this->fail(4220, '司南币奖项需配置 coin_amount');
             }
             $total = (int) ($prize['total'] ?? 0);
             if ($total < 1) {
                 return $this->fail(4220, '奖项库存需 ≥ 1');
             }
             $probabilitySum += (float) ($prize['probability'] ?? 0);
+            $prize['validated_reward'] = $rewardConfig;
+            $validatedPrizes[] = $prize;
         }
         if (abs($probabilitySum - 1) > 0.0001) {
             return $this->fail(4220, '概率合计必须为 1（当前 ' . round($probabilitySum, 4) . '）');
@@ -508,13 +694,18 @@ class MarketingController extends BaseController
             $existing = Db::name('lucky_draw_prizes')->where('activity_id', $activityId)->whereNull('deleted_at')
                 ->column('won', 'id');
             $keepIds = [];
-            foreach ($prizes as $prize) {
+            foreach ($validatedPrizes as $prize) {
+                $type = (string) ($prize['prize_type'] ?? 'collectible');
+                $reward = $prize['validated_reward'];
                 $data = [
                     'activity_id'    => $activityId,
                     'tier_name'      => mb_substr((string) ($prize['tier_name'] ?? ''), 0, 20) ?: '奖项',
-                    'prize_type'     => (string) ($prize['prize_type'] ?? 'collectible'),
-                    'collectible_id' => ($prize['prize_type'] ?? '') === 'collectible' ? (int) $prize['collectible_id'] : null,
-                    'coin_amount'    => ($prize['prize_type'] ?? '') === 'points' ? (float) $prize['coin_amount'] : null,
+                    'prize_name'     => mb_substr(trim((string) ($prize['prize_name'] ?? '')), 0, 100) ?: null,
+                    'prize_image'    => trim((string) ($prize['prize_image'] ?? '')) ?: null,
+                    'prize_type'     => $type,
+                    'collectible_id' => $type === 'collectible' ? (int) ($reward['collectibleId'] ?? 0) : null,
+                    'coin_amount'    => $type === 'points' ? (float) ($reward['amount'] ?? 0) : null,
+                    'reward_config'  => $reward ? json_encode($reward, JSON_UNESCAPED_UNICODE) : null,
                     'probability'    => (float) $prize['probability'],
                     'sort_order'     => (int) ($prize['sort_order'] ?? 0),
                     'updated_at'     => $now,
@@ -596,7 +787,10 @@ class MarketingController extends BaseController
     }
 
     /**
-     * POST /admin/marketing/synthesis-save { id?, type, title, rules, result_collectible_id, materials:[{collectible_id, count}], per_user_limit, total_limit?, start_time?, end_time?, image? }
+     * POST /admin/marketing/synthesis-save
+     * { id?, type, title, rules, result_collectible_id, result_quantity, materials:[{collectible_id, count}],
+     *   per_user_limit, total_limit?, start_time?, end_time?, image?,
+     *   eligibility_type?, eligibility_config?, grant_mode? }
      */
     public function synthesisSave()
     {
@@ -609,6 +803,10 @@ class MarketingController extends BaseController
             return $this->fail(4220, 'type 仅允许 limit/permanent');
         }
         $resultCid = (int) $this->request->param('result_collectible_id');
+        $resultQty = max(1, (int) $this->request->param('result_quantity', 1));
+        if ($resultQty > 100) {
+            return $this->fail(4220, '每次合成产出数量需在 1~100');
+        }
         $materials = $this->request->param('materials', []);
         if (!is_array($materials) || count($materials) < 1) {
             return $this->fail(4220, '至少配置一种合成素材');
@@ -636,6 +834,20 @@ class MarketingController extends BaseController
             return $this->fail(4220, '素材列表存在重复藏品');
         }
 
+        // 参与资格 / 发放方式
+        try {
+            $eligibilityType = (string) $this->request->param('eligibility_type', 'all');
+            $eligibilityConfig = $this->request->param('eligibility_config');
+            $eligibility = ActivityRewardService::validateEligibility(
+                $eligibilityType,
+                is_array($eligibilityConfig) ? $eligibilityConfig : []
+            );
+            $grantMode = in_array($this->request->param('grant_mode', 'realtime'), ['realtime', 'manual'], true)
+                ? (string) $this->request->param('grant_mode', 'realtime') : 'realtime';
+        } catch (\Throwable $e) {
+            return $this->fail(4220, $e->getMessage());
+        }
+
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
@@ -647,9 +859,13 @@ class MarketingController extends BaseController
                 'end_time'      => $this->optionalDate('end_time'),
                 'rules'         => (string) $this->request->param('rules'),
                 'result_collectible_id' => $resultCid,
+                'result_quantity' => $resultQty,
                 'per_user_limit' => max(0, (int) $this->request->param('per_user_limit')),
                 'total_limit'   => $this->positiveInt('total_limit'),
                 'image'         => trim((string) $this->request->param('image', '')) ?: null,
+                'eligibility_type'   => $eligibility['type'],
+                'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : null,
+                'grant_mode'    => $grantMode,
                 'updated_at'    => $now,
             ];
             $id = $this->positiveInt('id');
@@ -882,74 +1098,275 @@ class MarketingController extends BaseController
         return $this->success(['issued' => $issued, 'task_no' => $taskNo], '已向 ' . $issued . ' 位用户发放完成');
     }
 
-    // ==================== 注册福利 ====================
+    // ==================== 注册活动（实名前N名档位奖励） ====================
 
     /**
      * GET /admin/marketing/register
+     * 注册活动列表（含档位与已发放统计）
      */
-    public function registerConfig()
+    public function registerList()
     {
-        $points = (int) (Db::name('system_configs')->where('config_key', 'register_reward_points')->value('config_value') ?: 0);
-        $cid  = (int) (Db::name('system_configs')->where('config_key', 'register_reward_collectible_id')->value('config_value') ?: 0);
-        $qty  = (int) (Db::name('system_configs')->where('config_key', 'register_reward_collectible_qty')->value('config_value') ?: 0);
+        $rows = Db::name('register_activities')->whereNull('deleted_at')
+            ->order('id', 'desc')->select()->toArray();
+        foreach ($rows as &$row) {
+            $row['tiers_parsed'] = ActivityRewardService::parseJson($row['tiers'] ?? null);
+            // 已发放人数（奖励名单）
+            $row['granted_count'] = Db::name('activity_reward_records')
+                ->where('activity_type', 'register')->where('activity_id', $row['id'])->count();
+            // 平台累计实名人数（档位容量参考）
+            $row['realname_count'] = (int) Db::name('users')->where('is_realname', 1)->whereNull('deleted_at')->count();
+        }
+        return $this->success(camelize_keys($rows));
+    }
 
-        return $this->success([
-            'points' => $points,
-            'collectibleId' => $cid,
-            'collectibleName' => $cid ? Db::name('collectibles')->where('id', $cid)->value('name') : null,
-            'quantity' => $qty,
+    /**
+     * POST /admin/marketing/register-save
+     * { id?, name, status: disabled|enabled, start_time?, end_time?,
+     *   tiers: [{rankLimit: N, rewards: [{type,...}]}],
+     *   grant_mode?: realtime|manual, description? }
+     */
+    public function registerSave()
+    {
+        $missing = $this->missingParams(['name', 'status', 'tiers']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+        $name   = mb_substr(trim((string) $this->request->param('name')), 0, 100);
+        $status = (string) $this->request->param('status');
+        if ($name === '') {
+            return $this->fail(4220, '活动名称不能为空');
+        }
+        if (!in_array($status, ['disabled', 'enabled'], true)) {
+            return $this->fail(4220, 'status 仅允许 disabled/enabled');
+        }
+
+        // 档位校验：实名前N名，N 升序不重复
+        $tiers = $this->request->param('tiers', []);
+        if (!is_array($tiers) || count($tiers) < 1) {
+            return $this->fail(4220, '至少配置一个实名档位（如：实名前1000名）');
+        }
+        if (count($tiers) > 10) {
+            return $this->fail(4220, '实名档位最多 10 档');
+        }
+        $cleanTiers = [];
+        $seenRanks = [];
+        foreach ($tiers as $tier) {
+            $rankLimit = (int) ($tier['rankLimit'] ?? 0);
+            if ($rankLimit < 1 || $rankLimit > 1000000) {
+                return $this->fail(4220, '实名档位名次需在 1~1000000（如：前1000名 → 1000）');
+            }
+            if (isset($seenRanks[$rankLimit])) {
+                return $this->fail(4220, '实名档位名次重复：前 ' . $rankLimit . ' 名');
+            }
+            $seenRanks[$rankLimit] = true;
+            try {
+                $rewards = (array) ($tier['rewards'] ?? []);
+                if (!$rewards) {
+                    throw new \Exception('每档需至少配置一项奖励');
+                }
+                $cleanTiers[] = [
+                    'rankLimit' => $rankLimit,
+                    'rewards'   => ActivityRewardService::normalizeRewards($rewards),
+                ];
+            } catch (\Throwable $e) {
+                return $this->fail(4220, '档位「前' . $rankLimit . '名」配置错误：' . $e->getMessage());
+            }
+        }
+        usort($cleanTiers, fn ($a, $b) => $a['rankLimit'] <=> $b['rankLimit']);
+
+        $grantMode = in_array($this->request->param('grant_mode', 'realtime'), ['realtime', 'manual'], true)
+            ? (string) $this->request->param('grant_mode', 'realtime') : 'realtime';
+
+        $now = date('Y-m-d H:i:s');
+        $data = [
+            'name'        => $name,
+            'status'      => $status,
+            'start_time'  => $this->optionalDate('start_time'),
+            'end_time'    => $this->optionalDate('end_time'),
+            'tiers'       => json_encode($cleanTiers, JSON_UNESCAPED_UNICODE),
+            'grant_mode'  => $grantMode,
+            'description' => (string) $this->request->param('description', '') ?: null,
+            'updated_at'  => $now,
+        ];
+
+        $id = $this->positiveInt('id');
+        Db::startTrans();
+        try {
+            if ($id !== null) {
+                if (!Db::name('register_activities')->where('id', $id)->whereNull('deleted_at')->find()) {
+                    Db::rollback();
+                    return $this->fail(4040, '注册活动不存在');
+                }
+                Db::name('register_activities')->where('id', $id)->update($data);
+            } else {
+                $data['used_count'] = 0;
+                $data['created_at'] = $now;
+                $id = (int) Db::name('register_activities')->insertGetId($data);
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '保存失败：' . $e->getMessage());
+        }
+
+        $this->audit('marketing', 'register_save', '保存注册活动「' . $name . '」', ['id' => $id, 'tiers' => count($cleanTiers)], 'register_activity', $id);
+        return $this->success(['id' => $id], '注册活动已保存');
+    }
+
+    /**
+     * DELETE /admin/marketing/register-delete { id }
+     */
+    public function registerDelete()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $act = Db::name('register_activities')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$act) {
+            return $this->fail(4040, '注册活动不存在');
+        }
+        // 已产生发放记录的活动仅停用不删除
+        $granted = Db::name('activity_reward_records')->where('activity_type', 'register')->where('activity_id', $id)->count();
+        if ($granted > 0) {
+            Db::name('register_activities')->where('id', $id)->update([
+                'status' => 'disabled', 'updated_at' => date('Y-m-d H:i:s'),
+            ]);
+            $this->audit('marketing', 'register_delete', '注册活动「' . $act['name'] . '」已产生发放记录，转为停用', ['id' => $id], 'register_activity', $id);
+            return $this->success(null, '该活动已产生发放记录，已转为停用');
+        }
+        Db::name('register_activities')->where('id', $id)->update([
+            'deleted_at' => date('Y-m-d H:i:s'), 'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+        $this->audit('marketing', 'register_delete', '删除注册活动「' . $act['name'] . '」', ['id' => $id], 'register_activity', $id);
+        return $this->success(null, '注册活动已删除');
+    }
+
+    // ==================== 奖励名单（导出/统一发放） ====================
+
+    /**
+     * GET /admin/marketing/reward-records
+     * 查询参数：activity_type?, activity_id?, status?, user_id?, phone?, keyword(活动名/手机号)?
+     */
+    public function rewardRecords()
+    {
+        [$page, $pageSize] = $this->pageParams();
+
+        $query = Db::name('activity_reward_records');
+        $activityType = (string) $this->request->param('activity_type', '');
+        if ($activityType !== '' && in_array($activityType, ActivityRewardService::ACTIVITY_TYPES, true)) {
+            $query->where('activity_type', $activityType);
+        }
+        $activityId = $this->positiveInt('activity_id');
+        if ($activityId !== null) {
+            $query->where('activity_id', $activityId);
+        }
+        $status = (string) $this->request->param('status', '');
+        if ($status !== '' && in_array($status, ['pending', 'issued', 'failed', 'cancelled'], true)) {
+            $query->where('status', $status);
+        }
+        $userId = $this->positiveInt('user_id');
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        }
+        $phone = trim((string) $this->request->param('phone', ''));
+        if ($phone !== '') {
+            $query->whereLike('phone', "%{$phone}%");
+        }
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->whereLike('activity_title', "%{$keyword}%");
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
+
+        // 统计卡片
+        $stats = Db::name('activity_reward_records')
+            ->field('status, COUNT(*) AS cnt')
+            ->group('status')->select()->toArray();
+
+        return $this->paginate(camelize_keys($rows), $total, $page, $pageSize, [
+            'stats' => array_column($stats, 'cnt', 'status'),
         ]);
     }
 
     /**
-     * POST /admin/marketing/register { points?, collectible_id?, quantity? }
+     * GET /admin/marketing/reward-records/export
+     * 导出名单 CSV（同上筛选参数）
      */
-    public function registerSave()
+    public function rewardRecordsExport()
     {
-        $now = date('Y-m-d H:i:s');
-        $configs = [];
+        $query = Db::name('activity_reward_records');
+        $activityType = (string) $this->request->param('activity_type', '');
+        if ($activityType !== '' && in_array($activityType, ActivityRewardService::ACTIVITY_TYPES, true)) {
+            $query->where('activity_type', $activityType);
+        }
+        $activityId = $this->positiveInt('activity_id');
+        if ($activityId !== null) {
+            $query->where('activity_id', $activityId);
+        }
+        $status = (string) $this->request->param('status', '');
+        if ($status !== '' && in_array($status, ['pending', 'issued', 'failed', 'cancelled'], true)) {
+            $query->where('status', $status);
+        }
+        $rows = $query->order('id', 'asc')->limit(50000)->select()->toArray();
 
-        $points = $this->request->param('points');
-        if ($points !== null && $points !== '') {
-            $points = (int) $points;
-            if ($points < 0 || $points > 100000) {
-                return $this->fail(4220, '注册赠送司南币需在 0~100000');
-            }
-            $configs['register_reward_points'] = (string) $points;
+        $typeNames = [
+            'synthesis' => '合成', 'lucky_draw' => '抽奖', 'checkin' => '签到',
+            'invite' => '邀请', 'register' => '注册',
+        ];
+        $statusNames = ['pending' => '待发放', 'issued' => '已发放', 'failed' => '发放失败', 'cancelled' => '已取消'];
+
+        $filename = '奖励名单_' . date('YmdHis') . '.csv';
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        $out = fopen('php://output', 'w');
+        // BOM 头（Excel 乱码）
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, ['记录ID', '活动类型', '活动ID', '活动名称', '用户ID', '手机号', '奖励类型', '奖励内容', '状态', '发放时间', '发放结果', '创建时间']);
+        foreach ($rows as $row) {
+            fputcsv($out, [
+                $row['id'],
+                $typeNames[$row['activity_type']] ?? $row['activity_type'],
+                $row['activity_id'],
+                $row['activity_title'],
+                $row['user_id'],
+                $row['phone'],
+                ActivityRewardService::TYPE_LABELS[$row['reward_type']] ?? $row['reward_type'],
+                $row['reward_label'],
+                $statusNames[$row['status']] ?? $row['status'],
+                $row['issued_at'] ?: '',
+                $row['issue_result'] ?: '',
+                $row['created_at'],
+            ]);
+        }
+        fclose($out);
+        exit;
+    }
+
+    /**
+     * POST /admin/marketing/reward-records/issue
+     * 待发放名单统一发放
+     * { activity_type?, activity_id?, record_ids?: [id...] }
+     */
+    public function rewardRecordsIssue()
+    {
+        $activityType = (string) $this->request->param('activity_type', '');
+        $activityId   = $this->positiveInt('activity_id');
+        $recordIds    = $this->request->param('record_ids', []);
+        if (!is_array($recordIds)) {
+            $recordIds = [];
         }
 
-        $cid = $this->request->param('collectible_id');
-        if ($cid !== null && $cid !== '') {
-            $cid = (int) $cid;
-            if ($cid > 0 && !Db::name('collectibles')->where('id', $cid)->whereNull('deleted_at')->find()) {
-                return $this->fail(4040, '注册赠送藏品不存在');
-            }
-            $configs['register_reward_collectible_id'] = (string) $cid;
-        }
+        $result = ActivityRewardService::issuePendingRecords(
+            $activityType !== '' ? $activityType : '',
+            $activityId ?? 0,
+            array_map('intval', $recordIds)
+        );
 
-        $qty = $this->request->param('quantity');
-        if ($qty !== null && $qty !== '') {
-            $qty = (int) $qty;
-            if ($qty < 0 || $qty > 10) {
-                return $this->fail(4220, '注册赠送藏品数量需在 0~10');
-            }
-            $configs['register_reward_collectible_qty'] = (string) $qty;
-        }
-
-        if (!$configs) {
-            return $this->fail(4220, '没有需要保存的配置');
-        }
-
-        foreach ($configs as $key => $value) {
-            if (Db::name('system_configs')->where('config_key', $key)->find()) {
-                Db::name('system_configs')->where('config_key', $key)->update(['config_value' => $value, 'updated_at' => $now]);
-            } else {
-                Db::name('system_configs')->insert(['config_key' => $key, 'config_value' => $value, 'created_at' => $now, 'updated_at' => $now]);
-            }
-        }
-
-        $this->audit('marketing', 'register_save', '更新注册福利配置', $configs);
-        return $this->success(null, '注册福利配置已保存');
+        $this->audit('marketing', 'reward_records_issue', '奖励名单统一发放（成功 ' . $result['success'] . ' / 失败 ' . $result['failed'] . '）', $result);
+        return $this->success($result, '统一发放完成：成功 ' . $result['success'] . ' 条，失败 ' . $result['failed'] . ' 条');
     }
 
     private function optionalDate(string $key): ?string

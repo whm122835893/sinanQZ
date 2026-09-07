@@ -5,10 +5,12 @@ import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { login } from '@/api'
 import { useAdminStore } from '@/stores/admin'
+import { useSiteStore } from '@/stores/site'
 
 const router = useRouter()
 const route = useRoute()
 const adminStore = useAdminStore()
+const site = useSiteStore()
 
 const formRef = ref(null)
 const form = ref({ username: 'admin', password: 'admin123' })
@@ -47,9 +49,9 @@ async function onSubmit() {
     <div class="login__deco login__deco--2" />
 
     <div class="login__card">
-      <img class="login__logo" src="/images/platform-logo.png" alt="logo" />
+      <img class="login__logo" :src="site.brandLogo" alt="logo" />
       <div class="login__brand">
-        <div class="login__title"><span class="calligraphy">司南</span>珍藏 · 管理后台</div>
+        <div class="login__title">{{ site.siteName }} · 管理后台</div>
         <div class="login__subtitle">SINAN ADMIN CONSOLE</div>
       </div>
 
@@ -94,7 +96,7 @@ async function onSubmit() {
       </div>
     </div>
 
-    <div class="login__footer">© {{ year }} 司南珍藏 · SINAN DIGITAL COLLECTION</div>
+    <div class="login__footer">© {{ year }} {{ site.siteName }}</div>
   </div>
 </template>
 

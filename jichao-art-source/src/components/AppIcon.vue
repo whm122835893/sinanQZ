@@ -60,6 +60,8 @@ const ICONS = {
   transfer: { path: '<path d="M7 7h13l-3-3"/><path d="M17 17H4l3 3"/>' },
   // 邀请好友：人形 + 加号
   invite: { path: '<circle cx="8" cy="8" r="3"/><path d="M2 20c.5-3.3 3.2-5.5 6-5.5s5.5 2.2 6 5.5"/><path d="M16 7v6M13 10h6"/>' },
+  // 分享海报：箭头向上出框
+  share: { path: '<path d="M12 3v11"/><path d="M8 6.5L12 3l4 3.5"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>' },
   // 空藏品台：展柜
   showcase: { path: '<rect x="3" y="6" width="18" height="2" rx="1"/><path d="M5 8v11h14V8"/><rect x="7" y="10" width="10" height="7" rx="1"/><path d="M9 13h6"/>' }
 }

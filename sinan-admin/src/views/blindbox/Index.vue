@@ -6,7 +6,7 @@ import { Plus } from '@element-plus/icons-vue'
 import {
   getBlindBoxList,
   toggleBlindBoxStatus,
-  toggleBlindBoxOpenable,
+  setBlindBoxOpenable,
   toggleBlindBoxTransferable,
   toggleBlindBoxResale
 } from '@/api'
@@ -55,9 +55,11 @@ async function onToggleOpen(b, val) {
     '开启开关',
     { type: 'warning' }
   )
-  const res = await toggleBlindBoxOpenable(b.id)
-  if (res.code === 0) ElMessage.success(res.data === 1 ? '已允许开启' : '已暂停开启')
-  else b.isOpenable = val ? 0 : 1
+  const res = await setBlindBoxOpenable(b.id, val)
+  if (res.code === 0) {
+    b.isOpenable = val
+    ElMessage.success(val ? '已允许开启' : '已暂停开启')
+  }
 }
 
 // ---- 转赠开关（独立） ----
@@ -74,9 +76,9 @@ async function onTransferable(b, val) {
   else b.isTransferable = val ? 0 : 1
 }
 
-// ---- 寄售开关（联动价格管控，需密码验证） ----
+// ---- 寄售开关（联动价格管控：0=不限价 1=固定价 2=区间价，需密码验证） ----
 const priceShow = ref(false)
-const priceForm = ref({ id: null, name: '', enabled: 1, priceMode: 'free', priceMin: null, priceMax: null })
+const priceForm = ref({ id: null, name: '', enabled: 1, priceMode: 0, priceMin: null, priceMax: null })
 const pwdShow = ref(false)
 
 function openPrice(b) {
@@ -84,18 +86,21 @@ function openPrice(b) {
     id: b.id,
     name: b.name,
     enabled: b.isResaleable ? 1 : 0,
-    priceMode: b.resalePriceMode || 'free',
-    priceMin: b.resalePriceMin,
-    priceMax: b.resalePriceMax
+    priceMode: Number(b.resalePriceMode) || 0,
+    priceMin: b.resalePriceMin ?? null,
+    priceMax: b.resalePriceMax ?? null
   }
   priceShow.value = true
 }
 
 async function onPriceSubmit() {
   const f = priceForm.value
-  if (f.enabled && f.priceMode === 'limit') {
-    if (f.priceMin == null || f.priceMax == null) return ElMessage.warning('限价模式需填写价格上限与下限')
-    if (Number(f.priceMin) >= Number(f.priceMax)) return ElMessage.warning('价格下限需小于上限')
+  if (f.enabled) {
+    if (f.priceMode === 1 && f.priceMin == null) return ElMessage.warning('固定价模式需填写寄售价格')
+    if (f.priceMode === 2) {
+      if (f.priceMin == null || f.priceMax == null) return ElMessage.warning('区间价模式需填写价格上下限')
+      if (Number(f.priceMin) >= Number(f.priceMax)) return ElMessage.warning('价格下限需小于上限')
+    }
   }
   pwdShow.value = true
 }
@@ -105,9 +110,9 @@ async function onPriceVerified() {
   const res = await toggleBlindBoxResale({
     id: f.id,
     enabled: f.enabled,
-    priceMode: f.enabled ? f.priceMode : 'free',
-    priceMin: f.priceMode === 'limit' ? Number(f.priceMin) : null,
-    priceMax: f.priceMode === 'limit' ? Number(f.priceMax) : null
+    priceMode: f.enabled ? f.priceMode : 0,
+    priceMin: f.enabled && f.priceMode >= 1 ? Number(f.priceMin) : null,
+    priceMax: f.enabled && f.priceMode === 2 ? Number(f.priceMax) : null
   })
   if (res.code === 0) {
     ElMessage.success(f.enabled ? '已开启二级市场' : '已关闭二级市场，在售挂单已全部系统下架')
@@ -181,7 +186,7 @@ async function onPriceVerified() {
           <template #default="{ row }">
             <div class="col-switches">
               <el-switch
-                :model-value="row.isOpenable === 1"
+                :model-value="!!row.isOpenable"
                 size="small"
                 inline-prompt
                 active-text="开"
@@ -241,22 +246,25 @@ async function onPriceVerified() {
           </div>
         </el-form-item>
         <template v-if="priceForm.enabled">
-          <el-form-item label="价格管控模式">
+          <el-form-item label="限价策略">
             <el-radio-group v-model="priceForm.priceMode">
-              <el-radio value="limit">限价模式</el-radio>
-              <el-radio value="free">不限价模式</el-radio>
+              <el-radio :value="0">不限价</el-radio>
+              <el-radio :value="1">固定价</el-radio>
+              <el-radio :value="2">区间价</el-radio>
             </el-radio-group>
           </el-form-item>
-          <template v-if="priceForm.priceMode === 'limit'">
-            <el-form-item label="价格下限（元）">
-              <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" :step="10" style="width: 180px" />
-            </el-form-item>
-            <el-form-item label="价格上限（元）">
-              <el-input-number v-model="priceForm.priceMax" :min="0.01" :precision="2" :step="10" style="width: 180px" />
+          <el-form-item v-if="priceForm.priceMode === 1" label="固定寄售价（元）">
+            <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" :step="10" style="width: 180px" />
+          </el-form-item>
+          <template v-if="priceForm.priceMode === 2">
+            <el-form-item label="寄售区间（元）">
+              <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" placeholder="最低" style="width: 140px" />
+              <span style="margin: 0 10px">~</span>
+              <el-input-number v-model="priceForm.priceMax" :min="0.01" :precision="2" placeholder="最高" style="width: 140px" />
             </el-form-item>
             <el-alert type="info" :closable="false" show-icon title="用户挂单价格必须落在上下限闭区间内" />
           </template>
-          <el-alert v-else type="info" :closable="false" show-icon title="不限价模式：用户自由定价，仅保留全局最大金额校验" />
+          <el-alert v-if="priceForm.priceMode === 0" type="info" :closable="false" show-icon title="不限价模式：用户自由定价，仅保留全局最大金额校验" />
         </template>
       </el-form>
       <template #footer>

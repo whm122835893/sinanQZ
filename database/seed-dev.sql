@@ -22,13 +22,13 @@ ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `sort_order` = VALUES(`sort_ord
 
 INSERT INTO `nft_collectibles`
   (`id`, `category_id`, `name`, `subtitle`, `image`, `price`, `edition`, `circulate`, `sold`,
-   `status`, `tag`, `issuer`, `is_release`, `featured`, `description`) VALUES
+   `status`, `tag`, `issuer`, `is_release`, `featured`, `is_transferable`, `is_resaleable`, `description`) VALUES
   (9001, 1, '龙纹罗盘', '司南珍藏系列', '/images/collections/cover-1.jpg', 399.00, 1000, 0, 0,
-   'onsale', '首发', '司南数字藏品', 0, 0, '联调测试数据：抽奖一等奖。'),
+   'onsale', '首发', '司南数字藏品', 0, 0, 0, 0, '联调测试数据：抽奖一等奖。'),
   (9002, 2, '云端法器', '司南珍藏系列', '/images/collections/cover-2.jpg', 299.00, 800, 0, 0,
-   'onsale', '首发', '司南数字藏品', 0, 0, '联调测试数据：抽奖三等奖。'),
+   'onsale', '首发', '司南数字藏品', 0, 0, 0, 0, '联调测试数据：抽奖三等奖。'),
   (9003, 2, '青铜面具', '司南珍藏系列', '/images/collections/cover-3.jpg', 199.00, 600, 0, 0,
-   'onsale', '首发', '司南数字藏品', 0, 0, '联调测试数据：抽奖四等奖。')
+   'onsale', '首发', '司南数字藏品', 0, 0, 0, 0, '联调测试数据：抽奖四等奖。')
 ON DUPLICATE KEY UPDATE
   `name` = VALUES(`name`), `image` = VALUES(`image`), `price` = VALUES(`price`),
   `edition` = VALUES(`edition`), `status` = VALUES(`status`);
@@ -89,9 +89,9 @@ WHERE `id` IN (9001, 9002, 9003);
 -- ----------------------------------------------------------------------------
 INSERT INTO `nft_collectibles`
   (`id`, `category_id`, `name`, `subtitle`, `image`, `price`, `edition`, `circulate`, `sold`,
-   `status`, `tag`, `issuer`, `is_release`, `featured`, `description`) VALUES
+   `status`, `tag`, `issuer`, `is_release`, `featured`, `is_transferable`, `is_resaleable`, `description`) VALUES
   (9004, 3, '司南秘宝盲盒', '开启得随机限定藏品', '/images/collections/cover-1.jpg', 99.00, 100, 0, 0,
-   'onsale', '盲盒', '司南数字藏品', 1, 1, '联调测试数据：盲盒，购买后可开启。')
+   'onsale', '盲盒', '司南数字藏品', 1, 1, 0, 0, '联调测试数据：盲盒，购买后可开启。')
 ON DUPLICATE KEY UPDATE
   `name` = VALUES(`name`), `price` = VALUES(`price`), `edition` = VALUES(`edition`),
   `status` = VALUES(`status`), `is_release` = VALUES(`is_release`);

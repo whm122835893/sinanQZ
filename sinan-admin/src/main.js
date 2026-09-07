@@ -8,6 +8,7 @@ import App from './App.vue'
 import router from './router'
 import permissionDirective from './directives/permission'
 import { useAppStore } from './stores/app'
+import { useSiteStore } from './stores/site'
 import '@/styles/global.scss'
 
 const app = createApp(App)
@@ -26,5 +27,8 @@ app.use(permissionDirective)
 
 // 初始化响应式断点（移动端抽屉侧栏 / 桌面侧栏切换）
 useAppStore().initResponsive()
+
+// 拉取站点品牌（名称/头像，与 C 端装修配置同步）
+useSiteStore().fetchBrand()
 
 app.mount('#app')

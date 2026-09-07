@@ -23,8 +23,9 @@ trait AdminResponse
 
     /**
      * 统一分页返回（与前端 ProTable 约定：list / total / page / pageSize / lastPage）
+     * @param array $extra 附加统计字段（如 stats）
      */
-    protected function paginate(array $items, int $total, int $page, int $pageSize): Response
+    protected function paginate(array $items, int $total, int $page, int $pageSize, array $extra = []): Response
     {
         return $this->success([
             'list'     => $items,
@@ -32,6 +33,6 @@ trait AdminResponse
             'page'     => $page,
             'pageSize' => $pageSize,
             'lastPage' => (int) ceil($total / max($pageSize, 1)),
-        ]);
+        ] + $extra);
     }
 }

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 use app\BaseController;
+use app\service\ActivityRewardService;
 
 use think\facade\Db;
 
@@ -394,6 +395,11 @@ class Orders extends BaseController
             ]);
 
             Db::commit();
+
+            // 支付完成 → 被邀请人完成条件（consume 产生消费记录）邀请活动结算（失败不影响支付）
+            ActivityRewardService::settleQuietly(
+                fn () => ActivityRewardService::settleInviteReward($userId)
+            );
 
             return $this->success([
                 'orderNo' => $orderNo,

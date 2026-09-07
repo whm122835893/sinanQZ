@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 use app\BaseController;
+use app\service\ActivityRewardService;
 
 use think\facade\Db;
 
@@ -92,6 +93,11 @@ class Wallet extends BaseController
             ]);
             $transactionId = (int) Db::name('wallet_transactions')->getLastInsID();
             Db::commit();
+
+            // 充值完成 → 被邀请人完成条件（wallet 开通第三方钱包/完成充值）邀请活动结算（失败不影响充值）
+            ActivityRewardService::settleQuietly(
+                fn () => ActivityRewardService::settleInviteReward($userId)
+            );
 
             return $this->success(['transactionId' => $transactionId]);
         } catch (\Throwable $e) {

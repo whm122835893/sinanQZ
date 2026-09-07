@@ -37,7 +37,7 @@ const emit = defineEmits(['click'])
   transition: opacity .15s, background .15s;
 
   &.is-block { width: 100%; }
-  &.is-round { border-radius: $radius-pill; }
+  &.is-round { border-radius: var(--radius-btn, #{$radius-pill}); }
 
   &--large {
     height: 48px;
@@ -48,13 +48,13 @@ const emit = defineEmits(['click'])
     height: 32px;
     padding: 0 14px;
     font-size: 13px;
-    border-radius: $radius-md;
+    border-radius: min(var(--radius-btn, #{$radius-pill}), 16px);
   }
 
   &--primary {
     color: #fff;
-    background: linear-gradient(135deg, #D00000, #B00000);
-    &:active { background: $color-primary-dark; }
+    background: linear-gradient(135deg, var(--color-button, #D00000), var(--color-button-dark, #B00000));
+    &:active { background: var(--color-button-dark, $color-primary-dark); }
     &.is-disabled {
       background: $color-primary-disabled;
       color: #fff;

@@ -92,3 +92,21 @@ export const del = wrap('delete')
 
 /** 静默 GET（不弹全局错误，页面自行处理） */
 export const getSilent = (url, params) => wrap('get')(url, params, { silent: true })
+
+// ---------- 兼容层：axios 风格默认导出 ----------
+// 供旧页面使用（request.get('/admin/xxx', { params }) / request.post / request.delete）：
+// 1. 剥离 /admin 前缀（baseURL 已是 /api/admin）
+// 2. 解包响应：成功返回 data 载荷（旧页面直接读 res.list / res.count），失败抛错
+const stripAdmin = (url) => String(url).replace(/^\/admin(?=\/|$)/, '')
+async function unwrap(promise) {
+  const res = await promise
+  if (res && res.code === 0) return res.data
+  throw new Error((res && res.message) || '请求失败')
+}
+const legacyRequest = {
+  get: (url, config = {}) => unwrap(http.get(stripAdmin(url), { params: config.params || {} })),
+  post: (url, data = {}) => unwrap(http.post(stripAdmin(url), data)),
+  put: (url, data = {}) => unwrap(http.put(stripAdmin(url), data)),
+  delete: (url) => unwrap(http.delete(stripAdmin(url)))
+}
+export default legacyRequest

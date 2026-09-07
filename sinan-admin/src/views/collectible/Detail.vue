@@ -9,7 +9,9 @@ import {
   addQuota,
   toggleQuota,
   releaseCollectible,
-  toggleCollectibleStatus
+  toggleCollectibleStatus,
+  toggleCollectibleResale,
+  toggleCollectibleTransferable
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import PasswordVerify from '@/components/PasswordVerify.vue'
@@ -181,6 +183,70 @@ async function onSaleSwitch(val) {
     }
   }
 }
+
+// ---- 转赠开关（创建后配置，独立于寄售） ----
+async function onTransferableSwitch(val) {
+  await ElMessageBox.confirm(
+    val
+      ? `确认开启「${detail.value.name}」的转赠开关？用户端将显示转赠入口。`
+      : `确认关闭「${detail.value.name}」的转赠开关？用户端转赠按钮置灰（已发起待确认的转赠不受影响）。`,
+    '转赠开关',
+    { type: 'warning' }
+  )
+  const res = await toggleCollectibleTransferable(id, val)
+  if (res.code === 0) {
+    ElMessage.success(val ? '已开启转赠' : '已关闭转赠')
+    load()
+  }
+}
+
+// ---- 寄售开关（联动价格管控：0=不限价 1=固定价 2=区间价） ----
+const priceShow = ref(false)
+const pricePwdShow = ref(false)
+const priceForm = ref({ enabled: 1, priceMode: 0, priceMin: null, priceMax: null })
+
+function openResaleDialog() {
+  const d = detail.value
+  priceForm.value = {
+    enabled: d.isResaleable ? 1 : 0,
+    priceMode: Number(d.resalePriceMode) || 0,
+    priceMin: d.resalePriceMin ?? null,
+    priceMax: d.resalePriceMax ?? null
+  }
+  priceShow.value = true
+}
+
+function onResaleSubmit() {
+  const f = priceForm.value
+  if (f.enabled) {
+    if (f.priceMode === 1 && (f.priceMin === null || f.priceMin === undefined)) {
+      return ElMessage.warning('固定价模式需填写寄售价格')
+    }
+    if (f.priceMode === 2) {
+      if (f.priceMin === null || f.priceMin === undefined || f.priceMax === null || f.priceMax === undefined) {
+        return ElMessage.warning('区间价模式需填写价格上下限')
+      }
+      if (Number(f.priceMin) >= Number(f.priceMax)) return ElMessage.warning('价格下限需小于上限')
+    }
+  }
+  pricePwdShow.value = true
+}
+
+async function onResaleVerified() {
+  const f = priceForm.value
+  const res = await toggleCollectibleResale({
+    id,
+    enabled: !!f.enabled,
+    priceMode: f.enabled ? f.priceMode : 0,
+    priceMin: f.enabled && f.priceMode >= 1 ? Number(f.priceMin) : null,
+    priceMax: f.enabled && f.priceMode === 2 ? Number(f.priceMax) : null
+  })
+  if (res.code === 0) {
+    ElMessage.success(f.enabled ? '已开启寄售' : '已关闭寄售，在售挂单已全部系统下架')
+    priceShow.value = false
+    load()
+  }
+}
 </script>
 
 <template>
@@ -268,8 +334,22 @@ async function onSaleSwitch(val) {
             <div class="adm-card__title">基本信息</div>
             <div class="adm-kv"><span class="k">发售时间</span><span class="v">{{ detail.saleTime }}</span></div>
             <div class="adm-kv"><span class="k">首发推荐</span><span class="v">{{ detail.featured ? '是' : '否' }}</span></div>
-            <div class="adm-kv"><span class="k">转赠开关</span><span class="v">{{ detail.isTransferable ? '已开启' : '已关闭' }}</span></div>
-            <div class="adm-kv"><span class="k">寄售开关</span><span class="v">{{ detail.isResaleable ? `已开启（${detail.resalePriceMode === 'limit' ? `限价 ¥${detail.resalePriceMin}-¥${detail.resalePriceMax}` : '不限价'}）` : '已关闭' }}</span></div>
+            <div class="adm-kv cd__switch-row">
+              <span class="k">转赠开关</span>
+              <span class="v cd__switch-ops">
+                <el-switch :model-value="detail.isTransferable" @change="onTransferableSwitch" />
+                <span class="t-tertiary" style="font-size: 12px">{{ detail.isTransferable ? '已开启：用户可无偿转赠' : '已关闭：用户端转赠入口置灰' }}</span>
+              </span>
+            </div>
+            <div class="adm-kv cd__switch-row">
+              <span class="k">寄售开关</span>
+              <span class="v cd__switch-ops">
+                <el-switch :model-value="detail.isResaleable" @change="openResaleDialog" />
+                <span class="t-tertiary" style="font-size: 12px">
+                  {{ detail.isResaleable ? `已开启（${detail.resalePriceMode === 1 ? `固定价 ¥${fmtMoney(detail.resalePriceMin)}` : detail.resalePriceMode === 2 ? `限价 ¥${fmtMoney(detail.resalePriceMin)}-¥${fmtMoney(detail.resalePriceMax)}` : '不限价'}）` : '已关闭：用户端无法挂单寄售' }}
+                </span>
+              </span>
+            </div>
             <div class="adm-kv"><span class="k">藏品描述</span><span class="v" style="max-width: 400px">{{ detail.description }}</span></div>
           </div>
         </div>
@@ -417,9 +497,48 @@ async function onSaleSwitch(val) {
         </template>
       </el-dialog>
 
+      <!-- 寄售开关 + 价格管控弹窗 -->
+      <el-dialog v-model="priceShow" :title="`寄售管控 · ${detail.name}`" width="480px" :close-on-click-modal="false">
+        <el-form label-width="110px">
+          <el-form-item label="允许寄售">
+            <el-switch v-model="priceForm.enabled" :active-value="1" :inactive-value="0" />
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">
+              关闭后该藏品所有在售挂单将全部系统下架，用户无法重新上架
+            </div>
+          </el-form-item>
+          <template v-if="priceForm.enabled">
+            <el-form-item label="限价策略">
+              <el-radio-group v-model="priceForm.priceMode">
+                <el-radio :value="0">不限价</el-radio>
+                <el-radio :value="1">固定价</el-radio>
+                <el-radio :value="2">区间价</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="priceForm.priceMode === 1" label="固定寄售价（元）">
+              <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" :step="10" style="width: 180px" />
+              <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">用户挂单价格必须等于该固定价</div>
+            </el-form-item>
+            <template v-if="priceForm.priceMode === 2">
+              <el-form-item label="寄售区间（元）">
+                <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" placeholder="最低" style="width: 140px" />
+                <span style="margin: 0 10px">~</span>
+                <el-input-number v-model="priceForm.priceMax" :min="0.01" :precision="2" placeholder="最高" style="width: 140px" />
+              </el-form-item>
+              <el-alert type="info" :closable="false" show-icon title="用户挂单价格必须落在上下限闭区间内" />
+            </template>
+            <el-alert v-if="priceForm.priceMode === 0" type="info" :closable="false" show-icon title="不限价模式：用户自由定价，仅保留全局最大金额校验" />
+          </template>
+        </el-form>
+        <template #footer>
+          <el-button @click="priceShow = false">取消</el-button>
+          <el-button type="primary" @click="onResaleSubmit">提交（需密码验证）</el-button>
+        </template>
+      </el-dialog>
+
       <!-- 密码验证 -->
       <PasswordVerify v-model="airPwdShow" title="空投验证" @verified="onAirdropVerified" />
       <PasswordVerify v-model="destroyPwdShow" title="销毁验证" @verified="onDestroyVerified" />
+      <PasswordVerify v-model="pricePwdShow" title="寄售管控验证" @verified="onResaleVerified" />
     </template>
   </div>
 </template>
@@ -464,6 +583,17 @@ async function onSaleSwitch(val) {
   align-items: center;
   gap: 10px;
   margin-top: 10px;
+}
+
+.cd__switch-row {
+  .v { flex: 1; }
+}
+
+.cd__switch-ops {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .cd__ops {

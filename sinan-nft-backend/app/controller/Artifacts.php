@@ -21,7 +21,7 @@ class Artifacts extends BaseController
         $dynasty = $this->strParam('dynasty');
         $sort    = $this->strParam('sort', 'time-desc');
 
-        $query = Db::name('artifacts')->whereNull('deleted_at');
+        $query = Db::name('artifacts')->whereNull('deleted_at')->where('status', 1);
         if ($dynasty) $query->where('dynasty', $dynasty);
 
         switch ($sort) {
@@ -52,7 +52,7 @@ class Artifacts extends BaseController
     public function detail()
     {
         $id = $this->intParam('id');
-        $a  = Db::name('artifacts')->where('id', $id)->whereNull('deleted_at')->find();
+        $a  = Db::name('artifacts')->where('id', $id)->whereNull('deleted_at')->where('status', 1)->find();
         if (!$a) return $this->fail(1002, '展品不存在');
 
         return $this->success([

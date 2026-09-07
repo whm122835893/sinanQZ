@@ -28,7 +28,14 @@ const PERM_ALIAS = {
   risk: 'security',
   tickets: 'ticket',
   content: 'cms',
-  cleanup: 'platform:cleanup'
+  cleanup: 'platform:cleanup',
+  // 新增功能：前端短码 → 后端带 module 的完整前缀
+  buyrequest: 'market:buyrequest',
+  swap: 'market:swap',
+  decompose: 'marketing:decompose',
+  raffle: 'marketing:raffle',
+  trash: 'platform:trash',
+  lottery: 'marketing:lucky'
 }
 
 // 'system' 汇总权限：任一命中即可见

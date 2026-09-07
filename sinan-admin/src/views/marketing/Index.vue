@@ -1,8 +1,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Calendar, Trophy, MagicStick, Share, Timer, Key, ArrowRight } from '@element-plus/icons-vue'
-import { getCheckinConfig, getLuckyDraws, getSynthesisList, getInviteActivity, getPrioritySales } from '@/api'
+import { Calendar, Trophy, MagicStick, Share, Timer, Key, ArrowRight, Stamp, Memo } from '@element-plus/icons-vue'
+import { getCheckinConfig, getLuckyDraws, getSynthesisList, getInviteActivity, getPrioritySales, getRegisterActivities, getRewardRecords } from '@/api'
 import { fmtNumber } from '@/utils/format'
 
 const router = useRouter()
@@ -12,24 +12,31 @@ const lucky = ref([])
 const synthesis = ref([])
 const invite = ref(null)
 const priority = ref([])
+const register = ref([])
+const rewardStats = ref(null)
 
 onMounted(async () => {
-  const [c, l, s, i, p] = await Promise.all([
-    getCheckinConfig(), getLuckyDraws(), getSynthesisList(), getInviteActivity(), getPrioritySales()
+  const [c, l, s, i, p, r, rr] = await Promise.all([
+    getCheckinConfig(), getLuckyDraws(), getSynthesisList(), getInviteActivity(), getPrioritySales(),
+    getRegisterActivities(), getRewardRecords({ page: 1, pageSize: 1 })
   ])
   checkin.value = c.data
   lucky.value = l.data
   synthesis.value = s.data
   invite.value = i.data
   priority.value = p.data
+  register.value = r.data || []
+  rewardStats.value = rr.data || null
   loading.value = false
 })
 
 const entries = [
-  { to: '/marketing/checkin', icon: Calendar, title: '签到配置', desc: '连续签到奖励', tone: 'primary' },
+  { to: '/marketing/checkin', icon: Calendar, title: '签到活动', desc: '连续签到奖励', tone: 'primary' },
   { to: '/marketing/luckydraw', icon: Trophy, title: '抽奖活动', desc: '转盘奖池管理', tone: 'gold' },
   { to: '/marketing/synthesis', icon: MagicStick, title: '合成活动', desc: '材料合成玩法', tone: 'blue' },
   { to: '/marketing/invite', icon: Share, title: '邀请活动', desc: '邀友注册奖励', tone: 'green' },
+  { to: '/marketing/register', icon: Stamp, title: '注册活动', desc: '实名前N名奖励', tone: 'gold' },
+  { to: '/marketing/reward-records', icon: Memo, title: '奖励名单', desc: '导出/统一发放', tone: 'primary' },
   { to: '/marketing/priority', icon: Timer, title: '优先购管理', desc: '白名单资格', tone: 'primary' },
   { to: '/marketing/qualification', icon: Key, title: '资格购管理', desc: '购买门槛配置', tone: 'gold' }
 ]
@@ -49,6 +56,14 @@ function statOf(entry) {
     }
     case '/marketing/invite':
       return `累计邀请 ${fmtNumber(invite.value.stats.invitedCount)} 人`
+    case '/marketing/register': {
+      const on = register.value.filter((a) => a.status === 'enabled').length
+      return on ? `${on} 个进行中` : `${register.value.length} 个活动`
+    }
+    case '/marketing/reward-records': {
+      const pending = Number(rewardStats.value?.stats?.pending || 0)
+      return pending ? `${fmtNumber(pending)} 条待发放` : '暂无待发放'
+    }
     case '/marketing/priority':
       return `${priority.value.length} 个活动`
     case '/marketing/qualification':

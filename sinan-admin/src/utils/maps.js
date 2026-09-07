@@ -96,10 +96,11 @@ export const ORDER_SOURCE = {
   blindbox:    { label: '盲盒', type: 'danger' }
 }
 
-// 寄售价格管控模式
+// 寄售价格管控模式（与后端 resale_price_mode 一致：0=不限价 1=固定价 2=区间价）
 export const RESALE_PRICE_MODE = {
-  limit: { label: '限价模式', type: 'warning' },
-  free:  { label: '不限价', type: 'info' }
+  0: { label: '不限价', type: 'info' },
+  1: { label: '固定价', type: 'warning' },
+  2: { label: '区间价', type: 'warning' }
 }
 
 // 风控告警

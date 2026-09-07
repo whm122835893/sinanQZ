@@ -1,22 +1,67 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 import { useActivityStore } from '@/stores/activity'
+import request from '@/utils/request'
+import { useLoginGate } from '@/utils/loginGate'
 
 const router = useRouter()
 const activityStore = useActivityStore()
 const { synthesisActivities } = storeToRefs(activityStore)
+const { requireLogin } = useLoginGate()
 
-// MOCK_REPLACED: 原为内联 mock 合成活动列表，现从后端拉取（GET /api/synthesis/activities）
+const tabs = ['活动', '置换']
+const active = ref('活动')
+
+const swapOffers = ref([])
+const swapLoading = ref(false)
+
+watch(active, (t) => {
+  if (t === '置换' && swapOffers.value.length === 0) loadSwaps()
+})
+
 onMounted(() => {
   activityStore.fetchSynthesisActivities().catch(() => {})
 })
 
-const tabs = ['活动', '置换']
-const active = ref('活动')
+async function loadSwaps() {
+  swapLoading.value = true
+  try {
+    const res = await request.get('/swap-offers', { params: { status: 1, page: 1, pageSize: 30 } })
+    swapOffers.value = (res.list || []).map((s) => ({
+      id: s.id,
+      offerUserName: s.offerUserName || s.userName || '置换方',
+      offerCollectibleName: s.offerCollectibleName || '藏品',
+      offerCollectibleImage: s.offerCollectibleImage || '',
+      offerSerial: s.offerSerial || '',
+      targetCollectibleName: s.targetCollectibleName || '期望藏品',
+      targetCollectibleImage: s.targetCollectibleImage || '',
+      cashDiff: Number(s.cashDiff || 0).toFixed(2),
+      remark: s.remark || '',
+      createdAt: s.createdAt || '',
+    }))
+  } catch (e) {
+    swapOffers.value = []
+  } finally {
+    swapLoading.value = false
+  }
+}
+
+function acceptSwap(s) {
+  if (!requireLogin('/activity')) return
+  request.post('/swap-offers/' + s.id + '/accept').then(() => {
+    alert('置换已接受，双方藏品将在链上完成原子交换')
+    loadSwaps()
+  })
+}
+
+function openPostSwap() {
+  if (!requireLogin('/activity')) return
+  alert('发布置换：后端接口 POST /api/swap-offers 已在数据库层预留')
+}
 
 function goSynthesis(id) {
   router.push({ name: 'activity-synthesis', params: { id } })
@@ -24,7 +69,6 @@ function goSynthesis(id) {
 
 const now = Date.now()
 function statusOf(a) {
-  // permanent 类型活动常驻，不按时间窗判定
   if (a.type === 'permanent') return { text: '进行中', cls: 'ing' }
   const s = new Date(String(a.startTime).replace(/-/g, '/')).getTime()
   const e = new Date(String(a.endTime).replace(/-/g, '/')).getTime()
@@ -75,7 +119,48 @@ function statusOf(a) {
       <p v-if="!synthesisActivities.length" class="act-empty">暂无活动</p>
     </div>
 
-    <AppEmpty v-else description="空空如也" />
+    <!-- 置换：公开置换挂单池 -->
+    <div v-else-if="active === '置换'" class="act-swap">
+      <div
+        v-for="s in swapOffers"
+        :key="s.id"
+        class="swap-card"
+      >
+        <div class="swap-card__side">
+          <img class="swap-card__img" :src="s.offerCollectibleImage" alt="" />
+          <div class="swap-card__body">
+            <span class="swap-card__label">我出</span>
+            <span class="swap-card__name">{{ s.offerCollectibleName }}</span>
+            <span class="swap-card__serial" v-if="s.offerSerial">#{{ s.offerSerial }}</span>
+          </div>
+        </div>
+        <div class="swap-card__arrow">
+          <span class="swap-card__user">{{ s.offerUserName }}</span>
+          <span class="swap-card__diff" v-if="Number(s.cashDiff) > 0">+¥{{ s.cashDiff }}</span>
+          <span class="swap-card__diff swap-card__diff--neg" v-else-if="Number(s.cashDiff) < 0">需补¥{{ Math.abs(Number(s.cashDiff)).toFixed(2) }}</span>
+          <span class="swap-card__vs">⇄</span>
+        </div>
+        <div class="swap-card__side swap-card__side--target">
+          <img class="swap-card__img" :src="s.targetCollectibleImage" alt="" />
+          <div class="swap-card__body">
+            <span class="swap-card__label">换得</span>
+            <span class="swap-card__name">{{ s.targetCollectibleName }}</span>
+          </div>
+        </div>
+        <div class="swap-card__action">
+          <button class="swap-card__btn" @click="acceptSwap(s)">接受置换</button>
+        </div>
+      </div>
+
+      <div v-if="!swapOffers.length && !swapLoading" class="act-empty">
+        <p>暂无置换挂单</p>
+        <button class="swap-post-btn" @click="openPostSwap">+ 发布我的置换</button>
+      </div>
+    </div>
+
+    <div class="act-float safe-bottom" v-if="active === '置换'">
+      <button class="act-float__btn" @click="openPostSwap">+ 发布置换</button>
+    </div>
   </div>
 </template>
 
@@ -115,4 +200,64 @@ function statusOf(a) {
 }
 .act-card__arrow { color: $color-text-tertiary; font-size: 22px; flex-shrink: 0; }
 .act-empty { text-align: center; color: $color-text-tertiary; font-size: 14px; margin-top: 40px; }
+
+/* ========== 置换卡 ========== */
+.act-swap { padding: 12px $page-padding 80px; }
+.swap-card {
+  display: flex; flex-direction: column; gap: 10px;
+  background: $color-card; border-radius: $radius-lg; padding: 14px; margin-bottom: 12px;
+}
+.swap-card__side {
+  display: flex; align-items: center; gap: 10px;
+  &--target {
+    .swap-card__label { color: $color-primary; }
+  }
+}
+.swap-card__img {
+  width: 52px; height: 52px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+  background: $color-surface;
+  -webkit-user-drag: none; user-select: none; pointer-events: none;
+}
+.swap-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.swap-card__label { font-size: 11px; color: $color-text-tertiary; }
+.swap-card__name {
+  font-size: 14px; font-weight: 600; color: $color-text-primary;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.swap-card__serial { font-size: 11px; color: $color-text-tertiary; font-family: $font-price; }
+.swap-card__arrow {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; height: 32px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(208,0,0,0.08), rgba(255,255,255,0.04));
+  border-radius: 16px;
+}
+.swap-card__user { font-size: 11px; color: $color-text-tertiary; }
+.swap-card__diff { font-size: 11px; color: #22c55e; font-weight: 600; }
+.swap-card__diff--neg { color: $color-primary; }
+.swap-card__vs { font-size: 16px; color: $color-primary; font-weight: 700; }
+.swap-card__action { display: flex; justify-content: flex-end; }
+.swap-card__btn {
+  border: none; cursor: pointer; color: #fff; font-size: 12px; font-weight: 600;
+  padding: 6px 18px; border-radius: $radius-pill;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+.swap-post-btn {
+  border: none; cursor: pointer;
+  background: linear-gradient(135deg, $color-primary, #B00000); color: #fff;
+  padding: 10px 24px; border-radius: $radius-pill;
+  font-size: 13px; font-weight: 600; margin-top: 16px;
+}
+
+.act-float {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
+  display: flex; justify-content: center;
+  padding: 12px $page-padding calc(12px + env(safe-area-inset-bottom));
+  background: transparent;
+}
+.act-float__btn {
+  width: 100%; height: 44px; border: none; border-radius: $radius-pill;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.28);
+}
 </style>

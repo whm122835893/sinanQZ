@@ -36,5 +36,23 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  // vite preview 同样需要代理（preview 模式不读取 server.proxy）
+  preview: {
+    host: true,
+    port: process.env.PORT ? Number(process.env.PORT) : 4173,
+    strictPort: false,
+    allowedHosts: true,
+    proxy: {
+      '/api/admin': {
+        target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, '')
+      },
+      '/uploads': {
+        target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true
+      }
+    }
   }
 })

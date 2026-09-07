@@ -17,6 +17,9 @@ Route::group('auth', function () {
     Route::post('refresh', 'AuthController/refresh');
 });
 
+// 站点品牌（登录页展示站点名/头像，未登录可访问）
+Route::get('site-brand', 'CmsController/siteBrand');
+
 // ---------------------------------------------------------------------------
 // 认证路由（仅需登录）
 // ---------------------------------------------------------------------------
@@ -173,9 +176,14 @@ Route::group('marketing', function () {
     Route::get('airdrop', 'MarketingController/airdropList');
     Route::post('airdrop', 'MarketingController/airdropSave')->middleware(AdminPermission::class, 'marketing:airdrop');
     Route::post('airdrop/issue', 'MarketingController/airdropIssue')->middleware(AdminPermission::class, 'marketing:airdrop');
-    // 注册福利
-    Route::get('register', 'MarketingController/registerConfig');
-    Route::post('register', 'MarketingController/registerSave')->middleware(AdminPermission::class, 'marketing:register:config');
+    // 注册活动（实名前N名档位奖励）
+    Route::get('register', 'MarketingController/registerList');
+    Route::post('register-save', 'MarketingController/registerSave')->middleware(AdminPermission::class, 'marketing:register:config');
+    Route::post('register-delete', 'MarketingController/registerDelete')->middleware(AdminPermission::class, 'marketing:register:config');
+    // 奖励名单（导出/统一发放）
+    Route::get('reward-records', 'MarketingController/rewardRecords');
+    Route::get('reward-records/export', 'MarketingController/rewardRecordsExport');
+    Route::post('reward-records/issue', 'MarketingController/rewardRecordsIssue')->middleware(AdminPermission::class, 'marketing:airdrop');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'marketing:priority:list');
 
 // ---------------------------------------------------------------------------
@@ -306,6 +314,16 @@ Route::group('reports', function () {
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'report:sales');
 
 // ---------------------------------------------------------------------------
+// 数据快照（report:snapshot）：用户持仓/交易快照，手动触发生成、幂等重跑
+// ---------------------------------------------------------------------------
+Route::group('snapshots', function () {
+    Route::post('generate', 'SnapshotController/generate');
+    Route::get('holdings', 'SnapshotController/holdings');
+    Route::get('trades', 'SnapshotController/trades');
+    Route::get('dates', 'SnapshotController/dates');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'report:snapshot');
+
+// ---------------------------------------------------------------------------
 // 区块链上链（chain:*）
 // 三链适配：文昌链（BSN-DDC）/ 联盟链（自建）/ 蚂蚁链（AntChain）
 // ---------------------------------------------------------------------------
@@ -347,7 +365,75 @@ Route::group('platform', function () {
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'platform:log');
 
 // ---------------------------------------------------------------------------
-// 兜底：未匹配路由
+// 报表 Excel 导出（report:export:*）— P1
+// ---------------------------------------------------------------------------
+Route::group('reports', function () {
+    Route::get('export/sales', 'ReportController/exportSales');
+    Route::get('export/users', 'ReportController/exportUsers');
+    Route::get('export/collectibles', 'ReportController/exportCollectibles');
+    Route::get('export/blindbox', 'ReportController/exportBlindbox');
+    Route::get('export/finance', 'ReportController/exportFinance');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'report:sales');
+
+// ---------------------------------------------------------------------------
+// 抽签发售（marketing:raffle:*）— P0
+// ---------------------------------------------------------------------------
+Route::group('raffle', function () {
+    Route::get('', 'RaffleController/list');
+    Route::get(':id', 'RaffleController/detail');
+    Route::post('save', 'RaffleController/save');
+    Route::post(':id/start', 'RaffleController/start');
+    Route::post(':id/draw', 'RaffleController/draw');
+    Route::post(':id/cancel', 'RaffleController/cancel');
+    Route::delete(':id', 'RaffleController/delete');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'marketing:raffle:list');
+
+// ---------------------------------------------------------------------------
+// 求购挂单（market:buyrequest:*）— P0
+// ---------------------------------------------------------------------------
+Route::group('buy-request', function () {
+    Route::get('', 'BuyRequestController/list');
+    Route::post(':id/close', 'BuyRequestController/close');
+    Route::delete(':id', 'BuyRequestController/delete');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'market:buyrequest:list');
+
+// ---------------------------------------------------------------------------
+// 置换（market:swap:*）— P1
+// ---------------------------------------------------------------------------
+Route::group('swap', function () {
+    Route::get('', 'SwapController/list');
+    Route::get('records', 'SwapController/records');
+    Route::post(':id/close', 'SwapController/close');
+    Route::delete(':id', 'SwapController/delete');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'market:swap:list');
+
+// ---------------------------------------------------------------------------
+// 分解/熔炼（marketing:decompose:*）— P1
+// ---------------------------------------------------------------------------
+Route::group('decompose', function () {
+    Route::get('rules', 'DecomposeController/ruleList');
+    Route::post('rules', 'DecomposeController/ruleSave');
+    Route::post('rules/:id/toggle', 'DecomposeController/ruleToggle');
+    Route::delete('rules/:id', 'DecomposeController/ruleDelete');
+    Route::get('records', 'DecomposeController/records');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'marketing:decompose:list');
+
+// ---------------------------------------------------------------------------
+// 回收站（platform:trash:*）— P1
+// ---------------------------------------------------------------------------
+Route::group('trash', function () {
+    Route::get('collectibles', 'TrashController/collectibles');
+    Route::get('orders', 'TrashController/orders');
+    Route::get('users', 'TrashController/users');
+    Route::get('banners', 'TrashController/banners');
+    Route::get('announcements', 'TrashController/announcements');
+    Route::post(':type/:id/recover', 'TrashController/recover');
+    Route::delete(':type/:id/purge', 'TrashController/purge');
+    Route::post(':type/purge-all', 'TrashController/purgeAll');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'platform:trash:list');
+
+// ---------------------------------------------------------------------------
+// 兜底：未匹配路由（必须放在所有路由注册的最后）
 // ---------------------------------------------------------------------------
 Route::miss(function () {
     return json(['code' => 4040, 'message' => '接口不存在（admin）', 'data' => null]);

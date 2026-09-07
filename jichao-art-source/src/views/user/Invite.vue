@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '@/utils/request'
+import html2canvas from 'html2canvas'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
@@ -70,6 +71,70 @@ function copy(text, msg) {
     showToast('当前环境不支持复制')
   }
 }
+
+/* ---------- 邀请海报（Canvas 生成） ---------- */
+const showPoster = ref(false)
+const posterLoading = ref(false)
+const posterSrc = ref(null)
+const posterImage = ref('')
+
+async function generatePoster() {
+  if (!inviteCode.value) return showToast('邀请码获取中，请稍候')
+  posterLoading.value = true
+  posterImage.value = ''
+  showPoster.value = true
+
+  // 等 DOM 渲染
+  await new Promise((r) => setTimeout(r, 120))
+
+  try {
+    const canvas = await html2canvas(posterSrc.value, {
+      backgroundColor: '#1a1a1a',
+      useCORS: true,
+      scale: 2,
+      logging: false,
+    })
+    posterImage.value = canvas.toDataURL('image/png')
+  } catch (e) {
+    posterImage.value = await drawPosterFallback()
+  } finally {
+    posterLoading.value = false
+  }
+}
+
+function downloadPoster() {
+  if (!posterImage.value) return
+  const a = document.createElement('a')
+  a.download = `邀请海报_${inviteCode.value}_${Date.now()}.png`
+  a.href = posterImage.value
+  a.click()
+}
+
+// 兜底：直接用 Canvas API 绘制
+async function drawPosterFallback() {
+  const w = 750, h = 1000
+  const c = document.createElement('canvas')
+  c.width = w; c.height = h
+  const ctx = c.getContext('2d')
+  // 背景渐变
+  const grad = ctx.createLinearGradient(0, 0, w, h)
+  grad.addColorStop(0, '#1a1a1a'); grad.addColorStop(1, '#2d0000')
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h)
+  // 标题
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 40px sans-serif'; ctx.textAlign = 'center'
+  ctx.fillText('邀好友 共藏国宝', w / 2, 90)
+  ctx.fillStyle = '#aaa'; ctx.font = '24px sans-serif'
+  ctx.fillText('输入邀请码注册，双方均得好礼', w / 2, 140)
+  // 邀请码
+  ctx.fillStyle = '#D00000'; ctx.font = 'bold 72px monospace'
+  ctx.fillText(inviteCode.value, w / 2, h / 2 + 20)
+  ctx.strokeStyle = '#D00000'; ctx.lineWidth = 2
+  ctx.strokeRect(w / 2 - 240, h / 2 - 60, 480, 130)
+  // 底部品牌
+  ctx.fillStyle = '#aaa'; ctx.font = '22px sans-serif'
+  ctx.fillText('司南数字藏品 · SINAN DIGITAL', w / 2, h - 80)
+  return c.toDataURL('image/png')
+}
 </script>
 
 <template>
@@ -97,7 +162,7 @@ function copy(text, msg) {
         <span class="invite-code__label">我的邀请码</span>
         <span class="invite-code__value">{{ inviteCode || '-' }}</span>
       </div>
-      <button class="invite-code__poster" @click="showToast('生成海报')">生成邀请海报</button>
+      <button class="invite-code__poster" @click="generatePoster">生成邀请海报</button>
     </div>
 
     <!-- 注册链接 -->
@@ -129,6 +194,31 @@ function copy(text, msg) {
     </div>
     <div v-else-if="loading" class="invite-list__loading">加载中...</div>
     <AppEmpty v-else description="空空如也" />
+
+    <!-- 邀请海报弹层 -->
+    <van-popup v-model:show="showPoster" position="center" :style="{ background: 'transparent' }" :z-index="200">
+      <div class="poster-wrap">
+        <!-- html2canvas 渲染源（藏在屏幕外，仅用于截图） -->
+        <div v-show="false" ref="posterSrc" class="poster-src">
+          <div class="poster-src__title">邀好友 共藏国宝</div>
+          <div class="poster-src__sub">输入邀请码注册，双方均得好礼</div>
+          <div class="poster-src__code">{{ inviteCode }}</div>
+          <div class="poster-src__brand">司南数字藏品 · SINAN DIGITAL</div>
+        </div>
+
+        <!-- 渲染结果 -->
+        <div class="poster-result">
+          <p v-if="posterLoading" class="poster-result__loading">生成中...</p>
+          <img v-else-if="posterImage" class="poster-result__img" :src="posterImage" alt="邀请海报" />
+          <p v-else class="poster-result__err">海报生成失败</p>
+        </div>
+
+        <div class="poster-actions">
+          <button class="poster-actions__btn poster-actions__btn--ghost" @click="showPoster = false">取消</button>
+          <button class="poster-actions__btn poster-actions__btn--primary" :disabled="!posterImage" @click="downloadPoster">下载海报</button>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -185,4 +275,39 @@ function copy(text, msg) {
   &.is-pending { background: $color-surface; color: $color-text-tertiary; }
 }
 .invite-list__loading { padding: 24px 0; text-align: center; font-size: 13px; color: $color-text-tertiary; }
+
+/* ---------- 邀请海报 ---------- */
+.poster-wrap {
+  width: 320px; background: #1a1a1a; border-radius: 14px; padding: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.poster-src {
+  position: fixed; top: -9999px; left: -9999px;
+  width: 600px; background: linear-gradient(135deg, #1a1a1a, #2d0000);
+  padding: 60px 40px 48px; border-radius: 16px;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
+.poster-src__title { font-size: 48px; font-weight: 700; color: #fff; }
+.poster-src__sub { font-size: 26px; color: #aaa; }
+.poster-src__code {
+  font-size: 64px; font-weight: 700; color: #D00000; font-family: monospace;
+  padding: 20px 60px; border: 3px solid #D00000; border-radius: 12px;
+}
+.poster-src__brand { font-size: 22px; color: #aaa; font-weight: 600; }
+.poster-result {
+  width: 100%; aspect-ratio: 3/4;
+  background: #0f0f10; border-radius: 10px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 12px;
+}
+.poster-result__img { width: 100%; height: 100%; object-fit: cover; }
+.poster-result__loading, .poster-result__err { color: #aaa; font-size: 13px; }
+.poster-actions { display: flex; gap: 10px; }
+.poster-actions__btn {
+  flex: 1; height: 40px; border: none; border-radius: 20px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.poster-actions__btn--ghost { background: rgba(255,255,255,0.08); color: #aaa; }
+.poster-actions__btn--primary { background: linear-gradient(135deg, #D00000, #B00000); color: #fff; }
+.poster-actions__btn:disabled { opacity: 0.5; }
 </style>

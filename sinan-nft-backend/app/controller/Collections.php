@@ -37,24 +37,26 @@ class Collections extends BaseController
     {
         $p = $this->pagination();
 
+        // 盲盒 collectible_id 集合（独立查询，避免 leftJoin 导致 id 字段被覆盖）
+        $blindBoxIds = Db::name('blind_boxes')->column('collectible_id');
+        $blindBoxSet = array_flip($blindBoxIds);
+
         $query = Db::name('collectibles')
-            ->alias('c')
-            ->leftJoin('blind_boxes bb', 'bb.collectible_id = c.id')
-            ->whereNull('c.deleted_at')
-            ->where('c.is_release', 1)
-            ->where('c.status', '<>', 'soldout')
-            ->order('c.onsale_at', 'desc');
+            ->whereNull('deleted_at')
+            ->where('is_release', 1)
+            ->where('status', '<>', 'soldout')
+            ->order('onsale_at', 'desc');
 
         $total = $query->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
-        $items = array_map(function ($c) {
+        $items = array_map(function ($c) use ($blindBoxSet) {
             $sold     = (int) ($c['sold'] ?? 0);
             $locked   = (int) ($c['locked_quantity'] ?? 0);
             $edition  = (int) ($c['edition'] ?? 0);
-            $isBlindBox = !empty($c['bb_collectible_id']);
+            $cid      = (int) $c['id'];
             return [
-                'id'        => (int) $c['id'],
+                'id'        => $cid,
                 'name'      => $c['name'],
                 'subtitle'  => $c['subtitle'],
                 'tag'       => $c['tag'],
@@ -66,7 +68,7 @@ class Collections extends BaseController
                 'saleEndTime'   => $c['off_sale_at'],
                 'status'    => $c['status'],
                 'stock'     => max(0, $edition - $sold - $locked),
-                'isBlindBox' => $isBlindBox,
+                'isBlindBox' => isset($blindBoxSet[$cid]),
             ];
         }, $list);
 

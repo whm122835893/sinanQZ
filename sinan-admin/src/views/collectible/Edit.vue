@@ -210,6 +210,14 @@ async function onSubmit() {
           <el-switch v-model="form.featured" />
         </el-form-item>
 
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="寄售/转赠开关在藏品创建后于「藏品列表 / 藏品详情」中按需开启"
+          style="margin-bottom: 18px"
+        />
+
         <el-form-item label="藏品描述">
           <el-input
             v-model="form.description"

@@ -13,14 +13,18 @@ class Content extends BaseController
 {
     /**
      * GET /api/announcements
-     * 公告/新闻列表
+     * 公告/新闻列表（仅已发布且到生效时间的公告：status=published 且 publish_time 为空或已到）
      */
     public function announcements()
     {
         $p    = $this->pagination();
         $type = $this->strParam('type');
 
-        $query = Db::name('announcements')->whereNull('deleted_at');
+        $query = Db::name('announcements')->whereNull('deleted_at')
+            ->where('status', 'published')
+            ->where(function ($q) {
+                $q->whereNull('publish_time')->whereOr('publish_time', '<=', date('Y-m-d H:i:s'));
+            });
         if ($type) $query->where('type', $type);
 
         $total = $query->count();
@@ -41,12 +45,17 @@ class Content extends BaseController
 
     /**
      * GET /api/announcements/:id
-     * 公告/新闻详情
+     * 公告/新闻详情（草稿/未到定时时间的公告不可见）
      */
     public function announcementDetail()
     {
         $id = $this->intParam('id');
-        $a  = Db::name('announcements')->where('id', $id)->whereNull('deleted_at')->find();
+        $a  = Db::name('announcements')->where('id', $id)->whereNull('deleted_at')
+            ->where('status', 'published')
+            ->where(function ($q) {
+                $q->whereNull('publish_time')->whereOr('publish_time', '<=', date('Y-m-d H:i:s'));
+            })
+            ->find();
         if (!$a) return $this->fail(1002, '公告不存在');
 
         return $this->success([
@@ -113,11 +122,33 @@ class Content extends BaseController
         $keys = ['purchase_limit_per_user', 'order_pay_timeout_seconds', 'resale_cooldown_seconds', 'resale_fee_rate'];
         $list = Db::name('system_configs')->whereIn('config_key', $keys)->column('config_value', 'config_key');
 
+        // 站点装修（B 端配置的全局风格：名称/头像/主题色等）
+        $siteKeys = ['site_name', 'site_logo', 'site_avatar', 'theme_color', 'bg_color', 'button_color', 'button_radius', 'seo_title', 'seo_description', 'seo_keywords'];
+        $site = Db::name('site_settings')->whereIn('setting_key', $siteKeys)->column('setting_value', 'setting_key');
+
         return $this->success([
             'purchaseLimitPerUser'    => (int) ($list['purchase_limit_per_user'] ?? 5),
             'orderPayTimeoutSeconds'  => (int) ($list['order_pay_timeout_seconds'] ?? 300),
             'resaleCooldownSeconds'   => (int) ($list['resale_cooldown_seconds'] ?? 180),
             'resaleFeeRate'           => (float) ($list['resale_fee_rate'] ?? 1.0),
+            'site' => [
+                'siteName'       => $site['site_name'] ?? '司南艺术',
+                'siteLogo'       => $site['site_logo'] ?? '',
+                'siteAvatar'     => $site['site_avatar'] ?? '',
+                'themeColor'     => $this->hexOrDefault($site['theme_color'] ?? '', '#C00000'),
+                'bgColor'        => $this->hexOrDefault($site['bg_color'] ?? '', '#F7F8FA'),
+                'buttonColor'    => $this->hexOrDefault($site['button_color'] ?? '', ''),
+                'buttonRadius'   => (int) ($site['button_radius'] ?? 8),
+                'seoTitle'       => $site['seo_title'] ?? '',
+                'seoDescription' => $site['seo_description'] ?? '',
+                'seoKeywords'    => $site['seo_keywords'] ?? '',
+            ],
         ]);
+    }
+
+    /** 颜色值兜底：非法/为空时返回默认 */
+    private function hexOrDefault(string $value, string $default): string
+    {
+        return preg_match('/^#[0-9A-Fa-f]{6}$/', $value) ? $value : $default;
     }
 }

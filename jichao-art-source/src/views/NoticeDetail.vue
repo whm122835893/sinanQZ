@@ -51,7 +51,8 @@ function back() { router.back() }
             class="notice-detail__block"
             :class="`notice-detail__block--${block.type}`"
           >
-            <p v-if="block.type === 'text'" class="notice-detail__p" v-html="block.value"></p>
+            <!-- 用 div 承载富文本（管理端编辑器产出，可能含 h2/ul/img 等块级标签） -->
+            <div v-if="block.type === 'text'" class="notice-detail__p" v-html="block.value"></div>
             <img v-else-if="block.type === 'image'" class="notice-detail__image" :src="block.value" alt="" />
             <div v-else-if="block.type === 'signature'" class="notice-detail__signature" v-html="block.value"></div>
             <div v-else-if="block.type === 'warning'" class="notice-detail__warning" v-html="block.value"></div>
@@ -123,6 +124,25 @@ function back() { router.back() }
     text-align: justify;
   }
   &__p:last-child { margin-bottom: 0; }
+
+  // 富文本正文（管理端富文本编辑器产出，v-html 渲染）
+  :deep(.notice-detail__p) {
+    h2 { font-size: 17px; font-weight: 700; margin: 14px 0 8px; }
+    h3 { font-size: 15px; font-weight: 600; margin: 10px 0 6px; }
+    ul, ol { padding-left: 20px; margin: 6px 0 10px; }
+    li { margin: 3px 0; }
+    img { display: block; max-width: 100%; border-radius: $radius-md; margin: 10px auto; }
+    a { color: $color-primary; text-decoration: underline; word-break: break-all; }
+    blockquote {
+      margin: 10px 0; padding: 8px 12px;
+      border-left: 3px solid $color-primary;
+      background: $color-bg; border-radius: $radius-md;
+      color: $color-text-secondary; font-size: 13px;
+    }
+    strong { font-weight: 700; }
+    p { margin: 0 0 10px; font-size: 14px; line-height: 1.85; }
+    p:last-child { margin-bottom: 0; }
+  }
 
   :deep(.label) { font-weight: 700; color: $color-text-primary; }
   :deep(.highlight) { color: $color-primary; font-weight: 700; }

@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 
-// 全局 UI 状态：响应式断点 / 侧栏折叠 / 多标签页
+// 全局 UI 状态：响应式断点 / 侧栏折叠 / 菜单模式 / 多标签页
 export const useAppStore = defineStore('app', {
   state: () => ({
     isMobile: false,
     sidebarCollapsed: false,
     drawerOpen: false,          // 移动端侧栏抽屉
-    visitedTags: []             // [{ path, title }]
+    visitedTags: [],            // [{ path, title }]
+    // 菜单展示模式：'flat' 平铺 / 'submenu' 二级折叠（仅手动切换，本地持久化）
+    menuMode: localStorage.getItem('adm_menu_mode') === 'submenu' ? 'submenu' : 'flat'
   }),
   actions: {
     initResponsive() {
@@ -16,6 +18,11 @@ export const useAppStore = defineStore('app', {
     },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed
+    },
+    // 切换菜单展示模式（唯一入口，仅用户主动触发时调用）
+    toggleMenuMode() {
+      this.menuMode = this.menuMode === 'flat' ? 'submenu' : 'flat'
+      localStorage.setItem('adm_menu_mode', this.menuMode)
     },
     toggleDrawer(open) {
       this.drawerOpen = open ?? !this.drawerOpen

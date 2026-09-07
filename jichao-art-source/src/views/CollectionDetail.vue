@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
+import html2canvas from 'html2canvas'
 import { useLoginGate } from '@/utils/loginGate'
 import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -212,11 +213,91 @@ function onOpenResultDone() {
   showOpenResult.value = false
   router.back()
 }
+
+/* ---------- 藏品分享海报（Canvas 生成） ---------- */
+
+const showPoster = ref(false)
+const posterLoading = ref(false)
+const posterCanvas = ref(null)
+const posterImage = ref('')
+
+async function generatePoster() {
+  if (!detail.value) return
+  posterLoading.value = true
+  posterImage.value = ''
+  showPoster.value = true
+
+  // 等 DOM 渲染
+  await new Promise((r) => setTimeout(r, 120))
+
+  try {
+    const canvas = await html2canvas(posterCanvas.value, {
+      backgroundColor: '#1a1a1a',
+      useCORS: true,
+      scale: 2,
+      logging: false,
+    })
+    posterImage.value = canvas.toDataURL('image/png')
+  } catch (e) {
+    // fallback: 直接用 Canvas API 绘制
+    posterImage.value = await drawPosterFallback()
+  } finally {
+    posterLoading.value = false
+  }
+}
+
+function downloadPoster() {
+  if (!posterImage.value) return
+  const a = document.createElement('a')
+  a.download = `${detail.value.title || '藏品'}_海报_${Date.now()}.png`
+  a.href = posterImage.value
+  a.click()
+}
+
+async function drawPosterFallback() {
+  const w = 750, h = 1000
+  const c = document.createElement('canvas')
+  c.width = w; c.height = h
+  const ctx = c.getContext('2d')
+  // 背景渐变
+  const grad = ctx.createLinearGradient(0, 0, w, h)
+  grad.addColorStop(0, '#1a1a1a'); grad.addColorStop(1, '#2d0000')
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h)
+  // 标题
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 36px sans-serif'; ctx.textAlign = 'center'
+  ctx.fillText(detail.value.title || '司南数字藏品', w / 2, 60)
+  // 加载图片并绘制
+  await new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const ratio = Math.min((w - 120) / img.width, 520 / img.height)
+      const dw = img.width * ratio, dh = img.height * ratio
+      ctx.drawImage(img, (w - dw) / 2, 100, dw, dh)
+      ctx.strokeStyle = '#D00000'; ctx.lineWidth = 3
+      ctx.strokeRect((w - dw) / 2, 100, dw, dh)
+      // 发行方
+      ctx.fillStyle = '#aaa'; ctx.font = '22px sans-serif'
+      ctx.fillText('司南数字藏品 · SINAN DIGITAL', w / 2, h - 80)
+      ctx.fillStyle = '#D00000'; ctx.font = 'bold 28px sans-serif'
+      ctx.fillText('发行量 ' + (detail.value.issueCount || '-'), w / 2, h - 40)
+      resolve()
+    }
+    img.onerror = () => resolve()
+    img.src = detail.value.coverImage || ''
+  })
+  return c.toDataURL('image/png')
+}
 </script>
 
 <template>
   <div class="detail page--no-tabbar" v-if="detail">
-    <AppNavBar :title="isWarehouse ? '我的藏品' : '藏品详情'" @click-left="$router.back()" />
+    <AppNavBar :title="isWarehouse ? '我的藏品' : '藏品详情'" @click-left="$router.back()">
+      <!-- 用户持有的藏品：右上角分享海报入口 -->
+      <template v-if="isWarehouse" #right>
+        <AppIcon name="share" :size="22" color="#333" @click="generatePoster" />
+      </template>
+    </AppNavBar>
 
     <!-- 主视觉卡片 -->
     <div class="detail-hero">
@@ -396,6 +477,36 @@ function onOpenResultDone() {
         <button class="open-result__btn" @click="onOpenResultDone">收下藏品</button>
       </div>
     </van-overlay>
+
+    <!-- 藏品分享海报弹层 -->
+    <van-popup v-model:show="showPoster" position="center" :style="{ background: 'transparent' }" :z-index="200">
+      <div class="poster-wrap">
+        <!-- html2canvas 渲染源（藏在屏幕外，仅用于截图） -->
+        <div v-show="false" ref="posterCanvas" class="poster-src">
+          <img class="poster-src__cover" :src="detail.coverImage" alt="" />
+          <div class="poster-src__info">
+            <div class="poster-src__title">{{ detail.title }}</div>
+            <div class="poster-src__meta">
+              <span>发行方：司南文创</span>
+              <span>发行量：{{ detail.issueCount }}</span>
+            </div>
+            <div class="poster-src__brand">SINAN DIGITAL · 链上藏品</div>
+          </div>
+        </div>
+
+        <!-- 渲染结果 -->
+        <div class="poster-result">
+          <p v-if="posterLoading" class="poster-result__loading">生成中...</p>
+          <img v-else-if="posterImage" class="poster-result__img" :src="posterImage" alt="海报" />
+          <p v-else class="poster-result__err">海报生成失败</p>
+        </div>
+
+        <div class="poster-actions">
+          <button class="poster-actions__btn poster-actions__btn--ghost" @click="showPoster = false">取消</button>
+          <button class="poster-actions__btn poster-actions__btn--primary" :disabled="!posterImage" @click="downloadPoster">下载海报</button>
+        </div>
+      </div>
+    </van-popup>
   </div>
 </template>
 
@@ -624,4 +735,50 @@ function onOpenResultDone() {
     font-size: 15px; font-weight: 600; cursor: pointer;
   }
 }
+</style>
+
+<!-- ====== 海报样式 ====== -->
+<style scoped lang="scss">
+.poster-wrap {
+  width: 320px; background: #1a1a1a; border-radius: 14px; padding: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.poster-src {
+  position: fixed; top: -9999px; left: -9999px;
+  width: 600px; background: linear-gradient(135deg, #1a1a1a, #2d0000);
+  padding: 40px 40px 32px; border-radius: 16px;
+  display: flex; flex-direction: column; gap: 24px;
+}
+.poster-src__cover {
+  width: 520px; height: 520px; object-fit: cover; border-radius: 12px;
+  border: 3px solid #D00000;
+  -webkit-user-drag: none; user-select: none;
+}
+.poster-src__info { display: flex; flex-direction: column; gap: 12px; }
+.poster-src__title {
+  font-size: 44px; font-weight: 700; color: #fff; text-align: center;
+}
+.poster-src__meta {
+  display: flex; justify-content: space-between; padding: 0 20px;
+  font-size: 26px; color: #aaa;
+}
+.poster-src__brand {
+  text-align: center; font-size: 22px; color: #D00000; font-weight: 600;
+}
+.poster-result {
+  width: 100%; aspect-ratio: 3/4;
+  background: #0f0f10; border-radius: 10px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 12px;
+}
+.poster-result__img { width: 100%; height: 100%; object-fit: cover; }
+.poster-result__loading, .poster-result__err { color: #aaa; font-size: 13px; }
+.poster-actions { display: flex; gap: 10px; }
+.poster-actions__btn {
+  flex: 1; height: 40px; border: none; border-radius: 20px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.poster-actions__btn--ghost { background: rgba(255,255,255,0.08); color: #aaa; }
+.poster-actions__btn--primary { background: linear-gradient(135deg, #D00000, #B00000); color: #fff; }
+.poster-actions__btn:disabled { opacity: 0.5; }
 </style>

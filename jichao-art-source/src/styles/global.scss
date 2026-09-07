@@ -20,6 +20,11 @@
   --color-dark:             #1A1A1A;
   --color-primary-bg:       #FFF5F5;
 
+  // ---- 站点装修变量（B 端配置后由 stores/site.js 运行时覆盖）----
+  --color-button:           #C00000;   // 主按钮色（留空跟随主题色）
+  --color-button-dark:      #A00000;
+  --radius-btn:             24px;      // 按钮圆角（默认胶囊）
+
   // ---- 覆盖 Vant 主题令牌，使组件库与设计系统一致 ----
   --van-primary-color:      var(--color-primary);
   --van-danger-color:       var(--color-primary);
@@ -32,8 +37,9 @@
   --van-gray-3:             #ebedf0;
   --van-border-color:       var(--color-border);
   --van-button-default-color: var(--color-text-primary);
-  --van-button-primary-background: var(--color-primary);
-  --van-button-primary-border-color: var(--color-primary);
+  --van-button-primary-background: var(--color-button);
+  --van-button-primary-border-color: var(--color-button);
+  --van-button-border-radius: var(--radius-btn);
   --van-font-family:        'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
 }
 
