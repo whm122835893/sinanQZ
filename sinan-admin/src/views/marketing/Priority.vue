@@ -1,13 +1,36 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete } from '@element-plus/icons-vue'
-import { getPrioritySales, addWhitelist, cleanExpiredPriority } from '@/api'
+import { Plus, Delete, Download } from '@element-plus/icons-vue'
+import {
+  getPrioritySales,
+  getPriorityWhitelist,
+  addWhitelist,
+  removePriorityWhitelist,
+  cleanExpiredPriority
+} from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import { ACTIVITY_STATUS } from '@/utils/maps'
+import { downloadCsv } from '@/utils/csv'
 
 const loading = ref(true)
 const sales = ref([])
+
+// ---- 导出白名单 CSV ----
+function exportWl(s) {
+  const rows = (s.whitelists || []).map((w, i) => [
+    i + 1,
+    w.nickname,
+    w.phone,
+    w.maxQuantity,
+    w.usedQuantity,
+    w.expiresAt || '跟随活动',
+    isExpired(w.expiresAt) ? '已过期' : '生效中'
+  ])
+  if (!rows.length) return ElMessage.warning('该活动暂无白名单数据')
+  downloadCsv(`优先购白名单_${s.name}`, ['序号', '用户', '手机号', '最大购买量', '已用配额', '有效期至', '状态'], rows)
+  ElMessage.success(`已导出「${s.name}」白名单 ${rows.length} 条`)
+}
 
 // ---- 加白名单 ----
 const addShow = ref(false)
@@ -21,6 +44,29 @@ async function load() {
   const res = await getPrioritySales()
   sales.value = res.data
   loading.value = false
+  // 白名单明细单独拉取（列表接口只给 whitelistCount，明细接口给全量字段）
+  await Promise.all(
+    sales.value
+      .filter((s) => s.whitelistCount > 0)
+      .map(async (s) => {
+        const w = await getPriorityWhitelist(s.id)
+        s.whitelists = w.code === 0 ? w.data : []
+      })
+  )
+}
+
+// ---- 移除白名单（写审计日志） ----
+async function onRemoveWl(s, w) {
+  await ElMessageBox.confirm(
+    `确认移除「${w.nickname}（${w.phone}）」的优先购白名单？移除后该用户不再享有优先购买资格。`,
+    '移除白名单',
+    { type: 'warning' }
+  )
+  const res = await removePriorityWhitelist(w.id)
+  if (res.code === 0) {
+    ElMessage.success('已移除（已写入审计日志）')
+    load()
+  }
 }
 
 function openAdd(s) {
@@ -84,6 +130,7 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
           </div>
           <div class="pr__head-ops">
             <el-button type="primary" size="small" :icon="Plus" @click="openAdd(s)">加白名单</el-button>
+            <el-button size="small" :icon="Download" @click="exportWl(s)">导出名单</el-button>
             <el-button size="small" :icon="Delete" @click="onClean(s)">清理过期</el-button>
           </div>
         </div>
@@ -103,7 +150,7 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
           </el-table-column>
           <el-table-column label="有效期" min-width="150">
             <template #default="{ row }">
-              <span :class="{ 'pr__expired': isExpired(row.expiresAt) }">{{ row.expiresAt }}</span>
+              <span :class="{ 'pr__expired': isExpired(row.expiresAt) }">{{ row.expiresAt || '跟随活动' }}</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
@@ -113,9 +160,14 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="操作" width="80" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="danger" size="small" :icon="Delete" @click="onRemoveWl(s, row)" />
+            </template>
+          </el-table-column>
         </el-table>
         <div v-if="s.whitelistCount > s.whitelists.length" class="t-tertiary pr__more">
-          其余 {{ s.whitelistCount - s.whitelists.length }} 人已省略（联调后分页加载）
+          其余 {{ s.whitelistCount - s.whitelists.length }} 人加载中或加载失败，可刷新重试
         </div>
 
         <el-alert

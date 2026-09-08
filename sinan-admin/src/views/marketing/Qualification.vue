@@ -1,19 +1,35 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { User, Delete } from '@element-plus/icons-vue'
+import { User, Delete, Download } from '@element-plus/icons-vue'
 import {
   getQualifications,
+  getQualificationWhitelist,
   saveQualification,
   addQualificationWhitelist,
   removeQualificationWhitelist,
   getCollectibleList
 } from '@/api'
 import { QUALIFY_CONDITION_TYPE } from '@/utils/maps'
+import { downloadCsv } from '@/utils/csv'
 
 const loading = ref(true)
 const list = ref([])
 const collectibles = [] // 可选资格藏品缓存
+
+// ---- 导出白名单 CSV ----
+function exportWl(q) {
+  const rows = (q.whitelist || []).map((w, i) => [
+    i + 1,
+    w.nickname,
+    w.phone,
+    w.expiresAt || '永久',
+    isExpired(w.expiresAt) ? '已过期' : '生效中'
+  ])
+  if (!rows.length) return ElMessage.warning('该藏品暂无白名单数据')
+  downloadCsv(`资格购白名单_${q.collectibleName}`, ['序号', '用户', '手机号', '有效期至', '状态'], rows)
+  ElMessage.success(`已导出「${q.collectibleName}」白名单 ${rows.length} 条`)
+}
 
 // ---- 条件编辑 ----
 const editShow = ref(false)
@@ -42,6 +58,15 @@ async function load() {
   collectibles.length = 0
   collectibles.push(...(c.data.list || []).filter((x) => x.circulate > 0))
   loading.value = false
+  // 白名单明细单独拉取（列表接口只给 whitelistCount，whitelist 恒为空数组）
+  await Promise.all(
+    list.value
+      .filter((x) => x.whitelistCount > 0)
+      .map(async (x) => {
+        const w = await getQualificationWhitelist(x.id)
+        x.whitelist = w.code === 0 ? w.data : []
+      })
+  )
 }
 
 // ---- 开关（独立于优先购） ----
@@ -53,7 +78,18 @@ async function onToggle(q, val) {
     '资格购开关',
     { type: 'warning' }
   )
-  const res = await saveQualification({ id: q.id, isEnabled: val ? 1 : 0 })
+  // 后端为整表 upsert：开关时须带上当前全部条件，避免清空已有配置
+  const res = await saveQualification({
+    id: q.id,
+    collectibleId: q.collectibleId,
+    isEnabled: val ? 1 : 0,
+    conditionType: q.conditionType,
+    requiredCollectibleIds: q.requiredCollectibleIds,
+    requiredCheckinDays: q.requiredCheckinDays,
+    requiredInviteCount: q.requiredInviteCount,
+    validStartAt: q.validStartAt,
+    validEndAt: q.validEndAt
+  })
   if (res.code === 0) {
     q.isEnabled = val ? 1 : 0
     ElMessage.success(val ? '已开启资格购' : '已关闭资格购')
@@ -89,12 +125,10 @@ async function onSave() {
   }
   const res = await saveQualification({
     id: editing.value.id,
+    collectibleId: editing.value.collectibleId,
     isEnabled: f.isEnabled,
     conditionType: f.conditionType,
-    requiredCollectibles: f.requiredCollectibleIds.map((id) => {
-      const c = collectibles.find((x) => x.id === id)
-      return { collectibleId: id, name: c?.name, cover: c?.cover }
-    }),
+    requiredCollectibleIds: f.requiredCollectibleIds,
     requiredCheckinDays: f.requiredCheckinDays,
     requiredInviteCount: f.requiredInviteCount,
     validStartAt: f.validStartAt,
@@ -178,6 +212,7 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
           </div>
           <div class="ql__head-ops">
             <el-button type="primary" size="small" :icon="User" @click="openWhitelist(q)">导入白名单</el-button>
+            <el-button size="small" :icon="Download" @click="exportWl(q)">导出名单</el-button>
             <el-button size="small" @click="openEdit(q)">条件配置</el-button>
             <el-switch
               :model-value="q.isEnabled === 1"
@@ -226,7 +261,7 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
             <el-table-column label="用户" prop="nickname" min-width="120" />
             <el-table-column label="手机号" prop="phone" width="130" />
             <el-table-column label="有效期至" min-width="150">
-              <template #default="{ row }">{{ row.expiresAt }}</template>
+              <template #default="{ row }">{{ row.expiresAt || '永久' }}</template>
             </el-table-column>
             <el-table-column label="操作" width="80" fixed="right">
               <template #default="{ row }">

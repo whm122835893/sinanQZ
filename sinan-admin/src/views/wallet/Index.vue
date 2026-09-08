@@ -29,6 +29,18 @@ const statCards = [
   { key: 'monthRecharge', label: '本月充值' }
 ]
 
+// CSV 导出列定义（类型/方向格式化为可读文本）
+const exportColumns = [
+  { label: '流水标题', prop: 'title' },
+  { label: '用户', prop: 'userName' },
+  { label: '手机号', prop: 'userPhone' },
+  { label: '类型', prop: 'type', format: (r) => WALLET_TYPE[r.type]?.label || r.type },
+  { label: '方向', prop: 'direction', format: (r) => (r.direction > 0 ? '收入' : '支出') },
+  { label: '发生额（元）', prop: 'amount', format: (r) => `${r.direction > 0 ? '+' : '-'}${fmtMoney(r.amount)}` },
+  { label: '余额快照（元）', prop: 'balanceAfter', format: (r) => fmtMoney(r.balanceAfter) },
+  { label: '时间', prop: 'createTime' }
+]
+
 onMounted(async () => {
   const res = await getWalletStats()
   stats.value = res.data
@@ -50,7 +62,14 @@ onMounted(async () => {
 
     <div style="height: 12px" />
 
-    <AdminTablePage :fetch="getWalletTransactions" :filters="filters" search-placeholder="搜索用户 / 流水标题">
+    <AdminTablePage
+      :fetch="getWalletTransactions"
+      :filters="filters"
+      search-placeholder="搜索用户 / 流水标题"
+      exportable
+      export-filename="钱包流水"
+      :export-columns="exportColumns"
+    >
       <template #default="{ items }">
         <el-table-column label="流水标题" min-width="220" fixed="left" prop="title" />
 

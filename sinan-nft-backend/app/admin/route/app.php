@@ -160,6 +160,11 @@ Route::group('marketing', function () {
     // 优先购
     Route::get('priority', 'MarketingController/priorityList');
     Route::post('priority', 'MarketingController/prioritySave')->middleware(AdminPermission::class, 'marketing:priority:manage');
+    // 优先购白名单（明细/添加/移除/清理过期，均写审计日志）
+    Route::get('priority-whitelist/:activityId', 'MarketingController/priorityWhitelist');
+    Route::post('priority-whitelist', 'MarketingController/priorityWhitelistAdd')->middleware(AdminPermission::class, 'marketing:priority:manage');
+    Route::delete('priority-whitelist/:id', 'MarketingController/priorityWhitelistRemove')->middleware(AdminPermission::class, 'marketing:priority:manage');
+    Route::post('priority-whitelist/clean-expired', 'MarketingController/priorityWhitelistCleanExpired')->middleware(AdminPermission::class, 'marketing:priority:manage');
     // 签到
     Route::get('checkin', 'MarketingController/checkinConfig');
     Route::post('checkin', 'MarketingController/checkinSave')->middleware(AdminPermission::class, 'marketing:checkin:config');

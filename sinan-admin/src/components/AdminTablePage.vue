@@ -1,16 +1,19 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Search, Refresh, Download } from '@element-plus/icons-vue'
+import { downloadCsv } from '@/utils/csv'
 
 // ============================================================
 // 通用表格列表页（Element Plus 桌面端）
 // 用法：
-// <AdminTablePage :fetch="api" :filters="filters" search-placeholder="搜索">
+// <AdminTablePage :fetch="api" :filters="filters" search-placeholder="搜索" exportable :export-columns="cols" export-filename="操作日志">
 //   <template #default="{ items }">
 //     <el-table-column ... />   // 直接写 el-table-column
 //   </template>
 // </AdminTablePage>
 // filters: [{ field, label, options: [{value,label}], placeholder }]
+// exportColumns: [{ label, prop, format?: (row) => any }]，导出 CSV 用
 // ============================================================
 
 const props = defineProps({
@@ -19,7 +22,10 @@ const props = defineProps({
   searchPlaceholder: { type: String, default: '搜索关键词' },
   size: { type: Number, default: 10 },
   defaults: { type: Object, default: () => ({}) }, // 初始筛选值
-  hideSearch: { type: Boolean, default: false }
+  hideSearch: { type: Boolean, default: false },
+  exportable: { type: Boolean, default: false },           // 是否显示「导出 CSV」按钮
+  exportFilename: { type: String, default: '导出数据' },    // 导出文件名（自动追加日期）
+  exportColumns: { type: Array, default: () => [] }        // CSV 列定义 [{label, prop, format}]
 })
 
 const items = ref([])
@@ -59,6 +65,50 @@ function reset() {
   load()
 }
 
+// ---------------- 导出 CSV ----------------
+const exporting = ref(false)
+
+async function exportAll() {
+  if (!props.exportColumns.length) return
+  exporting.value = true
+  try {
+    // 循环拉取当前筛选条件下的全部分页数据（单次 100 条，上限 10000 条防误操作）
+    const all = []
+    const size = 100
+    let p = 1
+    while (p <= 100) {
+      const res = await props.fetch({
+        page: p,
+        size,
+        keyword: keyword.value,
+        ...props.defaults,
+        ...filterValues.value
+      })
+      const list = res.data?.list || []
+      all.push(...list)
+      if (all.length >= (res.data?.total || 0) || !list.length) break
+      p++
+    }
+    if (!all.length) {
+      ElMessage.warning('当前筛选条件下没有可导出的数据')
+      return
+    }
+    downloadCsv(
+      props.exportFilename,
+      props.exportColumns.map((c) => c.label),
+      all.map((row) =>
+        props.exportColumns.map((c) => {
+          const v = typeof c.format === 'function' ? c.format(row) : row[c.prop]
+          return v === undefined || v === null ? '' : v
+        })
+      )
+    )
+    ElMessage.success(`已导出 ${all.length} 条记录`)
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(load)
 defineExpose({ refresh: load })
 </script>
@@ -66,40 +116,51 @@ defineExpose({ refresh: load })
 <template>
   <div class="atp">
     <!-- 搜索区 -->
-    <div v-if="!hideSearch" class="atp__search">
-      <el-input
-        v-model="keyword"
-        :placeholder="searchPlaceholder"
-        clearable
-        class="atp__kw"
-        @keyup.enter="search"
-        @clear="search"
-      >
-        <template #prefix><el-icon><Search /></el-icon></template>
-      </el-input>
+    <div v-if="!hideSearch || exportable" class="atp__search">
+      <template v-if="!hideSearch">
+        <el-input
+          v-model="keyword"
+          :placeholder="searchPlaceholder"
+          clearable
+          class="atp__kw"
+          @keyup.enter="search"
+          @clear="search"
+        >
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
 
-      <el-select
-        v-for="f in filters"
-        :key="f.field"
-        v-model="filterValues[f.field]"
-        :placeholder="f.placeholder || `全部${f.label}`"
-        clearable
-        class="atp__filter"
-        @change="search"
-      >
-        <el-option
-          v-for="o in f.options"
-          :key="o.value"
-          :label="o.label"
-          :value="o.value"
-        />
-      </el-select>
+        <el-select
+          v-for="f in filters"
+          :key="f.field"
+          v-model="filterValues[f.field]"
+          :placeholder="f.placeholder || `全部${f.label}`"
+          clearable
+          class="atp__filter"
+          @change="search"
+        >
+          <el-option
+            v-for="o in f.options"
+            :key="o.value"
+            :label="o.label"
+            :value="o.value"
+          />
+        </el-select>
 
-      <el-button type="primary" @click="search">
-        <el-icon style="margin-right: 4px"><Search /></el-icon>查询
-      </el-button>
-      <el-button @click="reset">
-        <el-icon style="margin-right: 4px"><Refresh /></el-icon>重置
+        <el-button type="primary" @click="search">
+          <el-icon style="margin-right: 4px"><Search /></el-icon>查询
+        </el-button>
+        <el-button @click="reset">
+          <el-icon style="margin-right: 4px"><Refresh /></el-icon>重置
+        </el-button>
+      </template>
+
+      <el-button
+        v-if="exportable"
+        :loading="exporting"
+        class="atp__export"
+        @click="exportAll"
+      >
+        <el-icon style="margin-right: 4px"><Download /></el-icon>导出 CSV
       </el-button>
 
       <div class="atp__extra"><slot name="extra" /></div>
@@ -145,7 +206,8 @@ defineExpose({ refresh: load })
 
 .atp__kw { width: 240px; }
 .atp__filter { width: 150px; }
-.atp__extra { margin-left: auto; display: flex; gap: 8px; }
+.atp__export { margin-left: auto; }
+.atp__extra { display: flex; gap: 8px; }
 
 .atp__table {
   width: 100%;

@@ -4,6 +4,25 @@ import { getLoginLogs, getOperationLogs } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 
 const activeTab = ref('operation')
+
+// CSV 导出列定义
+const opExportColumns = [
+  { label: '管理员', prop: 'admin' },
+  { label: '模块', prop: 'module' },
+  { label: '操作', prop: 'action' },
+  { label: '明细', prop: 'detail' },
+  { label: 'IP', prop: 'ip' },
+  { label: '时间', prop: 'time' }
+]
+
+const loginExportColumns = [
+  { label: '管理员', prop: 'name' },
+  { label: '账号', prop: 'username' },
+  { label: '结果', prop: 'result', format: (r) => (r.result === 'success' ? '登录成功' : '登录失败') },
+  { label: '属地', prop: 'location' },
+  { label: 'IP', prop: 'ip' },
+  { label: '时间', prop: 'time' }
+]
 </script>
 
 <template>
@@ -11,7 +30,13 @@ const activeTab = ref('operation')
     <el-tabs v-model="activeTab">
       <!-- 操作日志 -->
       <el-tab-pane label="操作日志" name="operation" lazy>
-        <AdminTablePage :fetch="getOperationLogs" search-placeholder="搜索管理员 / 模块 / 操作">
+        <AdminTablePage
+          :fetch="getOperationLogs"
+          search-placeholder="搜索管理员 / 模块 / 操作"
+          exportable
+          export-filename="操作日志"
+          :export-columns="opExportColumns"
+        >
           <template #default="{ items }">
             <el-table-column label="管理员" width="120" fixed="left">
               <template #default="{ row }">
@@ -37,7 +62,13 @@ const activeTab = ref('operation')
 
       <!-- 登录日志 -->
       <el-tab-pane label="登录日志" name="login" lazy>
-        <AdminTablePage :fetch="getLoginLogs" search-placeholder="搜索账号 / IP">
+        <AdminTablePage
+          :fetch="getLoginLogs"
+          search-placeholder="搜索账号 / IP"
+          exportable
+          export-filename="登录日志"
+          :export-columns="loginExportColumns"
+        >
           <template #default="{ items }">
             <el-table-column label="管理员" width="160" fixed="left">
               <template #default="{ row }">

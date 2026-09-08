@@ -1385,17 +1385,47 @@ export async function getPrioritySales() {
   }
 }
 
-/** 优先购白名单添加 */
+/** 优先购白名单明细（导出名单数据源） */
+export async function getPriorityWhitelist(activityId) {
+  const res = await get(`/marketing/priority-whitelist/${activityId}`)
+  if (res.code !== 0) return res
+  return {
+    code: 0,
+    message: res.message,
+    data: (res.data || []).map((w) => ({
+      id: n(w.id),
+      userId: n(w.userId),
+      nickname: s(w.nickname),
+      phone: s(w.phone),
+      maxQuantity: n(w.maxQuantity),
+      usedQuantity: n(w.usedQuantity),
+      expiresAt: s(w.expiresAt),
+      status: n(w.status),
+      createdAt: s(w.createdAt)
+    }))
+  }
+}
+
+/** 优先购白名单添加（单个手机号，写审计日志） */
 export function addWhitelist({ saleId, phone, quantity, expiresAt }) {
-  return post('/marketing/priority', {
-    id: saleId,
-    whitelist: [{ phone, max_quantity: quantity, expires_at: expiresAt }]
+  return post('/marketing/priority-whitelist', {
+    activity_id: saleId,
+    phone,
+    max_quantity: quantity,
+    expires_at: expiresAt || ''
   })
 }
 
-/** 清理过期白名单（后端在读取时自动过滤，此处刷新即可） */
+/** 移除优先购白名单（写审计日志） */
+export function removePriorityWhitelist(id) {
+  return del(`/marketing/priority-whitelist/${id}`)
+}
+
+/** 清理过期优先购资格（真实删除 expires_at 早于当前时间的记录，写审计日志） */
 export function cleanExpiredPriority(saleId) {
-  return get('/marketing/priority', { page: 1, pageSize: 50 })
+  return post('/marketing/priority-whitelist/clean-expired', {
+    activity_id: saleId
+  })
 }
 
 // ============================================================
@@ -1482,10 +1512,16 @@ export async function getQualifications() {
       isEnabled: n(q.isEnabled) === 1,
       conditionType: n(q.conditionType),
       requiredCollectibleIds: q.requiredCollectibleIds || [],
+      requiredCollectibles: (q.requiredCollectibles || []).map((c) => ({
+        collectibleId: n(c.collectibleId),
+        name: s(c.name),
+        cover: s(c.cover)
+      })),
       requiredCheckinDays: n(q.requiredCheckinDays),
       requiredInviteCount: n(q.requiredInviteCount),
       validStartAt: s(q.validStartAt),
       validEndAt: s(q.validEndAt),
+      qualifiedCount: n(q.qualifiedCount),
       whitelistCount: n(q.whitelistCount),
       whitelist: (q.whitelist || []).map((w) => ({
         id: w.id,
@@ -1518,6 +1554,24 @@ export function addQualificationWhitelist({ qualificationId, phones, expiresAt }
     phones,
     expires_at: expiresAt || ''
   })
+}
+
+/** 资格购白名单明细（列表接口 whitelist 恒为空数组，导出/展示需走此接口） */
+export async function getQualificationWhitelist(configId) {
+  const res = await get(`/collectibles/qualification-whitelist/${configId}`)
+  if (res.code !== 0) return res
+  return {
+    code: 0,
+    message: res.message,
+    data: (res.data || []).map((w) => ({
+      id: n(w.id),
+      userId: n(w.userId),
+      nickname: s(w.nickname),
+      phone: s(w.phone),
+      expiresAt: s(w.expiresAt),
+      createdAt: s(w.createdAt)
+    }))
+  }
 }
 
 export function removeQualificationWhitelist(qualificationId, whitelistId) {

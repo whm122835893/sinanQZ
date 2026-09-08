@@ -847,6 +847,22 @@ class CollectibleController extends BaseController
 
         $result = array_map(function ($row) {
             $configId = (int) $row['id'];
+            // 资格藏品明细（名称/封面，供前端条件概览与编辑回显）
+            $requiredIds = json_decode((string) ($row['required_collectible_ids'] ?? '[]'), true) ?: [];
+            $requiredCollectibles = [];
+            if ($requiredIds) {
+                $rows = Db::name('collectibles')
+                    ->whereIn('id', $requiredIds)
+                    ->field('id, name, image')
+                    ->select()->toArray();
+                foreach ($rows as $rc) {
+                    $requiredCollectibles[] = [
+                        'collectibleId' => (int) $rc['id'],
+                        'name'          => $rc['name'],
+                        'cover'         => $rc['image'],
+                    ];
+                }
+            }
             return [
                 'id'                     => $configId,
                 'collectibleId'         => (int) $row['collectible_id'],
@@ -855,11 +871,13 @@ class CollectibleController extends BaseController
                 'price'                 => (float) $row['price'],
                 'isEnabled'             => (int) $row['is_enabled'],
                 'conditionType'          => (int) $row['condition_type'],
-                'requiredCollectibleIds' => json_decode((string) ($row['required_collectible_ids'] ?? '[]'), true) ?: [],
+                'requiredCollectibleIds' => $requiredIds,
+                'requiredCollectibles'  => $requiredCollectibles,
                 'requiredCheckinDays'   => (int) $row['required_checkin_days'],
                 'requiredInviteCount'   => (int) $row['required_invite_count'],
                 'validStartAt'          => $row['valid_start_at'],
                 'validEndAt'            => $row['valid_end_at'],
+                'qualifiedCount'        => self::qualifiedUserCount($row, $requiredIds),
                 'whitelistCount'        => Db::name('qualification_whitelists')->where('config_id', $configId)->count(),
                 'whitelist'             => [],
                 'updatedAt'             => $row['updated_at'],
@@ -867,6 +885,78 @@ class CollectibleController extends BaseController
         }, $rows);
 
         return $this->success($result);
+    }
+
+    /**
+     * 已获资格用户数（白名单命中 + 条件达标，与 C 端 PurchaseQualifyService 判定口径一致）
+     * 满足任一 = 各条件达标用户并集；满足全部 = 各条件达标用户交集；白名单用户始终计入
+     */
+    private static function qualifiedUserCount(array $config, array $requiredIds): int
+    {
+        $now = time();
+        if (!empty($config['valid_start_at']) && strtotime((string) $config['valid_start_at']) > $now) {
+            return 0;
+        }
+        if (!empty($config['valid_end_at']) && strtotime((string) $config['valid_end_at']) < $now) {
+            return 0;
+        }
+
+        $configId     = (int) $config['id'];
+        $checkinDays = (int) $config['required_checkin_days'];
+        $inviteCount  = (int) $config['required_invite_count'];
+
+        // 未过期的白名单用户（无条件通道）
+        $whitelistUsers = Db::name('qualification_whitelists')
+            ->where('config_id', $configId)
+            ->where(function ($q) {
+                $q->whereNull('expires_at')->whereOr('expires_at', '>', date('Y-m-d H:i:s'));
+            })
+            ->column('user_id');
+
+        // 各条件达标用户集合
+        $sets = [];
+        if ($requiredIds) {
+            $sets[] = Db::name('user_collectibles')
+                ->whereIn('collectible_id', $requiredIds)
+                ->where('status', 'held')
+                ->distinct(true)
+                ->column('user_id');
+        }
+        if ($checkinDays > 0) {
+            $sets[] = array_column(Db::name('check_in_records')
+                ->field('user_id')
+                ->group('user_id')
+                ->having('COUNT(DISTINCT check_in_date) >= ' . $checkinDays)
+                ->select()->toArray(), 'user_id');
+        }
+        if ($inviteCount > 0) {
+            $sets[] = array_column(Db::name('invite_records')
+                ->field('inviter_id AS user_id')
+                ->group('inviter_id')
+                ->having('COUNT(*) >= ' . $inviteCount)
+                ->select()->toArray(), 'user_id');
+        }
+
+        if (!$sets) {
+            return count(array_unique(array_map('intval', $whitelistUsers)));
+        }
+
+        if ((int) $config['condition_type'] === 2) {
+            // 满足全部：所有条件集合的交集
+            $inter = null;
+            foreach ($sets as $set) {
+                $set = array_map('intval', $set);
+                $inter = $inter === null ? $set : array_values(array_intersect($inter, $set));
+            }
+            return count(array_unique(array_merge($inter ?? [], array_map('intval', $whitelistUsers))));
+        }
+
+        // 满足任一：并集
+        $all = $whitelistUsers;
+        foreach ($sets as $set) {
+            $all = array_merge($all, $set);
+        }
+        return count(array_unique(array_map('intval', $all)));
     }
 
     /**
@@ -1060,6 +1150,7 @@ class CollectibleController extends BaseController
     /**
      * POST /admin/collectible/qualification { id, is_enabled, condition_type?, required_collectible_ids?, required_checkin_days?, required_invite_count?, valid_start_at?, valid_end_at? }
      * 资格购配置（upsert）
+     * condition_type 语义与 C 端一致：1 满足任一 / 2 满足全部；三个条件均可不配（纯白名单模式）
      */
     public function qualification()
     {
@@ -1074,8 +1165,8 @@ class CollectibleController extends BaseController
         $isEnabled = (int) $this->request->param('is_enabled', 0) === 1 ? 1 : 0;
 
         $conditionType = (int) ($this->request->param('condition_type', 1));
-        if (!in_array($conditionType, [1, 2, 3], true)) {
-            return $this->fail(4220, 'condition_type 仅允许 1（持有）/2（签到）/3（邀请）');
+        if (!in_array($conditionType, [1, 2], true)) {
+            return $this->fail(4220, 'condition_type 仅允许 1（满足任一）/2（满足全部）');
         }
 
         $requiredIds = $this->request->param('required_collectible_ids', []);
@@ -1083,9 +1174,6 @@ class CollectibleController extends BaseController
             $requiredIds = $requiredIds ? array_map('intval', explode(',', (string) $requiredIds)) : [];
         }
         $requiredIds = array_values(array_filter(array_map('intval', $requiredIds)));
-        if ($conditionType === 1 && !$requiredIds) {
-            return $this->fail(4220, '持有条件需配置至少一个藏品');
-        }
         if ($requiredIds) {
             $existCount = Db::name('collectibles')->whereIn('id', $requiredIds)->whereNull('deleted_at')->count();
             if ($existCount !== count($requiredIds)) {

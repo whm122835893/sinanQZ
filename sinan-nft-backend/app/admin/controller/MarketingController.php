@@ -125,6 +125,165 @@ class MarketingController extends BaseController
         return $this->success(['id' => $id], '优先购活动已保存');
     }
 
+    /**
+     * GET /admin/marketing/priority-whitelist/:activityId
+     * 优先购白名单明细（含用户昵称、配额使用情况；导出名单的数据源）
+     */
+    public function priorityWhitelist(int $activityId)
+    {
+        $act = Db::name('priority_activities')->where('id', $activityId)->find();
+        if (!$act) {
+            return $this->fail(4040, '优先购活动不存在');
+        }
+
+        $rows = Db::name('priority_whitelists')->alias('w')
+            ->field('w.*, u.username')
+            ->join('users u', 'u.id = w.user_id', 'LEFT')
+            ->where('w.activity_id', $activityId)
+            ->order('w.id', 'desc')
+            ->select()->toArray();
+
+        $result = array_map(function ($row) {
+            return [
+                'id'           => (int) $row['id'],
+                'userId'       => (int) $row['user_id'],
+                'nickname'     => $row['username'] ?: ('用户' . $row['user_id']),
+                'phone'        => $row['phone'],
+                'maxQuantity'  => (int) $row['max_quantity'],
+                'usedQuantity' => (int) $row['used_quantity'],
+                'expiresAt'    => $row['expires_at'],
+                'status'       => (int) $row['status'],
+                'createdAt'    => $row['created_at'],
+            ];
+        }, $rows);
+
+        return $this->success($result);
+    }
+
+    /**
+     * POST /admin/marketing/priority-whitelist { activity_id, phone, max_quantity?, expires_at? }
+     * 单个添加优先购白名单：手机号须为平台注册用户；幂等去重；写审计日志
+     */
+    public function priorityWhitelistAdd()
+    {
+        $missing = $this->missingParams(['activity_id', 'phone']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+
+        $activityId = (int) $this->request->param('activity_id');
+        $act = Db::name('priority_activities')->where('id', $activityId)->find();
+        if (!$act) {
+            return $this->fail(4040, '优先购活动不存在');
+        }
+
+        $phone = trim((string) $this->request->param('phone'));
+        if (!preg_match('/^1\d{10}$/', $phone)) {
+            return $this->fail(4220, '手机号格式不正确');
+        }
+
+        $user = Db::name('users')->where('phone', $phone)->whereNull('deleted_at')->find();
+        if (!$user) {
+            return $this->fail(4040, '该手机号非平台注册用户');
+        }
+
+        $exists = Db::name('priority_whitelists')
+            ->where('activity_id', $activityId)->where('user_id', $user['id'])->count();
+        if ($exists > 0) {
+            return $this->fail(4220, '该用户已在白名单中');
+        }
+
+        $maxQuantity = max(1, (int) $this->request->param('max_quantity', 1));
+
+        $expiresAt = null;
+        $expiresRaw = trim((string) $this->request->param('expires_at', ''));
+        if ($expiresRaw !== '') {
+            $ts = strtotime($expiresRaw);
+            if ($ts === false) {
+                return $this->fail(4220, 'expires_at 日期格式不正确');
+            }
+            $expiresAt = date('Y-m-d H:i:s', $ts);
+        }
+
+        $now = date('Y-m-d H:i:s');
+        Db::name('priority_whitelists')->insert([
+            'activity_id'  => $activityId,
+            'user_id'      => $user['id'],
+            'phone'        => $phone,
+            'max_quantity' => $maxQuantity,
+            'used_quantity'=> 0,
+            'expires_at'   => $expiresAt,
+            'status'       => 1,
+            'created_at'   => $now,
+            'updated_at'   => $now,
+        ]);
+
+        $this->audit('marketing', 'priority_whitelist_add',
+            '优先购白名单添加（活动「' . $act['name'] . '」用户 ' . $phone . '，限购 ' . $maxQuantity . ' 份）',
+            ['activity_id' => $activityId, 'user_id' => $user['id'], 'phone' => $phone, 'max_quantity' => $maxQuantity, 'expires_at' => $expiresAt],
+            'priority_activity', $activityId);
+
+        return $this->success(['activityId' => $activityId, 'userId' => (int) $user['id']], '已加入白名单并写入审计日志');
+    }
+
+    /**
+     * DELETE /admin/marketing/priority-whitelist/:id
+     * 移除优先购白名单（写审计日志）
+     */
+    public function priorityWhitelistRemove(int $id)
+    {
+        $row = Db::name('priority_whitelists')->where('id', $id)->find();
+        if (!$row) {
+            return $this->fail(4040, '白名单记录不存在');
+        }
+
+        $act = Db::name('priority_activities')->where('id', (int) $row['activity_id'])->find();
+        Db::name('priority_whitelists')->where('id', $id)->delete();
+
+        $this->audit('marketing', 'priority_whitelist_remove',
+            '移除优先购白名单（活动「' . ($act['name'] ?? '#' . $row['activity_id']) . '」用户 ' . $row['phone'] . '）',
+            ['activity_id' => (int) $row['activity_id'], 'user_id' => (int) $row['user_id'], 'phone' => $row['phone']],
+            'priority_activity', (int) $row['activity_id']);
+
+        return $this->success(null, '已移除白名单');
+    }
+
+    /**
+     * POST /admin/marketing/priority-whitelist/clean-expired { activity_id? }
+     * 批量清理过期优先购资格（expires_at 早于当前时间）；不传 activity_id 时清理全部活动
+     */
+    public function priorityWhitelistCleanExpired()
+    {
+        $activityId = $this->positiveInt('activity_id');
+        if ($activityId !== null) {
+            $act = Db::name('priority_activities')->where('id', $activityId)->find();
+            if (!$act) {
+                return $this->fail(4040, '优先购活动不存在');
+            }
+        }
+
+        $query = Db::name('priority_whitelists')
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<', date('Y-m-d H:i:s'));
+        if ($activityId !== null) {
+            $query->where('activity_id', $activityId);
+        }
+        $rows   = $query->select()->toArray();
+        $cleaned = 0;
+        if ($rows) {
+            $cleaned = Db::name('priority_whitelists')
+                ->whereIn('id', array_column($rows, 'id'))
+                ->delete();
+        }
+
+        $this->audit('marketing', 'priority_whitelist_clean',
+            '清理过期优先购资格：' . $cleaned . ' 条' . ($activityId !== null ? '（活动 #' . $activityId . '）' : '（全部活动）'),
+            ['activity_id' => $activityId, 'cleaned' => $cleaned],
+            'priority_activity', $activityId);
+
+        return $this->success(['cleaned' => $cleaned], $cleaned > 0 ? '已清理 ' . $cleaned . ' 条过期资格' : '暂无过期资格');
+    }
+
     // ==================== 签到配置 ====================
 
     /** 签到活动配置键（system_configs） */

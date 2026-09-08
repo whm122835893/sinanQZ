@@ -11,6 +11,7 @@ import {
 import StatCard from '@/components/StatCard.vue'
 import EChart from '@/components/EChart.vue'
 import { fmtMoney, fmtNumber } from '@/utils/format'
+import { downloadCsvSections } from '@/utils/csv'
 
 // ============================================================
 // 报表中心（五大报表 tab + 时间区间筛选）
@@ -59,6 +60,105 @@ function onRangeChange() {
 }
 
 onMounted(() => load())
+
+// ---------------- 导出 CSV（当前 tab 的全部区块拼一个文件） ----------------
+const TAB_NAME = { sales: '销售报表', users: '用户报表', collectibles: '藏品报表', blindbox: '盲盒报表', finance: '财务对账' }
+
+function exportCurrent() {
+  const tab = activeTab.value
+  const d = stores[tab].value
+  if (!d) {
+    ElMessage.warning('报表尚未加载完成')
+    return
+  }
+  const sections = []
+
+  if (tab === 'sales') {
+    sections.push(
+      { title: '概览', headers: ['指标', '数值'], rows: [
+        ['销售总额 GMV（元）', d.summary?.gmvTotal ?? ''],
+        ['订单总量（单）', d.summary?.orderTotal ?? ''],
+        ['购买用户数（人）', d.summary?.buyerCount ?? ''],
+        ['客单价（元）', d.summary?.avgOrderAmount ?? '']
+      ] },
+      { title: 'GMV 与订单量趋势', headers: ['日期', 'GMV（元）', '订单量（单）'], rows: (d.trend || []).map((t) => [t.statDate, t.gmv, t.orderCount]) },
+      { title: 'TOP 藏品销售榜', headers: ['排名', '藏品', '订单数', '销量', 'GMV（元）'], rows: (d.topCollectibles || []).map((c, i) => [i + 1, c.name, c.orderCount, c.quantity, c.gmv]) },
+      { title: '支付方式分布', headers: ['支付方式', '金额（元）'], rows: (d.payments || []).map((p) => [PAY_METHOD_NAME[p.method] || p.method, p.amount]) },
+      { title: '订单来源分布', headers: ['来源', '订单数', 'GMV（元）'], rows: (d.sources || []).map((s) => [SOURCE_NAME[s.source] || s.sourceName || s.source, s.orderCount, s.gmv]) }
+    )
+  }
+
+  if (tab === 'users') {
+    sections.push(
+      { title: '概览', headers: ['指标', '数值'], rows: [
+        ['注册用户总数（人）', d.summary?.total ?? ''],
+        ['实名率（%）', d.summary?.realnameRate ?? ''],
+        ['持仓用户数（人）', d.summary?.holdingUsers ?? ''],
+        ['冻结（人）', d.summary?.frozen ?? ''],
+        ['黑名单（人）', d.summary?.blacklisted ?? '']
+      ] },
+      { title: '注册趋势', headers: ['日期', '新增注册（人）'], rows: (d.regTrend || []).map((t) => [t.statDate, t.regCount]) },
+      { title: '用户持仓分布', headers: ['持仓区间', '人数'], rows: (d.holdingBuckets || []).map((b) => [b.label, b.count]) },
+      { title: '注册渠道分布', headers: ['渠道', '注册数'], rows: (d.sources || []).map((s) => [s.sourceName || s.source, s.count]) },
+      { title: '邀请达人 TOP 10', headers: ['邀请人 UID', '昵称', '邀请人数'], rows: (d.topInviters || []).map((t) => [t.uid, t.username, t.inviteCount]) }
+    )
+  }
+
+  if (tab === 'collectibles') {
+    sections.push(
+      { title: '概览', headers: ['指标', '数值'], rows: [
+        ['藏品总数（款）', d.summary?.total ?? ''],
+        ['在售 / 待发售（款）', d.summary?.onsale ?? ''],
+        ['已售罄（款）', d.summary?.soldout ?? ''],
+        ['盲盒类藏品（款）', d.summary?.isBlindbox ?? '']
+      ] },
+      { title: '发售趋势', headers: ['日期', '新增藏品数（款）', '新增发行量（份）'], rows: (d.issueTrend || []).map((t) => [t.statDate, t.newCount, t.editionTotal]) },
+      { title: '市场寄售概览', headers: ['指标', '数值'], rows: [
+        ['在售挂单（笔）', d.market?.selling ?? ''],
+        ['挂单金额（元）', d.market?.sellingAmount ?? ''],
+        ['已成交（笔）', d.market?.sold ?? ''],
+        ['成交金额（元）', d.market?.soldAmount ?? ''],
+        ['平台手续费（元）', d.market?.feeAmount ?? ''],
+        ['已取消（笔）', d.market?.cancelled ?? '']
+      ] },
+      { title: '分类分布', headers: ['分类', '藏品数', '累计售出', '累计流通'], rows: (d.categories || []).map((c) => [c.categoryName, c.cnt, c.soldTotal, c.circulateTotal]) },
+      { title: '流通量 TOP 10', headers: ['藏品', '发行量', '流通量', '已售'], rows: (d.topCirculate || []).map((c) => [c.name, c.edition, c.circulate, c.sold]) }
+    )
+  }
+
+  if (tab === 'blindbox') {
+    sections.push(
+      { title: '概览', headers: ['指标', '数值'], rows: [
+        ['盲盒系列数（款）', d.summary?.total ?? ''],
+        ['累计开盒量（次）', d.summary?.openedTotal ?? '']
+      ] },
+      { title: '开盒趋势', headers: ['日期', '开盒量（次）'], rows: (d.openTrend || []).map((t) => [t.statDate, t.openCount]) },
+      { title: '奖池分布', headers: ['奖品', '覆盖盲盒数', '累计发放', '投放上限'], rows: (d.prizes || []).map((p) => [p.prizeName, p.boxCount, p.distributedTotal, p.limitTotal]) },
+      { title: '盲盒开盒排行', headers: ['盲盒', '开盒次数', '单价（元）', '奖品档数'], rows: (d.boxRanking || []).map((b) => [b.name, b.openedCount, b.price, b.prizeCount]) }
+    )
+  }
+
+  if (tab === 'finance') {
+    sections.push(
+      { title: '资金总账（余额合计 + 手续费 + 已提现 = 总充值 + 总奖励）', headers: ['指标', '金额（元）'], rows: [
+        ['充值流入', d.ledger?.rechargeIn ?? ''],
+        ['奖励发放', d.ledger?.rewardIn ?? ''],
+        ['消费流出', d.ledger?.buyOut ?? ''],
+        ['退款总额', d.ledger?.refundAmount ?? ''],
+        ['平台手续费收入', d.ledger?.feeIncome ?? ''],
+        ['已提现', d.ledger?.withdrawOut ?? ''],
+        ['用户余额合计', d.balanceSnapshot?.balanceTotal ?? ''],
+        ['冻结余额', d.balanceSnapshot?.frozenTotal ?? ''],
+        ['钱包总数（个）', d.balanceSnapshot?.walletCount ?? '']
+      ] },
+      { title: '支付渠道对账（净额 = 成功支付 - 已退款）', headers: ['渠道', '成功笔数', '支付总额（元）', '退款笔数', '退款总额（元）', '净收入（元）'], rows: (d.channels || []).map((c) => [PAY_METHOD_NAME[c.method] || c.method, c.payCount, c.amountTotal, c.refundCount, c.refundAmount, c.netAmount]) }
+    )
+  }
+
+  if (!sections.length) return
+  downloadCsvSections(TAB_NAME[tab], sections)
+  ElMessage.success(`已导出「${TAB_NAME[tab]}」CSV（含概览与全部明细区块）`)
+}
 
 const shortcuts = [
   { text: '近 7 天', value: () => { const e = new Date(); const s = new Date(e.getTime() - 6 * 864e5); return [s, e] } },
@@ -208,6 +308,7 @@ const PAY_METHOD_NAME = { balance: '余额支付', alipay: '支付宝', wechat: 
         />
         <span class="t-tertiary" style="font-size: 12px">不选则统计最近 30 天（最长 366 天）</span>
       </div>
+      <el-button :icon="'Download'" :disabled="loading" @click="exportCurrent">导出 CSV</el-button>
       <el-button :icon="'Refresh'" :loading="loading" @click="load()">刷新</el-button>
     </div>
 
