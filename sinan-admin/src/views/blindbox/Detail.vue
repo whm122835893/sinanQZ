@@ -336,7 +336,7 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
       </div>
 
       <!-- 空投弹窗 -->
-      <el-dialog v-model="airShow" title="盲盒独立空投" width="480px" :close-on-click-modal="false">
+      <el-dialog v-model="airShow" title="盲盒独立空投" width="480px" append-to-body :close-on-click-modal="false">
         <el-form label-width="110px">
           <el-form-item label="当前库存池">
             <el-tag type="warning" effect="plain">{{ blindBoxPool(detail) }} 份</el-tag>
@@ -350,7 +350,7 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
             />
           </el-form-item>
           <el-form-item label="每人份数">
-            <el-input-number v-model="airForm.quantity" :min="1" :max="blindBoxPool(detail)" />
+            <el-input-number v-model="airForm.quantity" :min="1" :max="Math.max(1, blindBoxPool(detail))" />
           </el-form-item>
         </el-form>
         <el-alert type="info" :closable="false" show-icon title="空投可在任何阶段执行（未发售前 / 发售中 / 售罄后），从盲盒库存池扣减、发放资产到用户仓库，生成发放记录并写入审计日志" />
@@ -361,7 +361,7 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
       </el-dialog>
 
       <!-- 空投二次确认摘要 -->
-      <el-dialog v-model="airConfirmShow" title="空投确认" width="420px">
+      <el-dialog v-model="airConfirmShow" title="空投确认" width="420px" append-to-body>
         <div class="adm-kv"><span class="k">盲盒名称</span><span class="v">{{ detail.name }}</span></div>
         <div class="adm-kv"><span class="k">空投数量</span><span class="v">每人 {{ airForm.quantity }} 份</span></div>
         <div class="adm-kv"><span class="k">接收用户数</span><span class="v">{{ phoneCount() }} 人</span></div>
@@ -376,13 +376,13 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
       </el-dialog>
 
       <!-- 销毁弹窗 -->
-      <el-dialog v-model="destroyShow" title="销毁盲盒库存" width="440px" :close-on-click-modal="false">
+      <el-dialog v-model="destroyShow" title="销毁盲盒库存" width="440px" append-to-body :close-on-click-modal="false">
         <el-form label-width="110px">
           <el-form-item label="当前库存池">
             <el-tag type="warning" effect="plain">{{ blindBoxPool(detail) }} 份</el-tag>
           </el-form-item>
           <el-form-item label="销毁份数">
-            <el-input-number v-model="destroyQty" :min="1" :max="blindBoxPool(detail)" />
+            <el-input-number v-model="destroyQty" :min="1" :max="Math.max(1, blindBoxPool(detail))" />
           </el-form-item>
         </el-form>
         <el-alert type="error" :closable="false" show-icon title="销毁从盲盒库存池扣减且不可恢复，需管理员密码验证，生成销毁记录" />
@@ -393,13 +393,13 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
       </el-dialog>
 
       <!-- 发售配置弹窗 -->
-      <el-dialog v-model="releaseShow" title="盲盒发售配置" width="460px" :close-on-click-modal="false">
+      <el-dialog v-model="releaseShow" title="盲盒发售配置" width="460px" append-to-body :close-on-click-modal="false">
         <el-form label-width="110px">
           <el-form-item label="当前库存池">
             <el-tag type="warning" effect="plain">{{ blindBoxPool(detail) }} 份（发售数量不可超过库存池）</el-tag>
           </el-form-item>
           <el-form-item label="发售数量">
-            <el-input-number v-model="releaseForm.saleQuantity" :min="1" :max="blindBoxPool(detail)" />
+            <el-input-number v-model="releaseForm.saleQuantity" :min="1" :max="Math.max(1, blindBoxPool(detail))" />
           </el-form-item>
           <el-form-item label="发售价格（元）">
             <el-input-number v-model="releaseForm.price" :min="0.01" :precision="2" :step="10" />
@@ -420,6 +420,7 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
         v-model="prizeShow"
         :title="editingPrize ? `调整子藏品 · ${editingPrize.prizeName}` : '添加子藏品'"
         width="480px"
+        append-to-body
         :close-on-click-modal="false"
       >
         <el-form label-width="110px">

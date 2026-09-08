@@ -394,7 +394,7 @@ async function onResaleVerified() {
       </div>
 
       <!-- 空投弹窗 -->
-      <el-dialog v-model="airShow" title="独立空投" width="480px" :close-on-click-modal="false">
+      <el-dialog v-model="airShow" title="独立空投" width="480px" append-to-body :close-on-click-modal="false">
         <el-form label-width="90px">
           <el-form-item label="当前库存池">
             <el-tag type="warning" effect="plain">{{ stockPool(detail) }} 份</el-tag>
@@ -408,7 +408,7 @@ async function onResaleVerified() {
             />
           </el-form-item>
           <el-form-item label="每人份数">
-            <el-input-number v-model="airForm.quantity" :min="1" :max="stockPool(detail)" />
+            <el-input-number v-model="airForm.quantity" :min="1" :max="Math.max(1, stockPool(detail))" />
           </el-form-item>
         </el-form>
         <el-alert type="info" :closable="false" show-icon title="空投从库存池扣减、已独立空投增加、发放资产到用户仓库，生成发放记录并写入审计日志" />
@@ -419,7 +419,7 @@ async function onResaleVerified() {
       </el-dialog>
 
       <!-- 空投二次确认摘要 -->
-      <el-dialog v-model="airConfirmShow" title="空投确认" width="420px">
+      <el-dialog v-model="airConfirmShow" title="空投确认" width="420px" append-to-body>
         <div class="adm-kv"><span class="k">藏品名称</span><span class="v">{{ detail.name }}</span></div>
         <div class="adm-kv"><span class="k">空投数量</span><span class="v">每人 {{ airForm.quantity }} 份</span></div>
         <div class="adm-kv"><span class="k">接收用户数</span><span class="v">{{ airForm.phones.split(/[\n,，\s]+/).filter(Boolean).length }} 人</span></div>
@@ -434,13 +434,13 @@ async function onResaleVerified() {
       </el-dialog>
 
       <!-- 销毁弹窗 -->
-      <el-dialog v-model="destroyShow" title="销毁库存" width="440px" :close-on-click-modal="false">
+      <el-dialog v-model="destroyShow" title="销毁库存" width="440px" append-to-body :close-on-click-modal="false">
         <el-form label-width="90px">
           <el-form-item label="当前库存池">
             <el-tag type="warning" effect="plain">{{ stockPool(detail) }} 份（配额预留不可销毁）</el-tag>
           </el-form-item>
           <el-form-item label="销毁份数">
-            <el-input-number v-model="destroyQty" :min="1" :max="stockPool(detail)" />
+            <el-input-number v-model="destroyQty" :min="1" :max="Math.max(1, stockPool(detail))" />
           </el-form-item>
         </el-form>
         <el-alert type="error" :closable="false" show-icon title="销毁从库存池扣减且不可恢复，需管理员密码验证，生成销毁记录" />
@@ -451,7 +451,7 @@ async function onResaleVerified() {
       </el-dialog>
 
       <!-- 新增配额弹窗 -->
-      <el-dialog v-model="quotaShow" title="新增配额" width="460px" :close-on-click-modal="false">
+      <el-dialog v-model="quotaShow" title="新增配额" width="460px" append-to-body :close-on-click-modal="false">
         <el-form label-width="90px">
           <el-form-item label="配额类型">
             <el-select v-model="quotaForm.quotaType" style="width: 100%">
@@ -462,7 +462,7 @@ async function onResaleVerified() {
             <el-input v-model="quotaForm.quotaName" placeholder="如：优先购预留 / 活动空投" />
           </el-form-item>
           <el-form-item label="预留数量">
-            <el-input-number v-model="quotaForm.quantity" :min="1" :max="stockPool(detail)" />
+            <el-input-number v-model="quotaForm.quantity" :min="1" :max="Math.max(1, stockPool(detail))" />
             <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">
               当前库存池 {{ stockPool(detail) }} 份，配置后从库存池冻结预留
             </div>
@@ -475,13 +475,13 @@ async function onResaleVerified() {
       </el-dialog>
 
       <!-- 发售配置弹窗 -->
-      <el-dialog v-model="releaseShow" title="发售配置" width="460px" :close-on-click-modal="false">
+      <el-dialog v-model="releaseShow" title="发售配置" width="460px" append-to-body :close-on-click-modal="false">
         <el-form label-width="100px">
           <el-form-item label="当前库存池">
             <el-tag type="warning" effect="plain">{{ stockPool(detail) }} 份（发售数量不可超过库存池）</el-tag>
           </el-form-item>
           <el-form-item label="发售数量">
-            <el-input-number v-model="releaseForm.saleQuantity" :min="1" :max="stockPool(detail)" />
+            <el-input-number v-model="releaseForm.saleQuantity" :min="1" :max="Math.max(1, stockPool(detail))" />
           </el-form-item>
           <el-form-item label="发售价格（元）">
             <el-input-number v-model="releaseForm.price" :min="0.01" :precision="2" :step="10" />
@@ -498,7 +498,7 @@ async function onResaleVerified() {
       </el-dialog>
 
       <!-- 寄售开关 + 价格管控弹窗 -->
-      <el-dialog v-model="priceShow" :title="`寄售管控 · ${detail.name}`" width="480px" :close-on-click-modal="false">
+      <el-dialog v-model="priceShow" :title="`寄售管控 · ${detail.name}`" width="480px" append-to-body :close-on-click-modal="false">
         <el-form label-width="110px">
           <el-form-item label="允许寄售">
             <el-switch v-model="priceForm.enabled" :active-value="1" :inactive-value="0" />
@@ -597,10 +597,17 @@ async function onResaleVerified() {
 }
 
 .cd__ops {
-  display: flex;
-  flex-wrap: wrap;
+  // 功能按钮一行两个：两列等宽网格，按钮撑满单元格
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-top: 12px;
+
+  // 重置 Element Plus 相邻按钮默认左边距（grid 布局下会错位），并让按钮等宽
+  .el-button {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 .cd__audit {
