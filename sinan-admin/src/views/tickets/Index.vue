@@ -1,20 +1,23 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getTickets, replyTicket, closeTicket } from '@/api'
+import { getTickets, getTicketDetail, replyTicket, closeTicket } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { TICKET_STATUS, TICKET_PRIORITY, TICKET_TYPE } from '@/utils/maps'
 import { maskPhone } from '@/utils/format'
 
+// 筛选值对齐后端数字枚举：状态1-5 / 类型1-6 / 优先级1-4
 const filters = [
   {
     field: 'status',
     label: '状态',
     options: [
-      { value: 'pending', label: '待处理' },
-      { value: 'processing', label: '处理中' },
-      { value: 'closed', label: '已关闭' }
+      { value: '1', label: '待处理' },
+      { value: '2', label: '处理中' },
+      { value: '3', label: '待用户确认' },
+      { value: '4', label: '已解决' },
+      { value: '5', label: '已关闭' }
     ]
   },
   {
@@ -25,11 +28,7 @@ const filters = [
   {
     field: 'priority',
     label: '优先级',
-    options: [
-      { value: 'urgent', label: '紧急' },
-      { value: 'high', label: '高' },
-      { value: 'normal', label: '普通' }
-    ]
+    options: Object.entries(TICKET_PRIORITY).map(([value, { label }]) => ({ value, label }))
   }
 ]
 
@@ -37,13 +36,23 @@ const listRef = ref(null)
 
 // ---- 工单详情 + 回复 ----
 const detailShow = ref(false)
+const detailLoading = ref(false)
 const detail = ref(null)
 const replyContent = ref('')
 
-function openDetail(t) {
-  detail.value = t
-  replyContent.value = ''
+async function openDetail(t) {
   detailShow.value = true
+  detailLoading.value = true
+  detail.value = null
+  replyContent.value = ''
+  const res = await getTicketDetail(t.id)
+  detailLoading.value = false
+  if (res.code === 0) {
+    detail.value = res.data
+  } else {
+    ElMessage.error(res.message || '工单详情加载失败')
+    detailShow.value = false
+  }
 }
 
 async function onReply() {
@@ -52,15 +61,15 @@ async function onReply() {
   if (res.code === 0) {
     ElMessage.success('已回复')
     replyContent.value = ''
-    if (detail.value.status === 'pending') detail.value.status = 'processing'
+    openDetail({ id: detail.value.id })   // 重新加载详情（含新回复）
     listRef.value?.refresh()
   }
 }
 
-// ---- 关闭工单 ----
+// ---- 关闭工单（后端 status=5，终态） ----
 async function onClose(t) {
   await ElMessageBox.confirm(
-    `确认关闭工单「${t.ticketNo}」？关闭后用户将收到工单已完结通知。`,
+    `确认关闭工单「${t.ticketNo}」？关闭后不可再回复。`,
     '关闭工单',
     { type: 'warning' }
   )
@@ -79,7 +88,7 @@ async function onClose(t) {
       ref="listRef"
       :fetch="getTickets"
       :filters="filters"
-      :defaults="{ status: 'pending' }"
+      :defaults="{ status: '1' }"
       search-placeholder="搜索工单号 / 用户 / 标题"
     >
       <template #default="{ items }">
@@ -115,7 +124,7 @@ async function onClose(t) {
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDetail(row)">详情 / 回复</el-button>
             <el-button
-              v-if="row.status !== 'closed'"
+              v-if="row.status !== 5"
               link
               type="danger"
               size="small"
@@ -127,32 +136,37 @@ async function onClose(t) {
     </AdminTablePage>
 
     <!-- 工单详情抽屉 -->
-    <el-drawer v-model="detailShow" :title="detail ? `工单 · ${detail.ticketNo}` : ''" size="480px">
-      <template v-if="detail">
+    <el-drawer v-model="detailShow" :title="detail ? `工单 · ${detail.ticketNo}` : '工单详情'" size="480px">
+      <el-skeleton v-if="detailLoading" :rows="8" animated />
+      <template v-else-if="detail">
         <div class="tk__kv"><span class="k">用户</span><span class="v">{{ detail.userName }}（{{ maskPhone(detail.userPhone) }}）</span></div>
-        <div class="tk__kv"><span class="k">类型</span><span class="v">{{ TICKET_TYPE[detail.type] || detail.type }}</span></div>
+        <div class="tk__kv"><span class="k">类型</span><span class="v">{{ TICKET_TYPE[detail.type] || detail.typeName || detail.type }}</span></div>
         <div class="tk__kv"><span class="k">优先级</span><span class="v"><StatusTag :value="detail.priority" :map="TICKET_PRIORITY" /></span></div>
         <div class="tk__kv"><span class="k">状态</span><span class="v"><StatusTag :value="detail.status" :map="TICKET_STATUS" /></span></div>
         <div class="tk__kv"><span class="k">创建时间</span><span class="v">{{ detail.createTime }}</span></div>
+        <div v-if="detail.assigneeName" class="tk__kv"><span class="k">处理人</span><span class="v">{{ detail.assigneeName }}</span></div>
         <div v-if="detail.closeTime" class="tk__kv"><span class="k">关闭时间</span><span class="v">{{ detail.closeTime }}</span></div>
 
         <div class="tk__section">问题描述</div>
-        <div class="tk__content">{{ detail.content }}</div>
+        <div class="tk__content">{{ detail.content || '-' }}</div>
 
         <div class="tk__section">沟通记录（{{ detail.replies.length }} 条）</div>
         <div class="tk__replies">
           <div v-if="!detail.replies.length" class="t-tertiary" style="font-size: 12px; padding: 4px 0">暂无回复</div>
           <div v-for="r in detail.replies" :key="r.id" class="tk__reply">
             <div class="tk__reply-head">
-              <b :class="{ 'tk__reply-admin': r.author !== detail.userName }">{{ r.author }}</b>
+              <b :class="{ 'tk__reply-admin': r.isAdmin }">
+                {{ r.author }}{{ r.isAdmin ? '（客服）' : '' }}
+                <el-tag v-if="r.isInternal" type="warning" size="small" effect="plain">内部备注</el-tag>
+              </b>
               <span class="t-tertiary">{{ r.time }}</span>
             </div>
-            <div class="tk__reply-body">{{ r.content }}</div>
+            <div class="tk__reply-body" :class="{ 'tk__reply-internal': r.isInternal }">{{ r.content }}</div>
           </div>
         </div>
 
-        <!-- 回复区 -->
-        <div v-if="detail.status !== 'closed'" class="tk__reply-box">
+        <!-- 回复区（已关闭为终态，不可回复） -->
+        <div v-if="detail.status !== 5" class="tk__reply-box">
           <el-input
             v-model="replyContent"
             type="textarea"
@@ -222,6 +236,12 @@ async function onClose(t) {
   }
 
   &-admin { color: var(--color-primary); }
+
+  &-internal {
+    background: $color-bg;
+    border: 1px dashed $color-border;
+    opacity: 0.75;
+  }
 
   &-body {
     font-size: 13px;

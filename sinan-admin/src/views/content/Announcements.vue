@@ -13,9 +13,9 @@ const filters = [
     field: 'type',
     label: '类型',
     options: [
-      { value: 'system', label: '系统公告' },
       { value: 'activity', label: '活动公告' },
-      { value: 'maintenance', label: '维护公告' }
+      { value: 'compose', label: '合成公告' },
+      { value: 'operation', label: '运营公告' }
     ]
   },
   {
@@ -37,7 +37,7 @@ const form = ref(emptyForm())
 function emptyForm() {
   return {
     title: '',
-    type: 'system',
+    type: 'operation',
     summary: '',
     content: '',
     // 发布方式：now 立即发布 / schedule 定时发布 / draft 存草稿
@@ -183,10 +183,11 @@ async function onRemove(a) {
         </el-form-item>
         <el-form-item label="公告类型">
           <el-radio-group v-model="form.type">
-            <el-radio value="system">系统</el-radio>
             <el-radio value="activity">活动</el-radio>
-            <el-radio value="maintenance">维护</el-radio>
+            <el-radio value="compose">合成</el-radio>
+            <el-radio value="operation">运营</el-radio>
           </el-radio-group>
+          <div class="t-tertiary" style="font-size: 12px; width: 100%">C 端公告列表按此分类展示（活动/合成/运营 Tab）</div>
         </el-form-item>
         <el-form-item label="摘要">
           <el-input

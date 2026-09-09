@@ -63,17 +63,18 @@ export const CONTENT_STATUS = {
   draft:     { label: '草稿', type: 'info' }
 }
 
+// 公告分类（与用户端 subtype 一致：活动/合成/运营）
 export const NOTICE_TYPE = {
-  system:       { label: '系统公告', type: 'primary' },
-  activity:     { label: '活动公告', type: 'success' },
-  maintenance:  { label: '维护公告', type: 'warning' }
+  activity:    { label: '活动公告', type: 'success' },
+  compose:     { label: '合成公告', type: 'warning' },
+  operation:   { label: '运营公告', type: 'primary' }
 }
 
 export const WALLET_TYPE = {
   recharge: { label: '充值', type: 'primary' },
   reward:   { label: '奖励', type: 'success' },
   consume:  { label: '消费', type: 'warning' },
-  refund:   { label: '退款', type: 'info' }
+  withdraw: { label: '提现', type: 'danger' }
 }
 
 // 配额类型（与后端 quota_type 枚举一致）
@@ -103,7 +104,7 @@ export const RESALE_PRICE_MODE = {
   2: { label: '区间价', type: 'warning' }
 }
 
-// 风控告警
+// 风控告警（类型为后端数字枚举，与 SecurityController::ALERT_TYPES 一致）
 export const RISK_LEVEL = {
   high:   { label: '高风险', type: 'danger' },
   medium: { label: '中风险', type: 'warning' },
@@ -113,34 +114,45 @@ export const RISK_LEVEL = {
 export const RISK_STATUS = {
   pending:    { label: '待处理', type: 'warning' },
   processing: { label: '处理中', type: 'primary' },
-  resolved:   { label: '已处理', type: 'success' }
+  resolved:   { label: '已处理', type: 'success' },
+  ignored:    { label: '已忽略', type: 'info' }
 }
 
 export const RISK_TYPE = {
-  abnormal_trade:    '异常交易',
-  bulk_refund:       '批量退款',
-  bulk_register:     '批量注册',
-  price_manipulation: '价格操纵'
+  1: '大额充值',
+  2: '频繁小额充值',
+  3: '余额突变',
+  4: '高频API',
+  5: '异常时间操作',
+  6: '异地登录',
+  7: '批量注册',
+  8: '异常价格',
+  9: '其他'
 }
 
-// 客服工单
+// 客服工单（数字枚举与 TicketController 常量一致）
 export const TICKET_STATUS = {
-  pending:    { label: '待处理', type: 'warning' },
-  processing: { label: '处理中', type: 'primary' },
-  closed:     { label: '已关闭', type: 'success' }
+  1: { label: '待处理', type: 'warning' },
+  2: { label: '处理中', type: 'primary' },
+  3: { label: '待用户确认', type: 'warning' },
+  4: { label: '已解决', type: 'success' },
+  5: { label: '已关闭', type: 'info' }
 }
 
 export const TICKET_PRIORITY = {
-  urgent: { label: '紧急', type: 'danger' },
-  high:   { label: '高', type: 'warning' },
-  normal: { label: '普通', type: 'info' }
+  1: { label: '紧急', type: 'danger' },
+  2: { label: '高', type: 'warning' },
+  3: { label: '中', type: 'info' },
+  4: { label: '低', type: 'info' }
 }
 
 export const TICKET_TYPE = {
-  order: '订单问题',
-  refund: '退款问题',
-  account: '账号问题',
-  other: '其他'
+  1: '支付异常',
+  2: '藏品丢失',
+  3: '盲盒问题',
+  4: '转赠纠纷',
+  5: '账号问题',
+  6: '其他'
 }
 
 // 区块链
@@ -185,7 +197,10 @@ export const APPROVAL_TYPE = {
 // 求购市场
 export const BUY_REQUEST_STATUS = {
   active:   { label: '求购中', type: 'primary' },
-  delisted: { label: '已下架', type: 'info' }
+  accepted: { label: '已接单', type: 'warning' },
+  cancelled:{ label: '已取消', type: 'info' },
+  sold:     { label: '已成交', type: 'success' },
+  expired:  { label: '已过期', type: 'danger' }
 }
 
 // 资格购条件组合方式

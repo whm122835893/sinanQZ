@@ -64,15 +64,114 @@ class TransferController extends BaseController
 
         foreach ($rows as &$row) {
             $row['from_phone'] = mask_phone((string) Db::name('users')->where('id', $row['from_user_id'])->value('phone'));
-            $row['to_phone'] = $row['to_phone'];
+            $row['to_phone']   = mask_phone((string) $row['to_phone']);
         }
 
         return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }
 
     /**
-     * POST /admin/transfer/revoke { id, reason }
-     * 撤销待处理转赠：资产从 frozen 解冻回转出方 held
+     * POST /admin/transfer/:id/approve { reason }
+     * 强制完成：pending → accepted，资产过户给接收方（复刻 C 端 accept 事务）
+     */
+    public function approve()
+    {
+        $id = (int) ($this->request->param('id') ?: $this->request->param('transfer_id'));
+        if ($id <= 0) {
+            return $this->fail(4220, '缺少必填参数：id');
+        }
+        $reason = trim((string) $this->request->param('reason', ''));
+
+        Db::startTrans();
+        try {
+            $transfer = Db::name('transfers')->where('id', $id)->where('status', 'pending')->lock(true)->find();
+            if (!$transfer) {
+                Db::rollback();
+                return $this->fail(4220, '转赠不存在或已处理（仅待接收状态可强制完成）');
+            }
+
+            $now = date('Y-m-d H:i:s.v');
+            Db::name('transfers')->where('id', $id)->update([
+                'status'       => 'accepted',
+                'confirmed_at' => $now,
+                'updated_at'   => $now,
+            ]);
+            // 条件更新：仅当资产仍为 frozen 才过户（防状态机跳变，与 C 端一致）
+            $moved = Db::name('user_collectibles')
+                ->where('id', $transfer['user_collectible_id'])
+                ->where('status', 'frozen')
+                ->update([
+                    'user_id'        => $transfer['to_user_id'],
+                    'status'         => 'held',
+                    'source'         => 'transfer',
+                    'acquired_at'    => $now,
+                    'acquired_price' => 0,
+                    'is_consigned'   => 0,
+                    'updated_at'     => $now,
+                ]);
+            if (!$moved) {
+                Db::rollback();
+                return $this->fail(4220, '资产状态异常（非冻结状态），请人工核查');
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '强制完成失败：' . $e->getMessage());
+        }
+
+        $this->audit('transfer', 'force_approve', '强制完成转赠（ID ' . $id . '）', ['reason' => $reason], 'transfer', $id);
+        return $this->success('accepted', '转赠已强制完成，资产已过户给接收方');
+    }
+
+    /**
+     * POST /admin/transfer/:id/reject { reason }
+     * 强制拒绝：pending → rejected，资产解冻退回转出方（复刻 C 端 reject 事务）
+     */
+    public function reject()
+    {
+        $id = (int) ($this->request->param('id') ?: $this->request->param('transfer_id'));
+        if ($id <= 0) {
+            return $this->fail(4220, '缺少必填参数：id');
+        }
+        $reason = trim((string) $this->request->param('reason', ''));
+
+        Db::startTrans();
+        try {
+            $transfer = Db::name('transfers')->where('id', $id)->where('status', 'pending')->lock(true)->find();
+            if (!$transfer) {
+                Db::rollback();
+                return $this->fail(4220, '转赠不存在或已处理（仅待接收状态可强制拒绝）');
+            }
+
+            $now = date('Y-m-d H:i:s.v');
+            Db::name('transfers')->where('id', $id)->update([
+                'status'       => 'rejected',
+                'confirmed_at' => $now,
+                'updated_at'   => $now,
+            ]);
+            $restored = Db::name('user_collectibles')
+                ->where('id', $transfer['user_collectible_id'])
+                ->where('status', 'frozen')
+                ->update(['status' => 'held', 'updated_at' => $now]);
+            if (!$restored) {
+                Db::rollback();
+                return $this->fail(4220, '资产状态异常（非冻结状态），请人工核查');
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '强制拒绝失败：' . $e->getMessage());
+        }
+
+        $this->audit('transfer', 'force_reject', '强制拒绝转赠（ID ' . $id . '）', ['reason' => $reason], 'transfer', $id);
+        return $this->success('rejected', '转赠已强制拒绝，资产已退回转出方');
+    }
+
+    /**
+     * POST /admin/transfer/:id/revoke { id, reason }
+     * 撤销转赠：
+     * - pending：资产从 frozen 解冻回转出方 held
+     * - accepted：校验接收方仍持有（held）未二次流转，退回转出方；已流转则拦截
      */
     public function revoke()
     {
@@ -85,21 +184,36 @@ class TransferController extends BaseController
 
         Db::startTrans();
         try {
-            $transfer = Db::name('transfers')->where('id', $id)->where('status', 'pending')->lock(true)->find();
+            $transfer = Db::name('transfers')->where('id', $id)
+                ->whereIn('status', ['pending', 'accepted'])->lock(true)->find();
             if (!$transfer) {
                 Db::rollback();
-                return $this->fail(4220, '转赠不存在或已处理（仅待处理状态可撤销）');
+                return $this->fail(4220, '转赠不存在或不可撤销（仅待接收/已完成状态可撤销）');
             }
 
-            $now = date('Y-m-d H:i:s');
-            $restored = Db::name('user_collectibles')
-                ->where('id', $transfer['user_collectible_id'])
-                ->where('status', 'frozen')
-                ->update(['status' => 'held', 'updated_at' => $now]);
+            $now = date('Y-m-d H:i:s.v');
+            if ($transfer['status'] === 'pending') {
+                // 待接收撤销：冻结资产解冻回转出方
+                $restored = Db::name('user_collectibles')
+                    ->where('id', $transfer['user_collectible_id'])
+                    ->where('status', 'frozen')
+                    ->update(['status' => 'held', 'updated_at' => $now]);
 
-            if (!$restored) {
-                Db::rollback();
-                return $this->fail(4220, '资产状态异常（非冻结状态），请人工核查');
+                if (!$restored) {
+                    Db::rollback();
+                    return $this->fail(4220, '资产状态异常（非冻结状态），请人工核查');
+                }
+            } else {
+                // 已完成撤销：接收方须仍持有（held 且归属接收方）；已二次流转（转赠/寄售/合成/消耗）则拦截
+                $uc = Db::name('user_collectibles')
+                    ->where('id', $transfer['user_collectible_id'])->lock(true)->find();
+                if (!$uc || (int) $uc['user_id'] !== (int) $transfer['to_user_id'] || $uc['status'] !== 'held') {
+                    Db::rollback();
+                    return $this->fail(4220, '接收方资产已发生二次流转（再次转赠/寄售/合成/消耗），无法撤销');
+                }
+                Db::name('user_collectibles')
+                    ->where('id', $transfer['user_collectible_id'])
+                    ->update(['user_id' => $transfer['from_user_id'], 'status' => 'held', 'updated_at' => $now]);
             }
 
             Db::name('transfers')->where('id', $id)->update([
@@ -113,7 +227,7 @@ class TransferController extends BaseController
             return $this->fail(5000, '撤销失败：' . $e->getMessage());
         }
 
-        $this->audit('transfer', 'revoke', '撤销转赠（ID ' . $id . '）', ['reason' => $reason], 'transfer', $id);
-        return $this->success(null, '转赠已撤销，资产已解冻回转出方');
+        $this->audit('transfer', 'revoke', '撤销转赠（ID ' . $id . '，原状态 ' . $transfer['status'] . '）', ['reason' => $reason], 'transfer', $id);
+        return $this->success('cancelled', '转赠已撤销，资产已退回转出方');
     }
 }

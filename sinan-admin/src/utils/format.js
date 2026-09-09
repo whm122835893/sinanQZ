@@ -31,9 +31,10 @@ export function stockPool(c) {
     - (c.reservedCount || 0) - (c.airdroppedCount || 0) - (c.destroyedCount || 0)
 }
 
-// 盲盒库存池 = 发行总量 - 已售出发售 - 已独立空投 - 已销毁
+// 盲盒库存池 = 发行总量 - 已售出发售 - 待支付锁定 - 已独立空投 - 已销毁（与后端同公式）
 export function blindBoxPool(b) {
-  return (b.edition || 0) - (b.sold || 0) - (b.airdroppedCount || 0) - (b.destroyedCount || 0)
+  return (b.edition || 0) - (b.sold || 0) - (b.lockedQuantity || 0)
+    - (b.airdroppedCount || 0) - (b.destroyedCount || 0)
 }
 
 // ============================================================

@@ -261,7 +261,7 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
               </div>
             </div>
             <div class="bd__audit-formula">
-              盲盒发行量 {{ detail.edition }} = 盲盒库存池 {{ detail.audit.pool }} + 盲盒已售出发售 {{ detail.sold }} + 盲盒已独立空投 {{ detail.airdroppedCount }} + 盲盒已销毁 {{ detail.destroyedCount }}
+              盲盒发行量 {{ detail.edition }} = 盲盒库存池 {{ detail.audit.pool }} + 待支付锁定 {{ detail.lockedQuantity }} + 盲盒已售出发售 {{ detail.sold }} + 盲盒已独立空投 {{ detail.airdroppedCount }} + 盲盒已销毁 {{ detail.destroyedCount }}
             </div>
             <div class="adm-kv" style="margin-top: 8px">
               <span class="k">盲盒流通量（实时）</span>

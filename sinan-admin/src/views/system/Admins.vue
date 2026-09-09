@@ -54,17 +54,11 @@ function openRole(role) {
               <StatusTag :value="row.role" :map="ROLE_MAP" />
             </template>
           </el-table-column>
-          <el-table-column label="2FA" width="80" align="center">
+          <el-table-column label="锁定状态" width="90" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.twofaEnabled ? 'success' : 'info'" effect="plain" size="small">
-                {{ row.twofaEnabled ? '已启用' : '未启用' }}
+              <el-tag :type="row.isLocked ? 'danger' : 'info'" effect="plain" size="small">
+                {{ row.isLocked ? '已锁定' : '正常' }}
               </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="IP 白名单" min-width="130">
-            <template #default="{ row }">
-              <code v-if="row.ipWhitelist" class="ad__ip">{{ row.ipWhitelist }}</code>
-              <span v-else class="t-tertiary">不限制</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">

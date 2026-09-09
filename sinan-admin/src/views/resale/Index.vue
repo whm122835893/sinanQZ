@@ -23,33 +23,60 @@ const statusFilters = [
   }
 ]
 
+// 求购状态筛选：后端存数字（1求购中 2已接单 3已取消 4已成交 5已过期）
+const buyStatusFilters = [
+  {
+    field: 'status',
+    label: '状态',
+    options: [
+      { value: '1', label: '求购中' },
+      { value: '2', label: '已接单' },
+      { value: '4', label: '已成交' },
+      { value: '3', label: '已取消' },
+      { value: '5', label: '已过期' }
+    ]
+  }
+]
+
 // ---- 挂单操作 ----
 async function onAction(r, action) {
   const map = {
     freeze: { title: '冻结挂单', msg: `确认冻结「${r.collectibleName}」的寄售挂单？冻结期间不可被购买。`, type: 'warning' },
-    unfreeze: { title: '解除冻结', msg: '确认恢复该挂单为在售状态？', type: 'info' },
-    cancel: { title: '系统强制下架', msg: `确认强制下架该挂单？藏品将退回卖家账户，挂单状态变更为「已取消」。`, type: 'error' }
+    unfreeze: { title: '解除冻结', msg: '确认恢复该挂单资产为持有状态？用户可重新上架。', type: 'info' },
+    cancel: { title: '系统强制下架', msg: `确认强制下架该挂单？藏品将退回卖家账户，挂单状态变更为「系统下架」。`, type: 'error' }
   }
   const cfg = map[action]
-  await ElMessageBox.confirm(cfg.msg, cfg.title, { type: cfg.type })
-  const res = await resaleAction(r.id, action)
+  // 后端要求必填原因（写入审计日志）
+  const { value } = await ElMessageBox.prompt(cfg.msg, cfg.title, {
+    type: cfg.type,
+    confirmButtonText: '确认',
+    inputPlaceholder: '操作原因（必填，写入审计日志）',
+    inputValidator: (v) => (v && v.trim() ? true : '操作原因必填')
+  })
+  const res = await resaleAction(r.id, action, value.trim())
   if (res.code === 0) {
-    r.status = res.data
+    // 后端无状态返回：按操作语义更新（freeze=资产冻结 / cancel=系统下架 / unfreeze=资产回持有）
+    r.status = { freeze: 'frozen', unfreeze: 'system_delisted', cancel: 'system_delisted' }[action] || r.status
     ElMessage.success('操作成功，已写入审计日志')
   }
 }
 
 // ---- 求购下架 ----
 async function onDelistBuy(b) {
-  await ElMessageBox.confirm(
-    `确认强制下架「${b.userName}」对「${b.collectibleName}」的求购信息？`,
-    '强制下架',
-    { type: 'warning' }
+  const { value } = await ElMessageBox.prompt(
+    `确认强制关闭「${b.userName}」对「${b.collectibleName}」的求购信息？`,
+    '强制关闭求购',
+    {
+      type: 'warning',
+      confirmButtonText: '确认关闭',
+      inputPlaceholder: '关闭原因（写入审计日志）',
+      inputValidator: (v) => (v && v.trim() ? true : '关闭原因必填')
+    }
   )
-  const res = await delistBuyRequest(b.id)
+  const res = await delistBuyRequest(b.id, value.trim())
   if (res.code === 0) {
-    b.status = 'delisted'
-    ElMessage.success('已下架')
+    b.status = 'cancelled'
+    ElMessage.success('已关闭')
   }
 }
 </script>
@@ -112,9 +139,14 @@ async function onDelistBuy(b) {
 
       <!-- 求购市场 -->
       <el-tab-pane label="求购市场" name="buy" lazy>
-        <AdminTablePage :fetch="getBuyRequests" search-placeholder="搜索求购用户 / 藏品">
+        <AdminTablePage :fetch="getBuyRequests" :filters="buyStatusFilters" search-placeholder="搜索求购用户 / 藏品">
           <template #default="{ items }">
-            <el-table-column label="求购用户" prop="userName" min-width="120" fixed="left" />
+            <el-table-column label="求购用户" min-width="130" fixed="left">
+              <template #default="{ row }">
+                <div>{{ row.userName }}</div>
+                <div class="t-tertiary" style="font-size: 11px">{{ row.userPhone }}</div>
+              </template>
+            </el-table-column>
             <el-table-column label="目标藏品" prop="collectibleName" min-width="180" />
             <el-table-column label="求购价" width="110" align="right">
               <template #default="{ row }">
@@ -136,7 +168,7 @@ async function onDelistBuy(b) {
                   v-if="row.status === 'active'"
                   link type="danger" size="small"
                   @click="onDelistBuy(row)"
-                >强制下架</el-button>
+                >强制关闭</el-button>
                 <span v-else class="t-tertiary" style="font-size: 12px">-</span>
               </template>
             </el-table-column>

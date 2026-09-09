@@ -37,13 +37,16 @@ class SwapController extends BaseController
     }
 
     /**
-     * POST /admin/swap/:id/close
+     * POST /admin/swap/:id/close  强制关闭（仅「挂单中」可关闭，防误关已接受/已完成单）
      */
     public function close()
     {
         $id = $this->positiveInt('id');
         if ($id === null) return $this->failMissing(['id']);
-        Db::name('swap_offers')->where('id', $id)->update(['status' => 4]);
+        $updated = Db::name('swap_offers')->where('id', $id)->where('status', 1)->update(['status' => 4]);
+        if (!$updated) {
+            return $this->fail(4220, '置换单不存在或已非「挂单中」状态，无法关闭');
+        }
         $this->audit('置换', 'close', '强制关闭', ['id' => $id]);
         return $this->success(['id' => $id]);
     }

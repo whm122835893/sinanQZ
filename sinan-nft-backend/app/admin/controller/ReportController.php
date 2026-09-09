@@ -51,7 +51,8 @@ class ReportController extends BaseController
             ->whereBetween('created_at', [$start, $end])
             ->group('source')
             ->select()->toArray();
-        $sourceMap = [1 => 'release发售', 2 => 'market市场', 3 => 'priority优先购', 4 => 'eligibility资格购'];
+        // orders.source 存字符串枚举（release/market/priority/eligibility），非数字
+        $sourceMap = ['release' => '发售', 'market' => '市场寄售', 'priority' => '优先购', 'eligibility' => '资格购'];
 
         // 3. 支付方式分布
         $payRows = Db::name('payments')->alias('p')
@@ -97,7 +98,7 @@ class ReportController extends BaseController
             'trend'    => $trendRows,
             'sources'  => array_map(fn ($r) => [
                 'source'      => $r['source'],
-                'sourceName'  => $sourceMap[(int) $r['source']] ?? ('来源' . $r['source']),
+                'sourceName'  => $sourceMap[$r['source']] ?? ('来源' . $r['source']),
                 'orderCount'  => (int) $r['order_count'],
                 'gmv'         => round((float) $r['gmv'], 2),
             ], $sourceRows),
@@ -463,7 +464,7 @@ class ReportController extends BaseController
             $r['stat_date'], $r['order_count'], round((float) $r['gmv'], 2), $r['quantity']
         ], $data['trend'] ?? []);
 
-        $sourceMap = [1 => '发售', 2 => '市场寄售', 3 => '优先购', 4 => '资格购'];
+        $sourceMap = ['release' => '发售', 'market' => '市场寄售', 'priority' => '优先购', 'eligibility' => '资格购'];
         $sourceRows = array_map(fn ($r) => [
             $sourceMap[$r['source']] ?? '来源' . $r['source'], $r['order_count'], round((float) $r['gmv'], 2)
         ], $data['sources'] ?? []);

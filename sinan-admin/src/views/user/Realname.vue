@@ -61,8 +61,9 @@ async function audit(pass) {
 }
 
 async function onRejectConfirm() {
-  if (!rejectReason.value.trim()) return ElMessage.warning('请填写驳回原因')
-  const res = await auditRealname(detail.value.id, false)
+  const reason = rejectReason.value.trim()
+  if (!reason) return ElMessage.warning('请填写驳回原因')
+  const res = await auditRealname(detail.value.id, false, reason)
   if (res.code === 0) {
     detail.value.realnameStatus = 'rejected'
     ElMessage.success('已驳回')
@@ -122,9 +123,7 @@ async function onRejectConfirm() {
       <template v-if="detail">
         <div class="adm-card" style="box-shadow: none">
           <div class="adm-card__title">审核材料</div>
-          <div class="rn__idcard">
-            <img :src="detail.avatar" alt="证件照片" />
-          </div>
+          <div class="adm-kv"><span class="k">用户头像</span><span class="v">{{ detail.nickname }}</span></div>
           <div class="adm-kv">
             <span class="k">真实姓名</span>
             <span class="v">

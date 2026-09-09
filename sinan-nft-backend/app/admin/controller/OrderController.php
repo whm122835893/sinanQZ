@@ -25,7 +25,9 @@ class OrderController extends BaseController
     {
         [$page, $pageSize] = $this->pageParams();
 
-        $query = Db::name('orders')->alias('o');
+        $query = Db::name('orders')->alias('o')
+            ->join('users u', 'u.id = o.user_id', 'LEFT')
+            ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT');
 
         $orderNo = trim((string) $this->request->param('orderNo', ''));
         if ($orderNo !== '') {
@@ -49,6 +51,17 @@ class OrderController extends BaseController
         if ($collectibleId !== null) {
             $query->where('o.collectible_id', $collectibleId);
         }
+        // 关键词搜索：订单号 / 用户（手机号/UID/用户名）/ 藏品名（AdminTablePage 统一发送 keyword）
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->where(function ($q) use ($keyword) {
+                $q->whereLike('o.order_no', '%' . $keyword . '%')
+                    ->whereOr('u.username', 'like', '%' . $keyword . '%')
+                    ->whereOr('u.uid', 'like', '%' . $keyword . '%')
+                    ->whereOr('u.phone', 'like', '%' . $keyword . '%')
+                    ->whereOr('c.name', 'like', '%' . $keyword . '%');
+            });
+        }
         $status = (string) $this->request->param('status', '');
         if ($status !== '' && in_array($status, ['pending', 'completed', 'cancelled', 'refunding', 'refunded'], true)) {
             $query->where('o.status', $status);
@@ -64,14 +77,17 @@ class OrderController extends BaseController
         }
 
         $total = (clone $query)->count();
-        $rows = $query->field('o.id, o.order_no, o.user_id, u.uid, u.username, o.collectible_id, c.name AS collectible_name,
+        $rows = $query->field('o.id, o.order_no, o.user_id, u.uid, u.username, u.phone, o.collectible_id, c.name AS collectible_name, c.image AS collectible_image,
                                o.unit_price, o.quantity, o.total_price, o.status, o.source,
                                o.created_at, o.paid_at, o.completed_at, o.expires_at')
-            ->join('users u', 'u.id = o.user_id', 'LEFT')
-            ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT')
             ->order('o.id', 'desc')
             ->page($page, $pageSize)
             ->select()->toArray();
+
+        $rows = array_map(function ($row) {
+            $row['phone'] = $row['phone'] ? mask_phone((string) $row['phone']) : null;
+            return $row;
+        }, $rows);
 
         return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }

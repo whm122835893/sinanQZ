@@ -37,8 +37,30 @@ class MarketController extends BaseController
             });
         }
         $status = (string) $this->request->param('status', '');
-        if ($status !== '' && in_array($status, ['selling', 'sold', 'cancelled'], true)) {
-            $query->where('rl.status', $status);
+        if ($status !== '') {
+            if ($status === 'onsale') {
+                $status = 'selling';
+            }
+            if (in_array($status, ['selling', 'sold'], true)) {
+                $query->where('rl.status', $status);
+            } elseif ($status === 'cancelled') {
+                // 用户自行取消（系统处置的取消走 frozen / system_delisted 派生筛选）
+                $query->where('rl.status', 'cancelled')->where('rl.is_system_delisted', 0);
+            } elseif ($status === 'frozen') {
+                // 系统冻结：cancelled + 系统下架 + 资产仍冻结（风控审查中）
+                $query->where('rl.status', 'cancelled')->where('rl.is_system_delisted', 1)
+                    ->whereExists(function ($q) {
+                        $q->name('user_collectibles')->whereRaw('nft_user_collectibles.id = rl.user_collectible_id')
+                          ->where('nft_user_collectibles.status', 'frozen');
+                    });
+            } elseif ($status === 'system_delisted') {
+                // 系统下架：cancelled + 系统下架 + 资产已退回持有（可重新上架）
+                $query->where('rl.status', 'cancelled')->where('rl.is_system_delisted', 1)
+                    ->whereExists(function ($q) {
+                        $q->name('user_collectibles')->whereRaw('nft_user_collectibles.id = rl.user_collectible_id')
+                          ->where('nft_user_collectibles.status', '<>', 'frozen');
+                    });
+            }
         }
         $minPrice = $this->request->param('minPrice');
         if ($minPrice !== null && $minPrice !== '') {
@@ -55,13 +77,18 @@ class MarketController extends BaseController
         }
 
         $total = (clone $query)->count();
-        $rows = $query->field('rl.*, u.uid, u.username AS seller_name, c.name AS collectible_name, c.image, uc.serial')
+        $rows = $query->field('rl.*, u.uid, u.username AS seller_name, u.phone AS seller_phone,
+                               c.name AS collectible_name, c.image, uc.serial, uc.status AS asset_status')
             ->join('users u', 'u.id = rl.seller_id', 'LEFT')
             ->join('collectibles c', 'c.id = rl.collectible_id', 'LEFT')
             ->join('user_collectibles uc', 'uc.id = rl.user_collectible_id', 'LEFT')
             ->order('rl.id', 'desc')
             ->page($page, $pageSize)
             ->select()->toArray();
+
+        foreach ($rows as &$row) {
+            $row['seller_phone'] = mask_phone((string) $row['seller_phone']);
+        }
 
         return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }

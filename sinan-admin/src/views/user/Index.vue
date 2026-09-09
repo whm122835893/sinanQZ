@@ -104,24 +104,38 @@ async function onRecover(a) {
     loadAssets()
     // 刷新抽屉头部持仓统计
     const fresh = await getUserDetail(detail.value.id)
-    if (fresh.code === 0) detail.value = { ...fresh.data, orders: detail.value.orders, transfers: detail.value.transfers }
+    if (fresh.code === 0) detail.value = fresh.data
   }
 }
 
 async function onFreeze() {
   const u = detail.value
   const freezing = u.status === 'normal'
-  await ElMessageBox.confirm(
-    freezing
-      ? `确认冻结「${u.nickname}」？冻结后该用户无法登录与交易。`
-      : `确认解冻「${u.nickname}」？`,
-    freezing ? '冻结账号' : '解冻账号',
-    { type: 'warning', confirmButtonText: freezing ? '确认冻结' : '确认解冻' }
-  )
-  const res = await freezeUser(u.id)
+  // 冻结必须填写原因（写入审计日志）；解冻直接确认
+  let reason = ''
+  if (freezing) {
+    const { value } = await ElMessageBox.prompt(
+      `确认冻结「${u.nickname}」？冻结后该用户无法登录与交易。`,
+      '冻结账号',
+      {
+        type: 'warning',
+        confirmButtonText: '确认冻结',
+        inputPlaceholder: '冻结原因（必填，写入审计日志）',
+        inputValidator: (v) => (v && v.trim() ? true : '冻结原因必填')
+      }
+    )
+    reason = value.trim()
+  } else {
+    await ElMessageBox.confirm(
+      `确认解冻「${u.nickname}」？`,
+      '解冻账号',
+      { type: 'warning', confirmButtonText: '确认解冻' }
+    )
+  }
+  const res = await freezeUser(u.id, freezing, reason)
   if (res.code === 0) {
-    u.status = res.data
-    ElMessage.success(res.data === 'normal' ? '已解冻' : '已冻结')
+    u.status = freezing ? 'frozen' : 'normal'
+    ElMessage.success(freezing ? '已冻结并强制下线' : '已解冻')
   }
 }
 
@@ -280,13 +294,22 @@ async function onResetPwd() {
 
         <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
           <div class="adm-card__title">最近钱包流水</div>
-          <div v-for="t in detail.transfers" :key="t.id" class="adm-kv">
+          <div v-for="t in detail.walletLogs" :key="t.id" class="adm-kv">
             <span class="k" style="max-width: 60%">{{ t.title }}</span>
-            <span class="v" :class="t.direction > 0 ? 't-success' : 't-primary'">
-              {{ t.direction > 0 ? '+' : '-' }}{{ t.amount }}
+            <span class="v" :class="t.direction === 1 ? 't-success' : 't-primary'">
+              {{ t.direction === 1 ? '+' : '-' }}{{ t.amount }}
             </span>
           </div>
-          <el-empty v-if="!detail.transfers.length" description="暂无流水" :image-size="60" />
+          <el-empty v-if="!detail.walletLogs.length" description="暂无流水" :image-size="60" />
+        </div>
+
+        <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
+          <div class="adm-card__title">最近转赠</div>
+          <div v-for="t in detail.transfers" :key="t.id" class="adm-kv">
+            <span class="k" style="max-width: 60%">{{ t.collectibleName }}（{{ t.isReceive ? '受赠' : '转出' }}）</span>
+            <span class="v">{{ t.createTime.slice(5, 16) }}</span>
+          </div>
+          <el-empty v-if="!detail.transfers.length" description="暂无转赠" :image-size="60" />
         </div>
 
         <div class="user__actions">

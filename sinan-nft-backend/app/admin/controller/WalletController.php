@@ -76,6 +76,16 @@ class WalletController extends BaseController
         if ($bizNo !== '') {
             $query->whereLike('t.biz_no', '%' . $bizNo . '%');
         }
+        // 关键词搜索：流水标题 / 用户（用户名/UID/手机号）（AdminTablePage 统一发送 keyword）
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->where(function ($q) use ($keyword) {
+                $q->whereLike('t.title', '%' . $keyword . '%')
+                    ->whereOr('u.username', 'like', '%' . $keyword . '%')
+                    ->whereOr('u.uid', $keyword)
+                    ->whereOr('u.phone', 'like', '%' . $keyword . '%');
+            });
+        }
         $range = $this->dateRange();
         if ($range) {
             if ($range[0] !== '') $query->where('t.created_at', '>=', $range[0]);
@@ -83,11 +93,15 @@ class WalletController extends BaseController
         }
 
         $total = (clone $query)->count();
-        $rows = $query->field('t.*, u.uid, u.username')
+        $rows = $query->field('t.*, u.uid, u.username, u.phone AS user_phone')
             ->join('users u', 'u.id = t.user_id', 'LEFT')
             ->order('t.id', 'desc')
             ->page($page, $pageSize)
             ->select()->toArray();
+
+        foreach ($rows as &$row) {
+            $row['user_phone'] = $row['user_phone'] ? mask_phone((string) $row['user_phone']) : '';
+        }
 
         return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }

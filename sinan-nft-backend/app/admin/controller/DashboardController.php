@@ -45,8 +45,8 @@ class DashboardController extends BaseController
         $ticketOpen      = Db::name('support_tickets')->whereIn('status', [1, 2])->count();
         $alertPending    = Db::name('risk_alerts')->where('status', 1)->count();
 
-        // 待办补充：实名待审核（is_realname=1）与异常订单（待支付已过期 + 退款中）
-        $realnamePending = Db::name('users')->whereNull('deleted_at')->where('is_realname', 1)->count();
+        // 待办补充：实名待审核（realname_status=1 待审）与异常订单（待支付已过期 + 退款中）
+        $realnamePending = Db::name('users')->whereNull('deleted_at')->where('realname_status', 1)->count();
         $abnormalOrders  = Db::name('orders')
             ->where(function ($q) {
                 $q->where(function ($q2) {

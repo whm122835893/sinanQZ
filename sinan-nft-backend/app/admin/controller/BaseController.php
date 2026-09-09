@@ -105,8 +105,11 @@ abstract class BaseController
      */
     protected function dateRange(): ?array
     {
-        $start = trim((string) $this->request->param('startDate', $this->request->param('start_time', '')));
-        $end   = trim((string) $this->request->param('endDate', $this->request->param('end_time', '')));
+        // 兼容多种参数名：startDate/start_time/start_date（报表前端使用 snake_case）
+        $start = trim((string) $this->request->param('startDate',
+            $this->request->param('start_time', $this->request->param('start_date', ''))));
+        $end   = trim((string) $this->request->param('endDate',
+            $this->request->param('end_time', $this->request->param('end_date', ''))));
         if ($start === '' && $end === '') {
             return null;
         }

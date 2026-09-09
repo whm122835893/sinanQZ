@@ -33,7 +33,8 @@ async function onAction(t, action) {
   await ElMessageBox.confirm(cfg.msg, cfg.title, { type: cfg.type })
   const res = await transferAction(t.id, action)
   if (res.code === 0) {
-    t.status = res.data
+    // 后端返回 accepted/rejected/cancelled → 前端词汇 completed/rejected/revoked
+    t.status = { approve: 'completed', reject: 'rejected', revoke: 'revoked' }[action] || t.status
     ElMessage.success(action === 'revoke' ? '已撤销，藏品退回转出方并写入审计日志' : '操作成功，已写入审计日志')
   } else {
     ElMessage.error(res.message)
@@ -63,7 +64,7 @@ async function onAction(t, action) {
               <el-icon class="tf__arrow" :class="{ 'is-done': row.status === 'completed' }"><Right /></el-icon>
               <span class="tf__party">{{ row.toUser }}</span>
             </div>
-            <div class="t-tertiary" style="font-size: 11px; margin-top: 2px">接收方 {{ row.toPhone }}</div>
+            <div class="t-tertiary" style="font-size: 11px; margin-top: 2px">{{ row.fromPhone }} → {{ row.toPhone }}</div>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90">

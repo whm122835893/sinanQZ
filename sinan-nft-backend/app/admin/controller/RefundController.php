@@ -25,19 +25,37 @@ class RefundController extends BaseController
     {
         [$page, $pageSize] = $this->pageParams();
 
-        $query = Db::name('refunds')->alias('r');
+        $query = Db::name('refunds')->alias('r')
+            ->join('orders o', 'o.id = r.order_id', 'LEFT')
+            ->join('users u', 'u.id = r.user_id', 'LEFT')
+            ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT');
 
         $refundNo = trim((string) $this->request->param('refundNo', ''));
         if ($refundNo !== '') {
             $query->whereLike('r.refund_no', '%' . $refundNo . '%');
         }
+        // 状态筛选：兼容语义值（前端枚举）与数字（1待审批/2已批准/3已退款/4已拒绝）
         $status = $this->request->param('status');
         if ($status !== null && $status !== '') {
-            $query->where('r.status', (int) $status);
+            $statusMap = ['pending' => 1, 'approved' => 2, 'refunded' => 3, 'rejected' => 4];
+            $statusVal = $statusMap[(string) $status] ?? (int) $status;
+            if ($statusVal > 0) {
+                $query->where('r.status', $statusVal);
+            }
         }
         $userId = $this->positiveInt('userId');
         if ($userId !== null) {
             $query->where('r.user_id', $userId);
+        }
+        // 关键词搜索：退款单号 / 订单号 / 用户（AdminTablePage 统一发送 keyword）
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->where(function ($q) use ($keyword) {
+                $q->whereLike('r.refund_no', '%' . $keyword . '%')
+                    ->whereOr('o.order_no', 'like', '%' . $keyword . '%')
+                    ->whereOr('u.username', 'like', '%' . $keyword . '%')
+                    ->whereOr('u.uid', 'like', '%' . $keyword . '%');
+            });
         }
         $range = $this->dateRange();
         if ($range) {
@@ -46,16 +64,14 @@ class RefundController extends BaseController
         }
 
         $total = (clone $query)->count();
-        $rows = $query->field('r.*, o.order_no, u.uid, u.username, c.name AS collectible_name')
-            ->join('orders o', 'o.id = r.order_id', 'LEFT')
-            ->join('users u', 'u.id = r.user_id', 'LEFT')
-            ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT')
+        $rows = $query->field('r.*, o.order_no, u.uid, u.username, u.phone, c.name AS collectible_name, c.image AS collectible_image')
             ->order('r.id', 'desc')
             ->page($page, $pageSize)
             ->select()->toArray();
 
         $result = array_map(function ($row) {
             $row['status_text'] = ['待审批', '已批准', '已退款', '已拒绝'][(int) $row['status'] - 1] ?? '';
+            $row['phone'] = $row['phone'] ? mask_phone((string) $row['phone']) : null;
             return camelize_keys($row);
         }, $rows);
 

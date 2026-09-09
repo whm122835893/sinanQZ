@@ -147,7 +147,7 @@ class UserController extends BaseController
             ->find();
 
         $recentOrders = Db::name('orders')->alias('o')
-            ->field('o.id, o.order_no, o.total_price, o.status, o.created_at, c.name AS collectible_name')
+            ->field('o.id, o.order_no, o.total_price, o.status, o.quantity, o.created_at, c.name AS collectible_name, c.image AS collectible_image')
             ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT')
             ->where('o.user_id', $id)
             ->order('o.id', 'desc')->limit(10)->select()->toArray();
@@ -158,6 +158,12 @@ class UserController extends BaseController
             ->join('collectibles c', 'c.id = t.collectible_id', 'LEFT')
             ->whereRaw('(t.from_user_id = ? OR t.to_user_id = ?)', [$id, $id])
             ->order('t.id', 'desc')->limit(10)->select()->toArray();
+
+        // 最近钱包流水（详情抽屉"最近钱包流水"卡片数据源，与钱包页同表）
+        $recentWalletLogs = Db::name('wallet_transactions')
+            ->field('id, trans_type, title, direction, amount, biz_no, created_at')
+            ->where('user_id', $id)
+            ->order('id', 'desc')->limit(10)->select()->toArray();
 
         // 是否在黑名单（含有效记录）
         $blacklisted = Db::name('blacklist')->where('user_id', $id)->where('status', 1)->find();
@@ -200,6 +206,11 @@ class UserController extends BaseController
                 unset($t['is_receive']);
                 return camelize_keys($t);
             }, $recentTransfers),
+            'recentWalletLogs' => array_map(function ($l) {
+                $l['direction'] = (int) $l['direction'];
+                $l['amount']    = (float) $l['amount'];
+                return camelize_keys($l);
+            }, $recentWalletLogs),
         ];
 
         // 审计：查看用户详情含实名信息时记录
@@ -209,16 +220,16 @@ class UserController extends BaseController
     }
 
     /**
-     * POST /admin/user/freeze { user_id, status(0冻结/1解冻), reason }
+     * POST /admin/users/:id/freeze { status(0冻结/1解冻), reason }
+     * （兼容 body.user_id；路由变量 id 经 param() 合并可直接读取）
      */
     public function freeze()
     {
-        $missing = $this->missingParams(['user_id', 'status']);
-        if ($missing) {
-            return $this->failMissing($missing);
+        $userId = (int) ($this->request->param('user_id') ?: $this->request->param('id'));
+        if ($userId <= 0) {
+            return $this->fail(4220, '缺少必填参数：user_id');
         }
-        $userId = (int) $this->request->param('user_id');
-        $status = (int) $this->request->param('status');
+        $status = (int) $this->request->param('status', -1);
         $reason = trim((string) $this->request->param('reason', ''));
 
         if (!in_array($status, [0, 1], true)) {
@@ -255,13 +266,13 @@ class UserController extends BaseController
     }
 
     /**
-     * POST /admin/user/reset-transaction-password { user_id }
+     * POST /admin/users/:id/reset-transaction-password
      * 重置交易密码：清空旧密码，用户在 C 端重新设置
      */
     public function resetTransactionPassword()
     {
-        $userId = $this->positiveInt('user_id');
-        if ($userId === null) {
+        $userId = (int) ($this->request->param('user_id') ?: $this->request->param('id'));
+        if ($userId <= 0) {
             return $this->fail(4220, 'user_id 参数不正确');
         }
         $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
@@ -284,8 +295,8 @@ class UserController extends BaseController
      */
     public function forceLogout()
     {
-        $userId = $this->positiveInt('user_id');
-        if ($userId === null) {
+        $userId = (int) ($this->request->param('user_id') ?: $this->request->param('id'));
+        if ($userId <= 0) {
             return $this->fail(4220, 'user_id 参数不正确');
         }
         $reason = trim((string) $this->request->param('reason', ''));
@@ -305,17 +316,19 @@ class UserController extends BaseController
     }
 
     /**
-     * POST /admin/user/blacklist { user_id, action(add/remove), reason, evidence? }
+     * POST /admin/users/:id/blacklist { action(add/remove), reason, evidence? }
      * 黑名单：加入后用户即刻被禁止访问（C 端中间件实时校验）
      */
     public function blacklist()
     {
-        $missing = $this->missingParams(['user_id', 'action']);
-        if ($missing) {
-            return $this->failMissing($missing);
+        $userId = (int) ($this->request->param('user_id') ?: $this->request->param('id'));
+        if ($userId <= 0) {
+            return $this->fail(4220, '缺少必填参数：user_id');
         }
-        $userId = (int) $this->request->param('user_id');
         $action = (string) $this->request->param('action');
+        if ($action === '') {
+            return $this->fail(4220, '缺少必填参数：action');
+        }
         $reason = trim((string) $this->request->param('reason', ''));
         $evidence = trim((string) $this->request->param('evidence', ''));
 

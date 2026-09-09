@@ -371,8 +371,8 @@ class CollectibleController extends BaseController
     }
 
     /**
-     * POST /admin/collectible/release { id, status, onsale_at?, off_sale_at? }
-     * 发售配置：上架（upcoming→onsale）/重新上架/调整开售时间
+     * POST /admin/collectible/release { id, status, onsale_at?, off_sale_at?, price?, per_user_limit?, sale_quantity? }
+     * 发售配置：上架（upcoming→onsale）/重新上架/调整开售时间/发售价格与每人限购
      */
     public function release()
     {
@@ -389,18 +389,44 @@ class CollectibleController extends BaseController
         if (!in_array($status, ['upcoming', 'onsale'], true)) {
             return $this->fail(4220, '发售状态仅允许 upcoming / onsale');
         }
+        $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
+              - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
         if ($status === 'onsale') {
-            $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
-                  - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
             if ($pool <= 0) {
                 return $this->fail(4220, '库存池为空，无法上架发售（需先调整库存）');
             }
         }
 
+        // 发售数量防呆校验（信息性上限，实际可售以库存池为准）
+        $saleQuantity = $this->request->param('sale_quantity');
+        if ($saleQuantity !== null && $saleQuantity !== '') {
+            $saleQuantity = (int) $saleQuantity;
+            if ($saleQuantity < 1) {
+                return $this->fail(4220, '发售数量至少为 1');
+            }
+            if ($status === 'onsale' && $saleQuantity > $pool) {
+                return $this->fail(4220, '发售数量不可超过当前库存池（' . $pool . ' 份）');
+            }
+        }
+
+        // 发售价格调整（已有售出记录时禁止改价，与 update() 口径一致）
+        $cUpdate = [];
+        if ($this->request->param('price') !== null && (float) $this->request->param('price') > 0) {
+            $newPrice = (float) $this->request->param('price');
+            if ((int) $c['sold'] > 0 && abs($newPrice - (float) $c['price']) > 0.0001) {
+                return $this->fail(4220, '藏品已有售出记录，禁止修改价格');
+            }
+            $cUpdate['price'] = $newPrice;
+        }
+        // 每人限购调整
+        if ($this->request->param('per_user_limit') !== null && $this->request->param('per_user_limit') !== '') {
+            $cUpdate['per_user_limit'] = max(0, (int) $this->request->param('per_user_limit'));
+        }
+
         $update = [
             'status'      => $status,
             'is_release'  => 1,
-            'updated_at'  => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
         ];
         foreach (['onsale_at', 'off_sale_at', 'release_date'] as $field) {
             $value = $this->optionalDate($field);
@@ -412,9 +438,9 @@ class CollectibleController extends BaseController
             $update['onsale_at'] = date('Y-m-d H:i:s');
         }
 
-        Db::name('collectibles')->where('id', $id)->update($update);
+        Db::name('collectibles')->where('id', $id)->update(array_merge($update, $cUpdate));
 
-        $this->audit('collectible', 'release', '发售配置「' . $c['name'] . '」→ ' . $status, $update, 'collectible', $id);
+        $this->audit('collectible', 'release', '发售配置「' . $c['name'] . '」→ ' . $status, array_merge($update, $cUpdate), 'collectible', $id);
         return $this->success(null, '发售配置已生效');
     }
 
@@ -557,13 +583,16 @@ class CollectibleController extends BaseController
      */
     public function destroy()
     {
-        $missing = $this->missingParams(['id', 'quantity', 'reason']);
+        $missing = $this->missingParams(['id', 'quantity']);
         if ($missing) {
             return $this->failMissing($missing);
         }
         $id       = (int) $this->request->param('id');
         $quantity = (int) $this->request->param('quantity');
-        $reason   = trim((string) $this->request->param('reason'));
+        $reason   = trim((string) $this->request->param('reason', ''));
+        if ($reason === '') {
+            $reason = '管理员销毁库存';
+        }
 
         if ($quantity < 1) {
             return $this->fail(4220, '销毁数量至少为 1');
@@ -604,7 +633,7 @@ class CollectibleController extends BaseController
 
         $this->audit('collectible', 'destroy', '销毁库存「' . $c['name'] . '」' . $quantity . ' 份',
             ['quantity' => $quantity, 'reason' => $reason], 'collectible', $id);
-        return $this->success(null, '已销毁 ' . $quantity . ' 份库存（剩余库存池 ' . ($pool - $quantity) . ' 份）');
+        return $this->success(['destroyed' => $quantity], '已销毁 ' . $quantity . ' 份库存（剩余库存池 ' . ($pool - $quantity) . ' 份）');
     }
 
     /**
@@ -636,18 +665,21 @@ class CollectibleController extends BaseController
     }
 
     /**
-     * POST /admin/collectible/airdrop { id, users(user_id数组), reason }
+     * POST /admin/collectible/airdrop { id, users(手机号或用户ID数组), quantity(每人份数), reason }
      * 独立空投：向指定用户发放藏品（写空投任务 + 记录 + 生成持仓）
      */
     public function airdrop()
     {
-        $missing = $this->missingParams(['id', 'reason']);
-        if ($missing) {
-            return $this->failMissing($missing);
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
         }
-        $id     = (int) $this->request->param('id');
-        $reason = trim((string) $this->request->param('reason'));
-        $users  = $this->request->param('users', []);
+        $reason = trim((string) $this->request->param('reason', ''));
+        if ($reason === '') {
+            $reason = '运营空投';
+        }
+        $users    = $this->request->param('users', []);
+        $quantity = (int) $this->request->param('quantity', 1);
 
         if (!is_array($users) || count($users) < 1) {
             return $this->fail(4220, '请提供至少一位目标用户');
@@ -655,9 +687,28 @@ class CollectibleController extends BaseController
         if (count($users) > 500) {
             return $this->fail(4220, '单次空投最多 500 位用户');
         }
-        $userIds = array_values(array_unique(array_map('intval', array_filter($users, 'is_numeric'))));
-        if (!$userIds) {
-            return $this->fail(4220, '用户ID列表格式不正确');
+        if ($quantity < 1 || $quantity > 100) {
+            return $this->fail(4220, '每人份数需为 1~100');
+        }
+
+        // 兼容手机号 / 用户ID 混合输入（管理后台 UI 以手机号为主）
+        $phones = [];
+        $idLike = [];
+        foreach ($users as $u) {
+            $u = trim((string) $u);
+            if ($u === '') {
+                continue;
+            }
+            if (preg_match('/^1\d{10}$/', $u)) {
+                $phones[] = $u;
+            } elseif (ctype_digit($u)) {
+                $idLike[] = (int) $u;
+            }
+        }
+        $idLike = array_values(array_unique($idLike));
+        $phones = array_values(array_unique($phones));
+        if (!$phones && !$idLike) {
+            return $this->fail(4220, '用户列表格式不正确（需为手机号或用户ID）');
         }
 
         $c = Db::name('collectibles')->where('id', $id)->whereNull('deleted_at')->find();
@@ -666,19 +717,26 @@ class CollectibleController extends BaseController
         }
 
         // 用户有效性校验（存在、未删除、非黑名单）
-        $validUsers = Db::name('users')->whereIn('id', $userIds)->whereNull('deleted_at')
+        $validUsers = Db::name('users')->where(function ($q) use ($phones, $idLike) {
+            if ($phones) {
+                $q->whereIn('phone', $phones);
+            }
+            if ($idLike) {
+                $q->whereOr('id', 'IN', $idLike);
+            }
+        })->whereNull('deleted_at')
             ->where('is_blacklisted', 0)->column('id, phone, uid');
         $validIds = array_map('intval', array_keys($validUsers));
-        $invalidCount = count($userIds) - count($validIds);
+        $invalidCount = count($users) - count($validIds);
         if (!$validIds) {
             return $this->fail(4220, '目标用户全部无效（不存在/已删除/黑名单）');
         }
 
         $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
               - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
-        $need = count($validIds);
+        $need = count($validIds) * $quantity;
         if ($pool < $need) {
-            return $this->fail(4220, '库存池不足：可空投 ' . $pool . ' 份，需要 ' . $need . ' 份');
+            return $this->fail(4220, '库存池不足：可空投 ' . $pool . ' 份，需要 ' . $need . ' 份（' . count($validIds) . ' 人 × ' . $quantity . ' 份）');
         }
 
         $now   = date('Y-m-d H:i:s');
@@ -692,7 +750,7 @@ class CollectibleController extends BaseController
                 'target_id'      => $id,
                 'target_name'    => $c['name'],
                 'total_quantity' => $need,
-                'user_count'     => $need,
+                'user_count'     => count($validIds),
                 'admin_id'       => $this->adminId(),
                 'admin_name'     => $this->adminName(),
                 'ip'             => (string) $this->request->ip(),
@@ -700,46 +758,54 @@ class CollectibleController extends BaseController
             ]);
 
             $success = 0;
+            $successUsers = 0;
             $failList = [];
             foreach ($validIds as $userId) {
-                try {
-                    // 占位插入 + 回写编号（与 C 端一致，避免并发唯一索引冲突）
-                    $ucid = (int) Db::name('user_collectibles')->insertGetId([
-                        'user_id'         => $userId,
-                        'collectible_id'  => $id,
-                        'airdrop_record_id' => null,
-                        'serial'          => gen_serial_placeholder(),
-                        'source'          => 'airdrop',
-                        'acquired_price'  => 0,
-                        'acquired_at'     => $now,
-                        'status'          => 'held',
-                        'created_at'      => $now,
-                        'updated_at'      => $now,
-                    ]);
-                    Db::name('user_collectibles')->where('id', $ucid)->update([
-                        'serial' => 'SN-' . $id . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
-                    ]);
+                $userOk = true;
+                for ($k = 0; $k < $quantity; $k++) {
+                    try {
+                        // 占位插入 + 回写编号（与 C 端一致，避免并发唯一索引冲突）
+                        $ucid = (int) Db::name('user_collectibles')->insertGetId([
+                            'user_id'         => $userId,
+                            'collectible_id'  => $id,
+                            'airdrop_record_id' => null,
+                            'serial'          => gen_serial_placeholder(),
+                            'source'          => 'airdrop',
+                            'acquired_price'  => 0,
+                            'acquired_at'     => $now,
+                            'status'          => 'held',
+                            'created_at'      => $now,
+                            'updated_at'      => $now,
+                        ]);
+                        Db::name('user_collectibles')->where('id', $ucid)->update([
+                            'serial' => 'SN-' . $id . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
+                        ]);
 
-                    Db::name('airdrop_records')->insert([
-                        'activity_id' => 0,
-                        'task_id'     => $taskId,
-                        'user_id'     => $userId,
-                        'phone'       => $validUsers[$userId]['phone'],
-                        'collectible_id' => $id,
-                        'user_collectible_id' => $ucid,
-                        'quantity'    => 1,
-                        'status'      => 'issued',
-                        'issued_at'   => $now,
-                        'created_at'  => $now,
-                        'updated_at' => $now,
-                    ]);
-                    $success++;
-                } catch (\Throwable $e) {
-                    $failList[] = ['user_id' => $userId, 'error' => $e->getMessage()];
+                        Db::name('airdrop_records')->insert([
+                            'activity_id' => 0,
+                            'task_id'     => $taskId,
+                            'user_id'     => $userId,
+                            'phone'       => $validUsers[$userId]['phone'],
+                            'collectible_id' => $id,
+                            'user_collectible_id' => $ucid,
+                            'quantity'    => 1,
+                            'status'      => 'issued',
+                            'issued_at'   => $now,
+                            'created_at'  => $now,
+                            'updated_at' => $now,
+                        ]);
+                        $success++;
+                    } catch (\Throwable $e) {
+                        $userOk = false;
+                        $failList[] = ['user_id' => $userId, 'error' => $e->getMessage()];
+                    }
+                }
+                if ($userOk) {
+                    $successUsers++;
                 }
             }
 
-            if ($success < $need && $success === 0) {
+            if ($success === 0) {
                 throw new \Exception('全部发放失败');
             }
 
@@ -762,15 +828,17 @@ class CollectibleController extends BaseController
             return $this->fail(5000, '空投失败：' . $e->getMessage());
         }
 
-        $this->audit('collectible', 'airdrop', '独立空投「' . $c['name'] . '」' . $success . ' 份',
-            ['task_no' => $taskNo, 'reason' => $reason, 'users' => $validIds], 'collectible', $id);
+        $this->audit('collectible', 'airdrop', '独立空投「' . $c['name'] . '」' . $success . ' 份（' . $successUsers . ' 人 × ' . $quantity . ' 份）',
+            ['task_no' => $taskNo, 'reason' => $reason, 'users' => $validIds, 'quantity_per_user' => $quantity], 'collectible', $id);
 
         return $this->success([
             'task_no' => $taskNo,
+            'users'   => $successUsers,
+            'total'   => $success,
             'success' => $success,
             'fail'    => count($failList),
             'invalidUsers' => $invalidCount,
-        ], '空投完成：成功 ' . $success . ' 份' . ($invalidCount > 0 ? '（' . $invalidCount . ' 个无效用户已跳过）' : ''));
+        ], '空投完成：' . $successUsers . ' 位用户共 ' . $success . ' 份' . ($invalidCount > 0 ? '（' . $invalidCount . ' 个无效用户已跳过）' : ''));
     }
 
     /**

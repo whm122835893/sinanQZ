@@ -72,7 +72,7 @@ class BlindBoxController extends BaseController
         $bb = Db::name('blind_boxes')->alias('bb')
             ->field('bb.*, c.name, c.image, c.price, c.edition, c.sold, c.locked_quantity,
                      c.airdropped_count, c.destroyed_count, c.status, c.onsale_at, c.off_sale_at,
-                     c.is_transferable, c.is_resaleable,
+                     c.is_transferable, c.is_resaleable, c.per_user_limit, c.category_id,
                      c.resale_price_mode, c.resale_price_min, c.resale_price_max,
                      cat.name AS category_name')
             ->join('collectibles c', 'c.id = bb.collectible_id')
@@ -101,12 +101,17 @@ class BlindBoxController extends BaseController
         $data['probabilitySum'] = round($probabilitySum, 4);
         $data['probabilityOk'] = abs($probabilitySum - 1) <= 0.0001;
 
+        // 库存守恒审计：发行总量 = 库存池 + 待支付锁定 + 已售 + 已空投 + 已销毁（恒等式须成立且池非负）
+        $pool = (int) $bb['edition'] - (int) $bb['sold'] - (int) $bb['locked_quantity']
+              - (int) $bb['airdropped_count'] - (int) $bb['destroyed_count'];
+        $issuedTotal = array_sum(array_map(fn ($i) => (int) $i['quantity_distributed'], $items));
+        $issuedMatchesOpened = $issuedTotal === (int) $bb['opened_count'];
         $data['audit'] = [
-            'pool' => max(0, (int) $bb['edition'] - (int) $bb['sold'] - (int) $bb['locked_quantity']
-                - (int) $bb['airdropped_count'] - (int) $bb['destroyed_count']),
-            'issuedTotal' => array_sum(array_map(fn ($i) => (int) $i['quantity_distributed'], $items)),
+            'ok' => $pool >= 0 && $issuedMatchesOpened,
+            'pool' => max(0, $pool),
+            'issuedTotal' => $issuedTotal,
             'openedCount' => (int) $bb['opened_count'],
-            'issuedMatchesOpened' => array_sum(array_map(fn ($i) => (int) $i['quantity_distributed'], $items)) === (int) $bb['opened_count'],
+            'issuedMatchesOpened' => $issuedMatchesOpened,
         ];
         $data['destroyRecords'] = camelize_keys($destroys);
 
@@ -119,19 +124,20 @@ class BlindBoxController extends BaseController
      */
     public function create()
     {
-        $missing = $this->missingParams(['name', 'category_id', 'image', 'price', 'edition', 'items']);
+        $missing = $this->missingParams(['name', 'category_id', 'image', 'price', 'edition']);
         if ($missing) {
             return $this->failMissing($missing);
         }
+        // 奖池可创建后在详情页渐进配置（允许 0 个起步）；上架前由 release() 强制概率合计 = 1
         $items = $this->request->param('items', []);
-        if (!is_array($items) || count($items) < 2) {
-            return $this->fail(4220, '盲盒奖池至少需要 2 个奖品');
+        if (!is_array($items)) {
+            $items = [];
         }
         if (count($items) > 50) {
             return $this->fail(4220, '盲盒奖池最多 50 个奖品');
         }
 
-        // 奖品校验
+        // 奖品校验（概率 ∈ (0,1]，合计 ≤ 1：差额即空奖率）
         $probabilitySum = 0.0;
         $prizeIds = [];
         foreach ($items as $item) {
@@ -150,8 +156,8 @@ class BlindBoxController extends BaseController
             $probabilitySum += $prob;
             $prizeIds[] = $prizeId;
         }
-        if (abs($probabilitySum - 1) > 0.0001) {
-            return $this->fail(4220, '概率合计必须为 1（当前 ' . round($probabilitySum, 4) . '）');
+        if ($probabilitySum > 1.0001) {
+            return $this->fail(4220, '概率合计不能超过 1（当前 ' . round($probabilitySum, 4) . '）');
         }
         if (count(array_unique($prizeIds)) !== count($prizeIds)) {
             return $this->fail(4220, '奖池中存在重复奖品');
@@ -237,10 +243,13 @@ class BlindBoxController extends BaseController
 
         // 同步盲盒资产（collectibles）可编辑字段
         $cUpdate = [];
-        foreach (['name', 'subtitle', 'image', 'per_user_limit'] as $field) {
+        foreach (['name', 'subtitle', 'image'] as $field) {
             if ($this->request->param($field) !== null) {
                 $cUpdate[$field] = trim((string) $this->request->param($field));
             }
+        }
+        if ($this->request->param('per_user_limit') !== null && $this->request->param('per_user_limit') !== '') {
+            $cUpdate['per_user_limit'] = max(0, (int) $this->request->param('per_user_limit'));
         }
         if ($this->request->param('price') !== null) {
             $c = Db::name('collectibles')->where('id', $bb['collectible_id'])->find();
@@ -284,8 +293,11 @@ class BlindBoxController extends BaseController
         if (!$bb) {
             return $this->fail(4040, '盲盒不存在');
         }
-        if (!is_array($items) || count($items) < 2) {
-            return $this->fail(4220, '奖池至少需要 2 个奖品');
+        if (!is_array($items) || count($items) < 1) {
+            return $this->fail(4220, '奖池至少需要保留 1 个奖品（可通过逐条移除清空后重新配置，或删除盲盒）');
+        }
+        if (count($items) > 50) {
+            return $this->fail(4220, '奖池最多 50 个奖品');
         }
 
         $existing = Db::name('blind_box_items')->where('blind_box_id', $id)->whereNull('deleted_at')
@@ -314,8 +326,8 @@ class BlindBoxController extends BaseController
             $probabilitySum += $prob;
             $prizeIds[] = $prizeId;
         }
-        if (abs($probabilitySum - 1) > 0.0001) {
-            return $this->fail(4220, '概率合计必须为 1（当前 ' . round($probabilitySum, 4) . '）');
+        if ($probabilitySum > 1.0001) {
+            return $this->fail(4220, '概率合计不能超过 1（当前 ' . round($probabilitySum, 4) . '，差额为空奖率，上架前须配置为 1）');
         }
         if (count(array_unique($prizeIds)) !== count($prizeIds)) {
             return $this->fail(4220, '奖池中存在重复奖品');
@@ -398,14 +410,42 @@ class BlindBoxController extends BaseController
             return $this->fail(4220, '发售状态仅允许 upcoming / onsale');
         }
 
+        // 发售数量防呆校验（信息性上限，实际可售以库存池为准）
+        $saleQuantity = $this->request->param('sale_quantity');
+        if ($saleQuantity !== null && $saleQuantity !== '') {
+            $saleQuantity = (int) $saleQuantity;
+            $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
+                  - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
+            if ($saleQuantity < 1) {
+                return $this->fail(4220, '发售数量至少为 1');
+            }
+            if ($status === 'onsale' && $saleQuantity > $pool) {
+                return $this->fail(4220, '发售数量不可超过当前盲盒库存池（' . $pool . ' 份）');
+            }
+        }
+
+        // 发售价格调整（已有售出记录时禁止改价，与 update() 口径一致）
+        $cUpdate = [];
+        if ($this->request->param('price') !== null && (float) $this->request->param('price') > 0) {
+            $newPrice = (float) $this->request->param('price');
+            if ((int) $c['sold'] > 0 && abs($newPrice - (float) $c['price']) > 0.0001) {
+                return $this->fail(4220, '盲盒已有售出记录，禁止修改价格');
+            }
+            $cUpdate['price'] = $newPrice;
+        }
+        // 每人限购调整
+        if ($this->request->param('per_user_limit') !== null) {
+            $cUpdate['per_user_limit'] = max(0, (int) $this->request->param('per_user_limit'));
+        }
+
         $now = date('Y-m-d H:i:s');
         $update = ['status' => $status, 'is_release' => 1, 'updated_at' => $now];
         if ($status === 'onsale') {
             $update['onsale_at'] = date('Y-m-d H:i:s', strtotime((string) ($this->request->param('onsale_at') ?: 'now')));
         }
-        Db::name('collectibles')->where('id', $bb['collectible_id'])->update($update);
+        Db::name('collectibles')->where('id', $bb['collectible_id'])->update(array_merge($update, $cUpdate));
 
-        $this->audit('blindbox', 'release', '盲盒发售配置「' . $c['name'] . '」→ ' . $status, $update, 'blind_box', $id);
+        $this->audit('blindbox', 'release', '盲盒发售配置「' . $c['name'] . '」→ ' . $status, array_merge($update, $cUpdate), 'blind_box', $id);
         return $this->success(null, '发售配置已生效');
     }
 
@@ -445,13 +485,16 @@ class BlindBoxController extends BaseController
      */
     public function destroy()
     {
-        $missing = $this->missingParams(['id', 'quantity', 'reason']);
+        $missing = $this->missingParams(['id', 'quantity']);
         if ($missing) {
             return $this->failMissing($missing);
         }
         $id       = (int) $this->request->param('id');
         $quantity = (int) $this->request->param('quantity');
-        $reason   = trim((string) $this->request->param('reason'));
+        $reason   = trim((string) $this->request->param('reason', ''));
+        if ($reason === '') {
+            $reason = '管理员销毁库存';
+        }
 
         if ($quantity < 1) {
             return $this->fail(4220, '销毁数量至少为 1');
@@ -496,7 +539,7 @@ class BlindBoxController extends BaseController
 
         $this->audit('blindbox', 'destroy', '销毁盲盒库存「' . $c['name'] . '」' . $quantity . ' 份',
             ['quantity' => $quantity, 'reason' => $reason], 'blind_box', $id);
-        return $this->success(null, '已销毁 ' . $quantity . ' 份盲盒库存');
+        return $this->success(['destroyed' => $quantity], '已销毁 ' . $quantity . ' 份盲盒库存');
     }
 
     /**
@@ -505,16 +548,25 @@ class BlindBoxController extends BaseController
      */
     public function airdrop()
     {
-        $missing = $this->missingParams(['id', 'reason']);
-        if ($missing) {
-            return $this->failMissing($missing);
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
         }
-        $id     = (int) $this->request->param('id');
-        $reason = trim((string) $this->request->param('reason'));
-        $users  = $this->request->param('users', []);
+        $reason = trim((string) $this->request->param('reason', ''));
+        if ($reason === '') {
+            $reason = '运营空投';
+        }
+        $users    = $this->request->param('users', []);
+        $quantity = (int) $this->request->param('quantity', 1);
 
         if (!is_array($users) || count($users) < 1) {
             return $this->fail(4220, '请提供至少一位目标用户');
+        }
+        if (count($users) > 500) {
+            return $this->fail(4220, '单次空投最多 500 位用户');
+        }
+        if ($quantity < 1 || $quantity > 100) {
+            return $this->fail(4220, '每人份数需为 1~100');
         }
         $bb = Db::name('blind_boxes')->where('id', $id)->find();
         if (!$bb) {
@@ -525,22 +577,45 @@ class BlindBoxController extends BaseController
             return $this->fail(4040, '盲盒资产不存在');
         }
 
-        $userIds = array_values(array_unique(array_map('intval', array_filter($users, 'is_numeric'))));
-        if (!$userIds) {
-            return $this->fail(4220, '用户ID列表格式不正确');
+        // 兼容手机号 / 用户ID 混合输入（管理后台 UI 以手机号为主）
+        $phones = [];
+        $idLike = [];
+        foreach ($users as $u) {
+            $u = trim((string) $u);
+            if ($u === '') {
+                continue;
+            }
+            if (preg_match('/^1\d{10}$/', $u)) {
+                $phones[] = $u;
+            } elseif (ctype_digit($u)) {
+                $idLike[] = (int) $u;
+            }
         }
-        $validUsers = Db::name('users')->whereIn('id', $userIds)->whereNull('deleted_at')
+        $idLike = array_values(array_unique($idLike));
+        $phones = array_values(array_unique($phones));
+        if (!$phones && !$idLike) {
+            return $this->fail(4220, '用户列表格式不正确（需为手机号或用户ID）');
+        }
+        $validUsers = Db::name('users')->where(function ($q) use ($phones, $idLike) {
+            if ($phones) {
+                $q->whereIn('phone', $phones);
+            }
+            if ($idLike) {
+                $q->whereOr('id', 'IN', $idLike);
+            }
+        })->whereNull('deleted_at')
             ->where('is_blacklisted', 0)->column('id, phone');
         $validIds = array_map('intval', array_keys($validUsers));
+        $invalidCount = count($users) - count($validIds);
         if (!$validIds) {
-            return $this->fail(4220, '目标用户全部无效');
+            return $this->fail(4220, '目标用户全部无效（不存在/已删除/黑名单）');
         }
 
         $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
               - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
-        $need = count($validIds);
+        $need = count($validIds) * $quantity;
         if ($pool < $need) {
-            return $this->fail(4220, '库存池不足：可空投 ' . $pool . ' 份');
+            return $this->fail(4220, '库存池不足：可空投 ' . $pool . ' 份，需要 ' . $need . ' 份（' . count($validIds) . ' 人 × ' . $quantity . ' 份）');
         }
 
         $now    = date('Y-m-d H:i:s');
@@ -554,7 +629,7 @@ class BlindBoxController extends BaseController
                 'target_id'      => $id,
                 'target_name'    => $c['name'],
                 'total_quantity' => $need,
-                'user_count'     => $need,
+                'user_count'     => count($validIds),
                 'admin_id'       => $this->adminId(),
                 'admin_name'     => $this->adminName(),
                 'ip'             => (string) $this->request->ip(),
@@ -562,35 +637,51 @@ class BlindBoxController extends BaseController
             ]);
 
             $success = 0;
+            $successUsers = 0;
             foreach ($validIds as $userId) {
-                $ucid = (int) Db::name('user_collectibles')->insertGetId([
-                    'user_id'        => $userId,
-                    'collectible_id' => $c['id'],
-                    'serial'         => gen_serial_placeholder(),
-                    'source'         => 'airdrop',
-                    'acquired_price' => 0,
-                    'acquired_at'    => $now,
-                    'status'         => 'held',
-                    'created_at'     => $now,
-                    'updated_at'     => $now,
-                ]);
-                Db::name('user_collectibles')->where('id', $ucid)->update([
-                    'serial' => 'SN-' . $c['id'] . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
-                ]);
-                Db::name('airdrop_records')->insert([
-                    'activity_id' => 0,
-                    'task_id'     => $taskId,
-                    'user_id'     => $userId,
-                    'phone'       => $validUsers[$userId]['phone'],
-                    'collectible_id' => $c['id'],
-                    'user_collectible_id' => $ucid,
-                    'quantity'    => 1,
-                    'status'      => 'issued',
-                    'issued_at'   => $now,
-                    'created_at'  => $now,
-                    'updated_at'  => $now,
-                ]);
-                $success++;
+                $userOk = true;
+                for ($k = 0; $k < $quantity; $k++) {
+                    try {
+                        // 占位插入 + 回写编号（与 C 端一致，避免并发唯一索引冲突）
+                        $ucid = (int) Db::name('user_collectibles')->insertGetId([
+                            'user_id'        => $userId,
+                            'collectible_id' => $c['id'],
+                            'serial'         => gen_serial_placeholder(),
+                            'source'         => 'airdrop',
+                            'acquired_price' => 0,
+                            'acquired_at'    => $now,
+                            'status'         => 'held',
+                            'created_at'     => $now,
+                            'updated_at'     => $now,
+                        ]);
+                        Db::name('user_collectibles')->where('id', $ucid)->update([
+                            'serial' => 'SN-' . $c['id'] . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
+                        ]);
+                        Db::name('airdrop_records')->insert([
+                            'activity_id' => 0,
+                            'task_id'     => $taskId,
+                            'user_id'     => $userId,
+                            'phone'       => $validUsers[$userId]['phone'],
+                            'collectible_id' => $c['id'],
+                            'user_collectible_id' => $ucid,
+                            'quantity'    => 1,
+                            'status'      => 'issued',
+                            'issued_at'   => $now,
+                            'created_at'  => $now,
+                            'updated_at'  => $now,
+                        ]);
+                        $success++;
+                    } catch (\Throwable $e) {
+                        $userOk = false;
+                    }
+                }
+                if ($userOk) {
+                    $successUsers++;
+                }
+            }
+
+            if ($success === 0) {
+                throw new \Exception('全部发放失败');
             }
 
             Db::name('collectibles')->where('id', $c['id'])->update([
@@ -598,7 +689,10 @@ class BlindBoxController extends BaseController
                 'circulate'        => Db::raw('circulate + ' . $success),
                 'updated_at'       => $now,
             ]);
-            Db::name('airdrop_tasks')->where('id', $taskId)->update(['success_count' => $success]);
+            Db::name('airdrop_tasks')->where('id', $taskId)->update([
+                'success_count' => $success,
+                'fail_count'    => $need - $success,
+            ]);
 
             Db::commit();
         } catch (\Throwable $e) {
@@ -606,9 +700,15 @@ class BlindBoxController extends BaseController
             return $this->fail(5000, '空投失败：' . $e->getMessage());
         }
 
-        $this->audit('blindbox', 'airdrop', '独立空投盲盒「' . $c['name'] . '」' . $success . ' 份',
-            ['task_no' => $taskNo, 'reason' => $reason], 'blind_box', $id);
-        return $this->success(['task_no' => $taskNo, 'success' => $success], '盲盒空投完成：成功 ' . $success . ' 份');
+        $this->audit('blindbox', 'airdrop', '独立空投盲盒「' . $c['name'] . '」' . $success . ' 份（' . $successUsers . ' 人 × ' . $quantity . ' 份）',
+            ['task_no' => $taskNo, 'reason' => $reason, 'users' => $validIds, 'quantity_per_user' => $quantity], 'blind_box', $id);
+        return $this->success([
+            'task_no' => $taskNo,
+            'users'   => $successUsers,
+            'total'   => $success,
+            'success' => $success,
+            'invalidUsers' => $invalidCount,
+        ], '盲盒空投完成：' . $successUsers . ' 位用户共 ' . $success . ' 份' . ($invalidCount > 0 ? '（' . $invalidCount . ' 个无效用户已跳过）' : ''));
     }
 
     /**
@@ -619,7 +719,7 @@ class BlindBoxController extends BaseController
     public function auditList()
     {
         $boxes = Db::name('blind_boxes')->alias('bb')
-            ->field('bb.id, c.name, c.sold, c.airdropped_count, bb.opened_count')
+            ->field('bb.id, c.name, c.sold, c.airdropped_count, bb.opened_count, c.status')
             ->join('collectibles c', 'c.id = bb.collectible_id')
             ->whereNull('c.deleted_at')
             ->select()->toArray();
@@ -630,11 +730,16 @@ class BlindBoxController extends BaseController
             $issues = [];
             $items = Db::name('blind_box_items')->where('blind_box_id', $box['id'])->whereNull('deleted_at')->select()->toArray();
             $probSum = array_sum(array_map(fn ($i) => (float) $i['probability'], $items));
-            if (count($items) < 2) {
-                $issues[] = '奖池奖品少于 2 个';
+            $onSale = in_array($box['status'], ['onsale', 'soldout'], true);
+            // 已上架/售罄的盲盒奖池必须非空；未上架允许渐进配置（上架前由 release() 强制概率合计=1）
+            if ($onSale && count($items) < 1) {
+                $issues[] = '已上架但奖池未配置奖品';
             }
-            if (abs($probSum - 1) > 0.0001) {
-                $issues[] = '概率合计 ' . round($probSum, 4) . ' ≠ 1';
+            // 概率合规：未上架允许合计 < 1（差额为空奖率，上架前须配齐）；任何状态禁止 > 1
+            if ($probSum > 1.0001) {
+                $issues[] = '概率合计 ' . round($probSum, 4) . ' 超过 1';
+            } elseif ($onSale && abs($probSum - 1) > 0.0001) {
+                $issues[] = '已上架但概率合计 ' . round($probSum, 4) . ' ≠ 1';
             }
             foreach ($items as $item) {
                 if ($item['quantity_limit'] !== null && (int) $item['quantity_distributed'] > (int) $item['quantity_limit']) {

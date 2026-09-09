@@ -18,11 +18,11 @@ const RESALE_STATUS = { selling: 'onsale', sold: 'sold', cancelled: 'cancelled' 
 const TRANSFER_STATUS = { pending: 'pending', accepted: 'completed', rejected: 'rejected', cancelled: 'revoked' }
 const ORDER_STATUS_MAP = { pending: 'pending', completed: 'completed', cancelled: 'cancelled', refunding: 'refunding', refunded: 'refunded' }
 // 钱包流水 trans_type → 前端语义（consume 对应 buy）
-const TX_TYPE_MAP = { recharge: 'recharge', reward: 'reward', buy: 'consume', refund: 'refund', withdraw: 'withdraw', sale: 'refund' }
+const TX_TYPE_MAP = { recharge: 'recharge', reward: 'reward', buy: 'consume', withdraw: 'withdraw' }
 
 // 类目名 → ID（后端按 category_id 存储；种子数据约定 1水墨 2国潮 3限定）
 const CATEGORY_NAME_TO_ID = { 水墨: 1, 国潮: 2, 限定: 3, 青铜: 2 }
-const CATEGORY_ID_TO_NAME = { 1: '水墨', 2: '国潮', 3: '限定' }
+export const CATEGORY_ID_TO_NAME = { 1: '水墨', 2: '国潮', 3: '限定' }
 
 const n = (v) => (v === null || v === undefined ? 0 : Number(v))
 const s = (v) => (v === null || v === undefined ? '' : String(v))
@@ -165,6 +165,15 @@ export async function getUserDetail(id) {
         status: TRANSFER_STATUS[t.status] || t.status,
         isReceive: n(t.isReceive) === 1,
         createTime: s(t.createdAt)
+      })),
+      // 真实钱包流水（详情抽屉"最近钱包流水"卡片，与钱包管理页同表）
+      walletLogs: (u.recentWalletLogs || []).map((t) => ({
+        id: t.id,
+        title: s(t.title),
+        type: s(t.transType),
+        direction: n(t.direction),
+        amount: n(t.amount),
+        createTime: s(t.createdAt)
       }))
     }
   }
@@ -246,6 +255,10 @@ export async function getUserAssets(id, params = {}) {
 // 藏品管理
 // ============================================================
 
+// 发售状态值规整：后端存 'off'，前端词汇表（COLLECTIBLE_STATUS）用 'offline'
+const statusToFront = (v) => (v === 'off' ? 'offline' : v)
+const statusToBack = (v) => (v === 'offline' ? 'off' : v)
+
 const adaptCollectible = (c) => ({
   id: c.id,
   name: s(c.name),
@@ -261,7 +274,7 @@ const adaptCollectible = (c) => ({
   reservedCount: n(c.reservedCount),
   airdroppedCount: n(c.airdroppedCount),
   destroyedCount: n(c.destroyedCount),
-  status: s(c.status),
+  status: statusToFront(s(c.status)),
   tag: s(c.tag),
   issuer: s(c.issuer),
   saleTime: s(c.onsaleAt),
@@ -280,7 +293,9 @@ const adaptCollectible = (c) => ({
 })
 
 export async function getCollectibleList(params) {
-  const res = await get('/collectibles', params)
+  const p = { ...params }
+  if (p.status) p.status = statusToBack(p.status)
+  const res = await get('/collectibles', p)
   if (res.code !== 0) return res
   const d = res.data || {}
   return { code: 0, message: res.message, data: { list: (d.list || []).map(adaptCollectible), total: n(d.total) } }
@@ -415,16 +430,16 @@ export async function getSiteBrand() {
  * 上架/下架/强制售罄
  * - 上架（upcoming/offline/soldout → onsale）走发售接口（含库存池校验）
  * - 下架 / 强制售罄走管理接口（后端 manage 仅支持 off / soldout）
+ * - 返回 data 为规整后的前端状态值（off → offline），供视图直接回填
  */
 export async function toggleCollectibleStatus(id, action) {
   if (action === 'online' || action === 'onsale') {
     const res = await post(`/collectibles/${id}/release`, { status: 'onsale' })
-    // release 返回无 data，统一回填最新状态供视图直接使用
     return res.code === 0 ? { ...res, data: 'onsale' } : res
   }
   const act = action === 'forceSoldout' ? 'soldout' : 'off'
   const res = await post(`/collectibles/${id}/manage`, { action: act })
-  return res.code === 0 ? { ...res, data: act } : res
+  return res.code === 0 ? { ...res, data: act === 'soldout' ? 'soldout' : 'offline' } : res
 }
 
 /** 发售配置（上架时间/发售数量） */
@@ -437,13 +452,13 @@ export function releaseCollectible({ id, saleQuantity, price, perUserLimit }) {
   })
 }
 
-/** 独立空投 */
+/** 独立空投（users 为手机号数组，后端兼容用户ID；quantity 为每人份数） */
 export function airdropCollectible({ id, phones, quantity, reason = '运营空投' }) {
-  return post('/collectibles/airdrop', { id, users: phones, reason })
+  return post('/collectibles/airdrop', { id, users: phones, quantity: quantity || 1, reason })
 }
 
 /** 销毁库存 */
-export function destroyCollectible({ id, quantity, reason }) {
+export function destroyCollectible({ id, quantity, reason = '管理员销毁库存' }) {
   return post(`/collectibles/${id}/destroy`, { quantity, reason })
 }
 
@@ -497,7 +512,7 @@ const adaptBlindBox = (b) => ({
   lockedQuantity: n(b.lockedQuantity),
   airdroppedCount: n(b.airdroppedCount),
   destroyedCount: n(b.destroyedCount),
-  status: s(b.status),
+  status: statusToFront(s(b.status)),
   isOpenable: n(b.isOpenable) === 1,
   openedCount: n(b.openedCount),
   isTransferable: n(b.isTransferable) === 1,
@@ -510,11 +525,16 @@ const adaptBlindBox = (b) => ({
   probabilityOk: !!b.probabilityOk,
   availablePool: n(b.availablePool),
   saleTime: s(b.onsaleAt),
-  description: s(b.description)
+  description: s(b.description),
+  categoryId: n(b.categoryId),
+  categoryName: s(b.categoryName),
+  perUserLimit: n(b.perUserLimit)
 })
 
 export async function getBlindBoxList(params) {
-  const res = await get('/blind-boxes', params)
+  const p = { ...params }
+  if (p.status) p.status = statusToBack(p.status)
+  const res = await get('/blind-boxes', p)
   if (res.code !== 0) return res
   const d = res.data || {}
   return { code: 0, message: res.message, data: { list: (d.list || []).map(adaptBlindBox), total: n(d.total) } }
@@ -552,14 +572,16 @@ export async function getBlindBoxDetail(id) {
   }
 }
 
-/** 新建/编辑盲盒（编辑时仅更新基础信息） */
+/** 新建/编辑盲盒（编辑时仅更新基础信息；奖池在详情页渐进配置） */
 export function saveBlindBox(payload) {
   const body = {
     name: payload.name,
     subtitle: payload.subtitle || '',
+    category_id: n(payload.categoryId) || CATEGORY_NAME_TO_ID[payload.category] || 2,
     image: payload.cover,
     price: n(payload.price),
     edition: n(payload.edition),
+    per_user_limit: n(payload.perUserLimit) || 0,
     description: payload.description || '',
     is_openable: payload.isOpenable ? 1 : 0
   }
@@ -570,9 +592,20 @@ export function saveBlindBox(payload) {
   return post('/blind-boxes', body)
 }
 
-/** 盲盒上下架/售罄：action = onsale / off / soldout */
-export function toggleBlindBoxStatus(id, action) {
-  return post(`/blind-boxes/${id}/manage`, { action })
+/**
+ * 盲盒上下架/售罄：action = online / offline / forceSoldout
+ * - 上架走发售接口（后端强制校验奖池概率合计 = 1）
+ * - 下架/强制售罄走管理接口（后端 manage 仅支持 off / soldout）
+ * - 返回 data 为规整后的前端状态值，供视图直接回填
+ */
+export async function toggleBlindBoxStatus(id, action) {
+  if (action === 'online' || action === 'onsale') {
+    const res = await post(`/blind-boxes/${id}/release`, { status: 'onsale' })
+    return res.code === 0 ? { ...res, data: 'onsale' } : res
+  }
+  const act = action === 'forceSoldout' ? 'soldout' : 'off'
+  const res = await post(`/blind-boxes/${id}/manage`, { action: act })
+  return res.code === 0 ? { ...res, data: act === 'soldout' ? 'soldout' : 'offline' } : res
 }
 
 /** 可开启开关 */
@@ -580,13 +613,13 @@ export function setBlindBoxOpenable(id, openable) {
   return put(`/blind-boxes/${id}`, { is_openable: openable ? 1 : 0 })
 }
 
-/** 盲盒空投 */
+/** 盲盒空投（users 为手机号数组，后端兼容用户ID；quantity 为每人份数） */
 export function airdropBlindBox({ id, phones, quantity, reason = '运营空投' }) {
-  return post('/blind-boxes/airdrop', { id, users: phones, reason })
+  return post('/blind-boxes/airdrop', { id, users: phones, quantity: quantity || 1, reason })
 }
 
 /** 盲盒销毁 */
-export function destroyBlindBox({ id, quantity, reason }) {
+export function destroyBlindBox({ id, quantity, reason = '管理员销毁库存' }) {
   return post(`/blind-boxes/${id}/destroy`, { quantity, reason })
 }
 
@@ -595,7 +628,8 @@ export function releaseBlindBox({ id, saleQuantity, price, perUserLimit }) {
   return post(`/blind-boxes/${id}/release`, {
     status: 'onsale',
     ...(saleQuantity ? { sale_quantity: saleQuantity } : {}),
-    ...(price ? { price } : {})
+    ...(price ? { price } : {}),
+    ...(perUserLimit !== undefined && perUserLimit !== null ? { per_user_limit: perUserLimit } : {})
   })
 }
 
@@ -780,19 +814,24 @@ export async function getResaleList(params) {
     data: {
       list: (d.list || []).map((r) => {
         const l = r.listing || r
+        // 派生状态：cancelled+系统下架+资产冻结 → 系统冻结（风控）；否则系统下架
+        let status = RESALE_STATUS[l.status] || s(l.status)
+        if (l.status === 'cancelled' && n(l.isSystemDelisted) === 1) {
+          status = l.assetStatus === 'frozen' ? 'frozen' : 'system_delisted'
+        }
         return {
           id: l.id,
           listingNo: `RS${String(l.id).padStart(8, '0')}`,
           userId: n(l.sellerId),
           sellerName: s(r.sellerName || r.uid),
-          userPhone: '',
+          userPhone: s(r.sellerPhone),
           collectibleId: n(l.collectibleId),
           collectibleName: s(r.collectibleName),
           cover: s(r.image),
           serial: s(r.serial),
           price: n(l.price),
           feeAmount: n(l.feeAmount),
-          status: RESALE_STATUS[l.status] || s(l.status),
+          status,
           createTime: s(l.listedAt || l.createdAt),
           delistReason: s(l.delistReason)
         }
@@ -802,23 +841,56 @@ export async function getResaleList(params) {
   }
 }
 
-/** 寄售挂单操作：freeze(冻结) / restore(恢复) / delist(强制下架) */
+/** 寄售挂单操作：freeze(冻结) / unfreeze(解冻) / cancel(强制下架=delist) */
 export function resaleAction(id, action, reason = '') {
-  const actionMap = { freeze: 'freeze', restore: 'restore', delist: 'delist' }
+  // 视图动作 → 后端动作：cancel=delist（资产退回持有）；restore 兼容旧名 → unfreeze
+  const actionMap = { freeze: 'freeze', unfreeze: 'unfreeze', restore: 'unfreeze', cancel: 'delist', delist: 'delist' }
   const a = actionMap[action] || action
   return post(`/market/listings/${id}/manage`, { action: a, reason })
 }
 
-/** 求购市场（后端暂无求购功能，返回空集） */
-export function getBuyRequests() {
-  return Promise.resolve({ code: 0, message: 'ok', data: { list: [], total: 0 } })
+// 求购状态：后端数字（1求购中 2已接单 3已取消 4已成交 5已过期）→ 前端词汇
+const BUY_REQUEST_STATUS_MAP = { 1: 'active', 2: 'accepted', 3: 'cancelled', 4: 'sold', 5: 'expired' }
+
+/** 求购市场（真实接口：/admin/buy-request） */
+export async function getBuyRequests(params) {
+  const res = await get('/buy-request', params)
+  if (res.code !== 0) return res
+  const d = res.data || {}
+  return {
+    code: 0,
+    message: res.message,
+    data: {
+      list: (d.list || []).map((b) => ({
+        id: n(b.id),
+        userId: n(b.userId),
+        userName: s(b.username),
+        userPhone: s(b.userPhone),
+        collectibleId: n(b.collectibleId),
+        collectibleName: s(b.collectibleName),
+        price: n(b.price),
+        quantity: n(b.quantity),
+        status: BUY_REQUEST_STATUS_MAP[n(b.status)] || s(b.status),
+        remark: s(b.remark),
+        createTime: s(b.createdAt),
+        expiresTime: s(b.expiresAt)
+      })),
+      total: n(d.total)
+    }
+  }
 }
-export function delistBuyRequest() {
-  return Promise.resolve({ code: 4220, message: '求购功能暂未开放', data: null })
+
+/** 强制关闭求购（仅求购中可关闭） */
+export function delistBuyRequest(id, reason = '') {
+  return post(`/buy-request/${id}/close`, { reason: reason || '管理员强制关闭' })
 }
 
 export async function getTransferList(params) {
-  const res = await get('/transfers', params)
+  // 状态筛选：前端词汇 → 后端词汇（completed→accepted / revoked→cancelled）
+  const query = { ...params }
+  if (query.status === 'completed') query.status = 'accepted'
+  else if (query.status === 'revoked') query.status = 'cancelled'
+  const res = await get('/transfers', query)
   if (res.code !== 0) return res
   const d = res.data || {}
   return {
@@ -832,7 +904,8 @@ export async function getTransferList(params) {
           fromUserId: n(tr.fromUserId),
           fromUser: s(t.fromName || t.fromUid),
           toUser: s(t.toName || t.toUid),
-          toPhone: '',
+          fromPhone: s(t.fromPhone),
+          toPhone: s(t.toPhone),
           collectibleName: s(t.collectibleName),
           cover: s(t.image),
           serial: s(t.serial),
@@ -845,12 +918,14 @@ export async function getTransferList(params) {
   }
 }
 
-/** 转赠操作：revoke(撤销) */
+/** 转赠操作：approve(强制完成) / reject(强制拒绝) / revoke(撤销) */
 export function transferAction(id, action, reason = '') {
-  if (action === 'revoke') {
-    return post(`/transfers/${id}/revoke`, { reason: reason || '管理员撤销' })
+  const actions = {
+    approve: () => post(`/transfers/${id}/approve`, { reason: reason || '管理员强制完成' }),
+    reject: () => post(`/transfers/${id}/reject`, { reason: reason || '管理员强制拒绝' }),
+    revoke: () => post(`/transfers/${id}/revoke`, { reason: reason || '管理员撤销' })
   }
-  return Promise.resolve({ code: 4220, message: '不支持的操作', data: null })
+  return (actions[action] || (() => Promise.resolve({ code: 4220, message: '不支持的操作', data: null })))()
 }
 
 // ============================================================
@@ -1583,7 +1658,10 @@ export function removeQualificationWhitelist(qualificationId, whitelistId) {
 // ============================================================
 
 export async function getWalletTransactions(params) {
-  const res = await get('/wallet/transactions', params)
+  // 类型筛选：前端语义 → 后端枚举（consume→buy；退款入账属 reward 不单列）
+  const query = { ...params }
+  if (query.type === 'consume') query.type = 'buy'
+  const res = await get('/wallet/transactions', query)
   if (res.code !== 0) return res
   const d = res.data || {}
   return {
@@ -1596,7 +1674,7 @@ export async function getWalletTransactions(params) {
           id: tx.id,
           userId: n(tx.userId),
           userName: s(t.username),
-          userPhone: '',
+          userPhone: s(t.userPhone),
           type: TX_TYPE_MAP[tx.transType] || s(tx.transType),
           title: s(tx.title),
           direction: n(tx.direction),
@@ -1633,7 +1711,21 @@ export async function getWalletStats() {
 // ============================================================
 
 export async function getRiskAlerts(params) {
-  const res = await get('/security/risk-alerts', params)
+  // 筛选参数对齐后端：status→数字(1待处理/2处理中/3已处理/4已忽略)，
+  // level→alert_level，type→alert_type；直接透传会导致 (int)'pending'=0 查空
+  const query = { ...params }
+  if (query.status) {
+    query.status = { pending: 1, processing: 2, resolved: 3, ignored: 4 }[query.status] ?? query.status
+  }
+  if (query.level) {
+    query.alert_level = { high: 3, medium: 2, low: 1 }[query.level] ?? query.level
+    delete query.level
+  }
+  if (query.type) {
+    query.alert_type = query.type
+    delete query.type
+  }
+  const res = await get('/security/risk-alerts', query)
   if (res.code !== 0) return res
   const d = res.data || {}
   return {
@@ -1643,11 +1735,11 @@ export async function getRiskAlerts(params) {
       list: (d.list || []).map((a) => ({
         id: a.id,
         type: s(a.alertType),
-        level: { 1: 'low', 2: 'medium', 3: 'high' }[n(a.alertLevel)] || 'low',
+        level: { 1: 'low', 2: 'medium', 3: 'high', 4: 'high' }[n(a.alertLevel)] || 'low',
         userName: s(a.username || a.uid),
         userPhone: s(a.phone),
         detail: s(a.title),
-        status: { 1: 'pending', 2: 'processing', 3: 'resolved' }[n(a.status)] || 'pending',
+        status: { 1: 'pending', 2: 'processing', 3: 'resolved', 4: 'ignored' }[n(a.status)] || 'pending',
         createTime: s(a.createdAt),
         handleTime: s(a.handledAt),
         handler: s(a.handlerName),
@@ -1668,7 +1760,13 @@ export function handleRiskAlert({ id, result, comment = '' }) {
 }
 
 export async function getTickets(params) {
-  const res = await get('/tickets', params)
+  // 筛选参数对齐后端：status/ticket_type/priority 均为数字枚举（透传，后端强转 int）
+  const query = { ...params }
+  if (query.type) {
+    query.ticket_type = query.type
+    delete query.type
+  }
+  const res = await get('/tickets', query)
   if (res.code !== 0) return res
   const d = res.data || {}
   return {
@@ -1677,17 +1775,51 @@ export async function getTickets(params) {
     data: {
       list: (d.list || []).map((t) => ({
         id: t.id,
-        ticketNo: `TK${String(t.id).padStart(10, '0')}`,
+        ticketNo: s(t.ticket_no) || `TK${String(t.id).padStart(10, '0')}`,
         userName: s(t.username || t.uid),
         userPhone: s(t.phone),
-        type: s(t.ticketType),
-        priority: s(t.priority),
+        type: n(t.ticket_type),
+        priority: n(t.priority),
         title: s(t.title),
-        status: s(t.status),
-        createTime: s(t.createdAt),
-        replyCount: n(t.replyCount)
+        status: n(t.status),
+        createTime: s(t.created_at),
+        replyCount: n(t.reply_count)
       })),
       total: n(d.total)
+    }
+  }
+}
+
+// 工单详情（含沟通时间线，GET /tickets/:id 返回 { ticket, replies }）
+export async function getTicketDetail(id) {
+  const res = await get(`/tickets/${id}`)
+  if (res.code !== 0) return res
+  const t = res.data?.ticket || {}
+  return {
+    code: 0,
+    message: res.message,
+    data: {
+      id: t.id,
+      ticketNo: s(t.ticket_no) || `TK${String(t.id).padStart(10, '0')}`,
+      userName: s(t.username || t.uid),
+      userPhone: s(t.phone),
+      type: n(t.ticket_type),
+      typeName: s(t.ticket_type_name),
+      priority: n(t.priority),
+      title: s(t.title),
+      status: n(t.status),
+      createTime: s(t.created_at),
+      closeTime: s(t.closed_at) || '',
+      content: s(t.content),
+      assigneeName: s(t.assignee_name),
+      replies: (res.data?.replies || []).map((r) => ({
+        id: r.id,
+        author: s(r.sender_name),
+        isInternal: n(r.is_internal) === 1,
+        isAdmin: n(r.sender_type) === 2,
+        content: s(r.content),
+        time: s(r.created_at)
+      }))
     }
   }
 }
@@ -1697,7 +1829,8 @@ export function replyTicket({ id, content }) {
 }
 
 export function closeTicket(id) {
-  return post(`/tickets/${id}/status`, { status: 'closed' })
+  // 后端工单状态机：3待用户确认/4已解决/5已关闭（关闭为终态）
+  return post(`/tickets/${id}/status`, { status: 5 })
 }
 
 // ============================================================
@@ -1705,7 +1838,14 @@ export function closeTicket(id) {
 // ============================================================
 
 export async function getAnnouncements(params) {
-  const res = await get('/cms/announcements', params)
+  // 前端筛选 type（activity/compose/operation）对应后端 subtype；
+  // 后端 type 仅 notice/news，直接传会导致 enumParam 静默忽略（筛选失效）
+  const query = { ...params }
+  if (query.type) {
+    query.subtype = query.type
+    delete query.type
+  }
+  const res = await get('/cms/announcements', query)
   if (res.code !== 0) return res
   const d = res.data || {}
   return {
@@ -1715,7 +1855,7 @@ export async function getAnnouncements(params) {
       list: (d.list || []).map((a) => ({
         id: a.id,
         title: s(a.title),
-        type: s(a.type) === 'notice' ? 'system' : s(a.subtype) === 'activity' ? 'activity' : 'system',
+        type: s(a.subtype) || 'operation',
         status: s(a.status) || 'published',
         publishTime: s(a.publish_time),
         createdAt: s(a.created_at),
@@ -1729,10 +1869,12 @@ export async function getAnnouncements(params) {
 }
 
 export function saveAnnouncement(payload) {
+  // 管理端三类公告 = 用户端 subtype（activity/compose/operation），
+  // 后端 type 固定 notice（news 为资讯预留），C 端按 subtype 分类展示
   const body = {
     title: payload.title,
-    type: payload.type === 'activity' ? 'notice' : 'notice',
-    subtype: payload.type === 'activity' ? 'activity' : 'operation',
+    type: 'notice',
+    subtype: payload.type || 'operation',
     summary: payload.summary || '',
     content: payload.content || '',
     status: payload.status || 'draft',

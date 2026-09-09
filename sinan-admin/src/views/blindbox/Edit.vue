@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getBlindBoxDetail, saveBlindBox } from '@/api'
+import { getBlindBoxDetail, saveBlindBox, CATEGORY_ID_TO_NAME } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,12 +12,15 @@ const formRef = ref(null)
 
 const form = ref({
   name: '',
+  category: '国潮',
   description: '',
   edition: null,
   price: null,
   perUserLimit: 5,
   cover: '/images/collections/cover-collection-bb1.jpg'
 })
+
+const categories = ['青铜', '水墨', '国潮', '限定']
 
 const rules = {
   name: [{ required: true, message: '请输入盲盒名称', trigger: 'blur' }],
@@ -39,6 +42,7 @@ onMounted(async () => {
     const b = res.data
     form.value = {
       name: b.name,
+      category: b.categoryName || CATEGORY_ID_TO_NAME[b.categoryId] || '国潮',
       description: b.description || '',
       edition: b.edition, // 发行总量不可变更
       price: b.price,
@@ -55,6 +59,7 @@ async function onSubmit() {
   const res = await saveBlindBox({
     id,
     name: f.name.trim(),
+    category: f.category,
     description: f.description,
     price: Number(f.price) || 0,
     edition: Number(f.edition) || 0,
@@ -77,6 +82,12 @@ async function onSubmit() {
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" style="max-width: 640px">
         <el-form-item label="盲盒名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入盲盒名称" maxlength="30" show-word-limit />
+        </el-form-item>
+
+        <el-form-item label="分类">
+          <el-radio-group v-model="form.category">
+            <el-radio v-for="c in categories" :key="c" :value="c">{{ c }}</el-radio>
+          </el-radio-group>
         </el-form-item>
 
         <el-form-item label="发行总量" prop="edition">
@@ -135,7 +146,7 @@ async function onSubmit() {
         type="info"
         :closable="false"
         show-icon
-        title="创建后请在盲盒详情页配置子藏品奖池：每个盲盒关联 2~N 个子藏品，独立配置中奖概率与计划数量，概率之和 <= 100%"
+        title="创建后请在盲盒详情页配置子藏品奖池：每个盲盒关联 1~N 个子藏品，独立配置中奖概率与计划数量，概率之和 ≤ 100%（差额为空奖率，上架前须为 100%）"
       />
     </div>
   </div>

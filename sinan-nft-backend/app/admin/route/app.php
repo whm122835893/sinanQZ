@@ -150,6 +150,8 @@ Route::group('market', function () {
 // ---------------------------------------------------------------------------
 Route::group('transfers', function () {
     Route::get('', 'TransferController/list');
+    Route::post(':id/approve', 'TransferController/approve')->middleware(AdminPermission::class, 'transfer:manage');
+    Route::post(':id/reject', 'TransferController/reject')->middleware(AdminPermission::class, 'transfer:manage');
     Route::post(':id/revoke', 'TransferController/revoke')->middleware(AdminPermission::class, 'transfer:manage');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'transfer:list');
 

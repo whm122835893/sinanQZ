@@ -77,7 +77,7 @@ async function onSaleSwitch(c, val) {
     )
     const res = await toggleCollectibleStatus(c.id, 'offline')
     if (res.code === 0) {
-      c.status = 'off'
+      c.status = 'offline'
       ElMessage.success('已下架')
     }
   }

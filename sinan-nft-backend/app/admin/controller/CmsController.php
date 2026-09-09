@@ -180,6 +180,11 @@ class CmsController extends BaseController
         if ($type !== null) {
             $query->where('type', $type);
         }
+        // 子分类筛选（管理端类型 = C 端 subtype：activity/compose/operation）
+        $subtype = $this->enumParam('subtype', ['activity', 'compose', 'operation']);
+        if ($subtype !== null) {
+            $query->where('subtype', $subtype);
+        }
         // 状态筛选：draft 草稿 / published 已发布（含定时待生效）
         $status = $this->enumParam('status', ['draft', 'published']);
         if ($status !== null) {

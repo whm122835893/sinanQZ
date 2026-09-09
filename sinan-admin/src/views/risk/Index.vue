@@ -14,7 +14,8 @@ const filters = [
     options: [
       { value: 'pending', label: '待处理' },
       { value: 'processing', label: '处理中' },
-      { value: 'resolved', label: '已处理' }
+      { value: 'resolved', label: '已处理' },
+      { value: 'ignored', label: '已忽略' }
     ]
   },
   {
@@ -46,7 +47,8 @@ async function onHandle(a) {
       inputValidator: (v) => (v && v.trim() ? true : '处理结论不能为空')
     }
   )
-  const res = await handleRiskAlert({ id: a.id, result: value.trim() })
+  // result 为目标状态（resolved 已处理），结论文本走 comment → 后端 handle_comment
+  const res = await handleRiskAlert({ id: a.id, result: 'resolved', comment: value.trim() })
   if (res.code === 0) {
     ElMessage.success('告警已处理，写入审计日志')
     listRef.value?.refresh()
@@ -91,7 +93,7 @@ async function onHandle(a) {
         <el-table-column label="触发时间" prop="createTime" width="160" />
         <el-table-column label="处理信息" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <template v-if="row.status === 'resolved'">
+            <template v-if="row.status === 'resolved' || row.status === 'ignored'">
               <div class="t-secondary">{{ row.result }}</div>
               <div class="t-tertiary" style="font-size: 12px">{{ row.handler }} · {{ row.handleTime }}</div>
             </template>
@@ -101,7 +103,7 @@ async function onHandle(a) {
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="row.status !== 'resolved'"
+              v-if="row.status === 'pending' || row.status === 'processing'"
               link
               type="primary"
               size="small"
