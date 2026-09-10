@@ -25,12 +25,22 @@ abstract class BaseController
 
     /**
      * 安全解析 int 参数，缺失/非法返回 $default
+     *
+     * H3-D3 修复：JSON 大数（如 99999999999999999999 → float 1.0E20）经 (int) 隐式
+     * 转换会触发 PHP 8.1+ "loses precision" 弃用告警（被错误处理器转为 ErrorException
+     * → HTTP 500 调试页）。此处统一拦截：非整数/超 int 范围的浮点按非法参数回退默认值。
      */
     protected function intParam(string $key, int $default = 0): int
     {
         $v = $this->request->param($key);
         if ($v === null || $v === '' || !is_numeric($v)) {
             return $default;
+        }
+        if (!is_int($v)) {
+            $f = (float) $v;
+            if ($f !== floor($f) || $f > PHP_INT_MAX || $f < PHP_INT_MIN) {
+                return $default;
+            }
         }
         return (int) $v;
     }

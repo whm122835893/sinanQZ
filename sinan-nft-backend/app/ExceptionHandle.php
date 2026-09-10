@@ -43,14 +43,39 @@ class ExceptionHandle extends Handle
     /**
      * Render an exception into an HTTP response.
      *
-     * @access public
-     * @param \think\Request   $request
-     * @param Throwable $e
-     * @return Response
+     * H3-D1 修复：本服务为纯 API（C 端 + 管理端），未捕获异常必须返回统一 JSON
+     * 错误响应，禁止渲染框架调试页（堆栈/源码路径泄露，APP_DEBUG=true 时尤其严重）。
+     * 业务错误仍由控制器 fail() 正常返回，不经过此路径；异常详情仍经 report() 落日志。
      */
     public function render($request, Throwable $e): Response
     {
-        // 其他错误交给系统处理
-        return parent::render($request, $e);
+        // 控制器/中间件已构造的响应（含业务 JSON）原样透出
+        if ($e instanceof HttpResponseException) {
+            return $e->getResponse();
+        }
+
+        $status = $e instanceof HttpException ? (int) ($e->getStatusCode() ?: 500) : 500;
+        $code   = 5001;
+        $msg    = '系统繁忙，请稍后再试';
+
+        if ($e instanceof ValidateException) {
+            $status = 400;
+            $code   = 1002;
+            $msg    = is_string($e->getError()) ? $e->getError() : '参数错误';
+        } elseif ($status === 404) {
+            $code = 4040;
+            $msg  = '接口不存在';
+        } elseif ($status === 405) {
+            $code = 4050;
+            $msg  = '请求方法不支持';
+        } elseif ($status === 401) {
+            $code = 4010;
+            $msg  = '未授权';
+        } elseif ($status === 403) {
+            $code = 4030;
+            $msg  = '禁止访问';
+        }
+
+        return json(['code' => $code, 'message' => $msg, 'data' => null], $status);
     }
 }
