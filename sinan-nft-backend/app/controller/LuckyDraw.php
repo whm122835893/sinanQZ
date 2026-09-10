@@ -122,6 +122,11 @@ class LuckyDraw extends BaseController
 
         Db::startTrans();
         try {
+            // ---- 0. 用户行锁：串行化同一用户并发抽奖 ----
+            // （H2-D1 修复）免费抽路径为 check-then-insert，若无行锁，并发双抽会同时
+            // 判定"无台账"而双双放行；持用户行锁后第二个事务必然看到首个事务的落库。
+            Db::name('users')->where('id', $userId)->lock(true)->find();
+
             // ---- 1. 定位抽奖活动（启用中 + 时间窗内；无活动实体时回退奖项最小活动号，兼容存量）----
             $activity = null;
             $acts = Db::name('lucky_draw_activities')
@@ -372,7 +377,8 @@ class LuckyDraw extends BaseController
      * 消耗一次抽奖次数
      *
      * 优先消耗当前活动的剩余次数，其次其他活动；条件更新防并发超扣。
-     * 从未获得过次数的用户返回 true（免费抽，兼容存量免费抽奖模式）。
+     * 从未获得过次数的用户免费抽一次：落 source=free 台账并立即消耗（total=1/used=1），
+     * 确保同一用户终身仅一次免费抽；获得过但已用完则拦截。
      */
     private function consumeChance(int $userId, int $activityId): bool
     {
@@ -385,7 +391,22 @@ class LuckyDraw extends BaseController
         if (!$rows) {
             // 从未获得过次数 → 免费抽；获得过但已用完 → 拦截
             $has = Db::name('lucky_draw_chances')->where('user_id', $userId)->count();
-            return $has === 0;
+            if ($has === 0) {
+                // （H2-D1 修复）免费抽必须落台账并立即消耗（total=1/used=1），
+                // 否则永远查无台账，同一用户可无限免费抽；插入在同一事务内，
+                // 由 draw() 入口的用户行锁保证并发下 check-then-insert 的原子性。
+                Db::name('lucky_draw_chances')->insert([
+                    'user_id'       => $userId,
+                    'activity_id'   => $activityId,
+                    'source'        => 'free',
+                    'total_quantity' => 1,
+                    'used_quantity' => 1,
+                    'created_at'    => date('Y-m-d H:i:s.v'),
+                    'updated_at'    => date('Y-m-d H:i:s.v'),
+                ]);
+                return true;
+            }
+            return false;
         }
         $now = date('Y-m-d H:i:s');
         foreach ($rows as $row) {
