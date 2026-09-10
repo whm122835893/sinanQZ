@@ -18,8 +18,8 @@ class TrashController extends BaseController
         'collectibles' => 'collectibles',
         'orders'       => 'orders',
         'users'        => 'users',
-        'banners'      => 'cms_banners',
-        'announcements' => 'cms_announcements',
+        'banners'      => 'banners',
+        'announcements' => 'announcements',
         'transfer'     => 'transfers',
         'resale_listings' => 'resale_listings',
         'blind_boxes'  => 'blind_boxes',
@@ -66,8 +66,8 @@ class TrashController extends BaseController
     public function banners()
     {
         [$page, $pageSize] = $this->pageParams(self::DEFAULT_PAGE_SIZE);
-        $query = Db::name('cms_banners')->whereNotNull('deleted_at')
-            ->field('id, title, position, status, sort, deleted_at, created_at')
+        $query = Db::name('banners')->whereNotNull('deleted_at')
+            ->field('id, image, description, sort_order, is_active, deleted_at, created_at')
             ->order('deleted_at', 'desc');
         $total = (clone $query)->count();
         $rows = $query->page($page, $pageSize)->select()->toArray();
@@ -77,7 +77,7 @@ class TrashController extends BaseController
     public function announcements()
     {
         [$page, $pageSize] = $this->pageParams(self::DEFAULT_PAGE_SIZE);
-        $query = Db::name('cms_announcements')->whereNotNull('deleted_at')
+        $query = Db::name('announcements')->whereNotNull('deleted_at')
             ->field('id, title, type, status, is_top, deleted_at, created_at')
             ->order('deleted_at', 'desc');
         $total = (clone $query)->count();

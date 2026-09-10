@@ -496,6 +496,24 @@ export function toggleCollectibleTransferable(id, enabled) {
   return put(`/collectibles/${id}/market-config`, { is_transferable: enabled ? 1 : 0 })
 }
 
+/** 求购开关（藏品级别，控制 C 端是否显示求购 tab） */
+export function toggleCollectibleBuyRequest(id, enabled) {
+  return put(`/collectibles/${id}/market-config`, { is_buy_request_enabled: enabled ? 1 : 0 })
+}
+
+/**
+ * 藏品置换：批量回收旧藏品 → 向同一批用户空投新藏品
+ * 仅管理员可操作，单一事务保证回收与空投用户精准对齐
+ */
+export function swapCollectible({ oldCollectibleId, newCollectibleId, quantityPerUser = 1, reason = '' }) {
+  return post('/collectibles/swap', {
+    old_collectible_id: oldCollectibleId,
+    new_collectible_id: newCollectibleId,
+    quantity_per_user: quantityPerUser,
+    reason
+  })
+}
+
 // ============================================================
 // 盲盒管理
 // ============================================================

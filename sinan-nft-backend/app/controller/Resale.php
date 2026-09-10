@@ -254,4 +254,44 @@ class Resale extends BaseController
             'lastPage'    => (int) ceil($total / max($p['pageSize'], 1)),
         ]);
     }
+
+    /**
+     * GET /api/resale/history?collectibleId=
+     * 某藏品的成交动态（已售出的寄售挂单）
+     */
+    public function history()
+    {
+        $p             = $this->pagination();
+        $collectibleId = $this->intParam('collectibleId');
+
+        $query = Db::name('resale_listings')->alias('l')
+            ->join('users u', 'u.id = l.seller_id', 'LEFT')
+            ->join('user_collectibles uc', 'uc.id = l.user_collectible_id', 'LEFT')
+            ->where('l.status', 'sold');
+        if ($collectibleId > 0) {
+            $query->where('l.collectible_id', $collectibleId);
+        }
+
+        $total = (clone $query)->count();
+        $rows  = $query->order('l.updated_at', 'desc')
+            ->limit($p['offset'], $p['pageSize'])
+            ->field([
+                'l.id', 'l.price', 'l.updated_at',
+                'u.username', 'u.phone',
+                'uc.serial',
+            ])
+            ->select()->toArray();
+
+        $items = array_map(function ($r) {
+            return [
+                'id'        => (int) $r['id'],
+                'price'     => (float) $r['price'],
+                'no'        => $r['serial'] ?? '',
+                'fromUser'  => $r['username'] ? mask_name((string) $r['username']) : '匿名',
+                'createdAt' => $r['updated_at'],
+            ];
+        }, $rows);
+
+        return $this->paginate($items, $total, $p['page'], $p['pageSize']);
+    }
 }

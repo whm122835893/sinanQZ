@@ -26,7 +26,7 @@ export default defineConfig({
     // /api 代理到 ThinkPHP 后端（可用环境变量覆盖目标地址）
     proxy: {
       '/api': {
-        target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000',
+        target: process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8080',
         changeOrigin: true
       }
     }

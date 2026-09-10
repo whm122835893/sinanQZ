@@ -22,7 +22,7 @@ watch(tab, load)
 async function load() {
   loading.value = true
   try {
-    const res = await request.get('/admin/trash/' + tab.value)
+    const res = await request.get('/trash/' + tab.value)
     list.value = res.list || []
     total.value = res.total || 0
   } finally { loading.value = false }
@@ -30,17 +30,17 @@ async function load() {
 
 async function doRecover(row) {
   await ElMessageBox.confirm(`恢复该${TABLES.find(t=>t.key===tab.value)?.label}？`, '恢复', { type: 'info' })
-  await request.post(`/admin/trash/${tab.value}/${row.id}/recover`)
+  await request.post(`/trash/${tab.value}/${row.id}/recover`)
   ElMessage.success('已恢复'); load()
 }
 async function doPurge(row) {
   await ElMessageBox.confirm(`物理删除该${TABLES.find(t=>t.key===tab.value)?.label}？此操作不可恢复！`, '物理删除', { type: 'error' })
-  await request.delete(`/admin/trash/${tab.value}/${row.id}/purge`)
+  await request.delete(`/trash/${tab.value}/${row.id}/purge`)
   ElMessage.success('已物理删除'); load()
 }
 async function doPurgeAll() {
   await ElMessageBox.confirm(`确认清空「${TABLES.find(t=>t.key===tab.value)?.label}」回收站？全部物理删除！`, '清空回收站', { type: 'error' })
-  await request.post(`/admin/trash/${tab.value}/purge-all`)
+  await request.post(`/trash/${tab.value}/purge-all`)
   ElMessage.success('已清空'); load()
 }
 </script>

@@ -30,11 +30,11 @@ const form = ref({
 
 onMounted(async () => {
   // 加载藏品下拉
-  const cRes = await request.get('/admin/collectible', { params: { page: 1, pageSize: 200 } })
+  const cRes = await request.get('/collectibles', { params: { page: 1, pageSize: 200 } })
   collectibles.value = cRes.list || []
 
   if (isEdit.value) {
-    const res = await request.get('/admin/raffle/' + id.value)
+    const res = await request.get('/raffle/' + id.value)
     Object.assign(form.value, {
       collectibleId: res.collectibleId,
       name: res.name,
@@ -79,7 +79,7 @@ async function save() {
   try {
     const payload = { ...form.value }
     if (isEdit.value) payload.id = id.value
-    await request.post('/admin/raffle/save', payload)
+    await request.post('/raffle/save', payload)
     ElMessage.success('保存成功')
     router.push('/marketing/raffle')
   } finally {

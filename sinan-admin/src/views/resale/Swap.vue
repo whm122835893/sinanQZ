@@ -14,22 +14,22 @@ async function load() {
   loading.value = true
   try {
     if (tab.value === 'offers') {
-      const res = await request.get('/admin/swap')
+      const res = await request.get('/swap')
       list.value = res.list || []
     } else {
-      const res = await request.get('/admin/swap/records')
+      const res = await request.get('/swap/records')
       records.value = res.list || []
     }
   } finally { loading.value = false }
 }
 async function doClose(row) {
   await ElMessageBox.confirm(`强制关闭该置换挂单？`, '关闭', { type: 'warning' })
-  await request.post(`/admin/swap/${row.id}/close`)
+  await request.post(`/swap/${row.id}/close`)
   ElMessage.success('已关闭'); load()
 }
 async function doDelete(row) {
   await ElMessageBox.confirm(`软删除？`, '删除', { type: 'warning' })
-  await request.delete(`/admin/swap/${row.id}`)
+  await request.delete(`/swap/${row.id}`)
   ElMessage.success('已删除'); load()
 }
 </script>

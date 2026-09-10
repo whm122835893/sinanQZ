@@ -32,6 +32,17 @@ function mask_phone(string $phone): string
 }
 
 /**
+ * 用户名脱敏（保留首尾，中间用 * 替换）
+ */
+function mask_name(string $name): string
+{
+    $len = mb_strlen($name);
+    if ($len <= 1) return $name;
+    if ($len === 2) return mb_substr($name, 0, 1) . '*';
+    return mb_substr($name, 0, 1) . str_repeat('*', $len - 2) . mb_substr($name, -1);
+}
+
+/**
  * bcrypt 哈希交易密码
  */
 function hash_password(string $password): string

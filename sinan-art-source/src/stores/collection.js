@@ -45,7 +45,8 @@ export const useCollectionStore = defineStore('collection', () => {
       issueCount: String(c.issueCount),
       circulationCount: String(c.circulationCount),
       todayCount: String(c.todayCount),
-      limitPrice: '10000'
+      limitPrice: '10000',
+      isBuyRequestEnabled: c.isBuyRequestEnabled !== false
     }
     return resaleCollection.value
   }
@@ -151,6 +152,7 @@ export const useCollectionStore = defineStore('collection', () => {
       todayCount: String(d.todayCount),
       myOwned: d.myOwned || 0,
       saleLimit: d.saleLimit || 5,
+      isBuyRequestEnabled: d.isBuyRequestEnabled !== false,
       raw: d
     }
     return detail.value
@@ -172,7 +174,14 @@ export const useCollectionStore = defineStore('collection', () => {
       name: d.title,
       cover: d.coverImage
     }))
-    return { meta: resaleCollection.value || { name: d.title, coverImage: d.coverImage }, orders: resaleOrders.value }
+    return {
+      meta: resaleCollection.value || {
+        name: d.title,
+        coverImage: d.coverImage,
+        isBuyRequestEnabled: d.isBuyRequestEnabled !== false
+      },
+      orders: resaleOrders.value
+    }
   }
 
   // 发售状态：'countdown' 倒计时 | 'selling' 发售中 | 'soldout' 已售罄

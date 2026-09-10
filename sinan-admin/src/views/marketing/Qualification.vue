@@ -10,7 +10,7 @@ import {
   removeQualificationWhitelist,
   getCollectibleList
 } from '@/api'
-import { QUALIFY_CONDITION_TYPE } from '@/utils/maps'
+import { QUALIFY_CONDITION_TYPE, QUALIFY_CONDITION_OPTIONS } from '@/utils/maps'
 import { downloadCsv } from '@/utils/csv'
 
 const loading = ref(true)
@@ -37,6 +37,7 @@ const editing = ref(null)
 const form = ref({
   isEnabled: 1,
   conditionType: 1,
+  enabledConditions: [],     // UI 视图层：启用了哪些条件类型（collectible/checkin/invite/register）
   requiredCollectibleIds: [],
   requiredCheckinDays: 0,
   requiredInviteCount: 0,
@@ -101,10 +102,18 @@ async function onToggle(q, val) {
 // ---- 条件编辑 ----
 function openEdit(q) {
   editing.value = q
+  // 从后端三个字段反向推导 UI 的 enabledConditions
+  const ids = q.requiredCollectibles.map((c) => c.collectibleId)
+  const enabled = []
+  if (ids.length) enabled.push('collectible')
+  if (q.requiredCheckinDays > 0) enabled.push('checkin')
+  if (q.requiredInviteCount > 0) enabled.push('invite')
+
   form.value = {
     isEnabled: q.isEnabled,
     conditionType: q.conditionType,
-    requiredCollectibleIds: q.requiredCollectibles.map((c) => c.collectibleId),
+    enabledConditions: enabled,
+    requiredCollectibleIds: ids,
     requiredCheckinDays: q.requiredCheckinDays,
     requiredInviteCount: q.requiredInviteCount,
     validStartAt: q.validStartAt,
@@ -113,27 +122,39 @@ function openEdit(q) {
   editShow.value = true
 }
 
-const conditionCount = computed(() => {
-  const f = form.value
-  return (f.requiredCollectibleIds.length ? 1 : 0) + (f.requiredCheckinDays > 0 ? 1 : 0) + (f.requiredInviteCount > 0 ? 1 : 0)
-})
+const conditionCount = computed(() => form.value.enabledConditions.length)
 
 async function onSave() {
   const f = form.value
+  if (!conditionCount.value) return ElMessage.warning('请至少启用 1 个条件类型')
   if (f.conditionType === 2 && conditionCount.value < 2) {
-    return ElMessage.warning('「满足全部」需至少配置 2 个条件')
+    return ElMessage.warning('「满足全部」需至少启用 2 个条件类型')
   }
-  const res = await saveQualification({
+  // UI → 后端字段：未启用的条件类型强制清空（避免残留旧值）
+  const enabled = new Set(f.enabledConditions)
+  const payload = {
     id: editing.value.id,
     collectibleId: editing.value.collectibleId,
     isEnabled: f.isEnabled,
     conditionType: f.conditionType,
-    requiredCollectibleIds: f.requiredCollectibleIds,
-    requiredCheckinDays: f.requiredCheckinDays,
-    requiredInviteCount: f.requiredInviteCount,
+    requiredCollectibleIds: enabled.has('collectible') ? f.requiredCollectibleIds : [],
+    requiredCheckinDays: enabled.has('checkin') ? f.requiredCheckinDays : 0,
+    requiredInviteCount: enabled.has('invite') ? f.requiredInviteCount : 0,
     validStartAt: f.validStartAt,
     validEndAt: f.validEndAt
-  })
+  }
+  // 启用了参数输入但值无效时拦截
+  if (enabled.has('collectible') && !payload.requiredCollectibleIds.length) {
+    return ElMessage.warning('已启用「持有藏品」，请至少选择 1 件藏品')
+  }
+  if (enabled.has('checkin') && !(payload.requiredCheckinDays > 0)) {
+    return ElMessage.warning('已启用「累计签到」，请设置签到天数')
+  }
+  if (enabled.has('invite') && !(payload.requiredInviteCount > 0)) {
+    return ElMessage.warning('已启用「累计邀请」，请设置邀请人数')
+  }
+
+  const res = await saveQualification(payload)
   if (res.code === 0) {
     ElMessage.success('资格购配置已保存（不占库存、不占配额）')
     editShow.value = false
@@ -221,37 +242,32 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
           </div>
         </div>
 
-        <!-- 条件概览 -->
-        <div class="ql__conditions">
-          <div class="ql__cond">
-            <div class="ql__cond-label">资格藏品</div>
+        <!-- 条件概览（只渲染已启用的条件类型） -->
+        <div class="ql__conditions" v-if="q.requiredCollectibles.length || q.requiredCheckinDays > 0 || q.requiredInviteCount > 0">
+          <div v-if="q.requiredCollectibles.length" class="ql__cond">
+            <div class="ql__cond-label">持有藏品</div>
             <div class="ql__cond-body">
-              <template v-if="q.requiredCollectibles.length">
-                <el-tag
-                  v-for="c in q.requiredCollectibles"
-                  :key="c.collectibleId"
-                  type="primary"
-                  effect="plain"
-                  size="small"
-                >{{ c.name }}</el-tag>
-              </template>
-              <span v-else class="t-tertiary">未配置</span>
+              <el-tag
+                v-for="c in q.requiredCollectibles"
+                :key="c.collectibleId"
+                type="primary"
+                effect="plain"
+                size="small"
+              >{{ c.name }}</el-tag>
             </div>
           </div>
-          <div class="ql__cond">
+          <div v-if="q.requiredCheckinDays > 0" class="ql__cond">
             <div class="ql__cond-label">累计签到</div>
-            <div class="ql__cond-body">
-              <span v-if="q.requiredCheckinDays > 0">≥ <b class="price">{{ q.requiredCheckinDays }}</b> 天</span>
-              <span v-else class="t-tertiary">未配置</span>
-            </div>
+            <div class="ql__cond-body">≥ <b class="price">{{ q.requiredCheckinDays }}</b> 天</div>
           </div>
-          <div class="ql__cond">
+          <div v-if="q.requiredInviteCount > 0" class="ql__cond">
             <div class="ql__cond-label">累计邀请</div>
-            <div class="ql__cond-body">
-              <span v-if="q.requiredInviteCount > 0">≥ <b class="price">{{ q.requiredInviteCount }}</b> 人</span>
-              <span v-else class="t-tertiary">未配置</span>
-            </div>
+            <div class="ql__cond-body">≥ <b class="price">{{ q.requiredInviteCount }}</b> 人</div>
           </div>
+        </div>
+        <div v-else class="ql__conditions-empty">
+          <el-tag type="info" effect="plain" size="small">未配置资格条件</el-tag>
+          <span class="t-tertiary">（仅白名单用户可直接购买，其余用户可自由购买）</span>
         </div>
 
         <!-- 白名单 -->
@@ -280,38 +296,70 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
           </el-form-item>
           <el-form-item label="条件组合方式">
             <el-radio-group v-model="form.conditionType">
-              <el-radio :value="1">满足任一</el-radio>
-              <el-radio :value="2">满足全部</el-radio>
+              <el-radio :value="1">满足任一（命中 1 个即可购买）</el-radio>
+              <el-radio :value="2">满足全部（所有启用条件均需命中）</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="资格藏品">
-            <el-select v-model="form.requiredCollectibleIds" multiple filterable placeholder="仅可选择流通量 > 0 的藏品" style="width: 100%">
-              <el-option
-                v-for="c in collectibles"
-                :key="c.id"
-                :label="c.name"
-                :value="c.id"
+          <el-form-item label="条件类型">
+            <el-checkbox-group v-model="form.enabledConditions" class="ql__cond-group">
+              <el-checkbox
+                v-for="opt in QUALIFY_CONDITION_OPTIONS"
+                :key="opt.key"
+                :value="opt.key"
+                :label="opt.key"
+                :disabled="opt.key === 'register'"
+                class="ql__cond-check"
               >
-                <div class="ql__option">
-                  <span>{{ c.name }}</span>
-                  <span class="t-tertiary">流通 {{ c.circulate }}</span>
+                <div class="ql__cond-check-body">
+                  <div class="ql__cond-check-label">
+                    {{ opt.label }}
+                    <el-tag v-if="opt.key === 'register'" type="info" effect="plain" size="small">预留</el-tag>
+                  </div>
+                  <div class="ql__cond-check-desc">{{ opt.desc }}</div>
                 </div>
-              </el-option>
-            </el-select>
+              </el-checkbox>
+            </el-checkbox-group>
             <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
-              用户持有至少 1 个所选藏品即满足该条件
+              勾选的条件类型会在下方展开参数配置；未勾选的条件不参与资格判断
             </div>
           </el-form-item>
-          <el-form-item label="累计签到天数">
-            <el-input-number v-model="form.requiredCheckinDays" :min="0" :step="1" style="width: 180px" />
-            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">0 表示不要求</div>
-          </el-form-item>
-          <el-form-item label="累计邀请人数">
-            <el-input-number v-model="form.requiredInviteCount" :min="0" :step="1" style="width: 180px" />
-            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
-              要求成功注册的邀请好友数；0 表示不要求
-            </div>
-          </el-form-item>
+
+          <!-- 被勾选的条件类型：动态展开参数配置 -->
+          <template v-if="form.enabledConditions.includes('collectible')">
+            <el-form-item label="持有藏品">
+              <el-select v-model="form.requiredCollectibleIds" multiple filterable placeholder="选择要求用户持有的藏品" style="width: 100%">
+                <el-option
+                  v-for="c in collectibles"
+                  :key="c.id"
+                  :label="c.name"
+                  :value="c.id"
+                >
+                  <div class="ql__option">
+                    <span>{{ c.name }}</span>
+                    <span class="t-tertiary">流通 {{ c.circulate }}</span>
+                  </div>
+                </el-option>
+              </el-select>
+              <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
+                用户持有至少 1 件所选藏品即满足该条件
+              </div>
+            </el-form-item>
+          </template>
+
+          <template v-if="form.enabledConditions.includes('checkin')">
+            <el-form-item label="累计签到">
+              <el-input-number v-model="form.requiredCheckinDays" :min="1" :step="1" style="width: 180px" />
+              <span class="t-tertiary" style="margin-left: 8px">天及以上</span>
+            </el-form-item>
+          </template>
+
+          <template v-if="form.enabledConditions.includes('invite')">
+            <el-form-item label="累计邀请">
+              <el-input-number v-model="form.requiredInviteCount" :min="1" :step="1" style="width: 180px" />
+              <span class="t-tertiary" style="margin-left: 8px">人及以上（已成功注册的邀请好友）</span>
+            </el-form-item>
+          </template>
+
           <el-form-item label="有效期">
             <el-input v-model="form.validStartAt" placeholder="开始时间 YYYY-MM-DD HH:mm" style="width: 46%; margin-right: 8%" />
             <el-input v-model="form.validEndAt" placeholder="结束时间 YYYY-MM-DD HH:mm" style="width: 46%" />
@@ -398,13 +446,20 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
 
 .ql__conditions {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
   margin-top: 14px;
+}
 
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-  }
+.ql__conditions-empty {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: $color-surface;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
 }
 
 .ql__cond {
@@ -426,6 +481,55 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
   font-size: 13px;
 
   b { font-size: 14px; }
+}
+
+/* 条件类型复选框组：每行一个，内部带描述 */
+.ql__cond-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.ql__cond-check {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid $color-border;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover { border-color: rgba(192, 0, 0, 0.3); }
+
+  &.is-checked {
+    border-color: #C00000;
+    background: rgba(192, 0, 0, 0.04);
+  }
+
+  &.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.ql__cond-check-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+.ql__cond-check-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: $color-text-primary;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ql__cond-check-desc {
+  font-size: 11px;
+  color: $color-text-tertiary;
 }
 
 .ql__whitelist { margin-top: 12px; padding-top: 10px; border-top: 1px dashed $color-border; }

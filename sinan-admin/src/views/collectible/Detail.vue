@@ -11,7 +11,9 @@ import {
   releaseCollectible,
   toggleCollectibleStatus,
   toggleCollectibleResale,
-  toggleCollectibleTransferable
+  toggleCollectibleTransferable,
+  toggleCollectibleBuyRequest,
+  swapCollectible
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import PasswordVerify from '@/components/PasswordVerify.vue'
@@ -95,6 +97,51 @@ async function onDestroyVerified() {
     ElMessage.success(`已销毁 ${res.data.destroyed} 份（不可恢复），生成销毁记录`)
     destroyShow.value = false
     load()
+  }
+}
+
+// ---- 置换：回收当前藏品 → 向同一批用户空投新藏品 ----
+const swapShow = ref(false)
+const swapPwdShow = ref(false)
+const swapForm = ref({ newCollectibleId: '', quantityPerUser: 1, reason: '' })
+const swapping = ref(false)
+
+function openSwap() {
+  swapForm.value = { newCollectibleId: '', quantityPerUser: 1, reason: '' }
+  swapShow.value = true
+}
+
+async function onSwapSubmit() {
+  const f = swapForm.value
+  if (!f.newCollectibleId) return ElMessage.warning('请输入新藏品ID')
+  if (Number(f.newCollectibleId) === Number(id)) return ElMessage.warning('新藏品不能与当前藏品相同')
+  if (!Number.isInteger(f.quantityPerUser) || f.quantityPerUser < 1) return ElMessage.warning('每人空投份数需为正整数')
+  // 二次确认
+  await ElMessageBox.confirm(
+    `即将执行置换：回收「${detail.value.name}」所有有效持仓，并向同一批用户每人空投 ${f.quantityPerUser} 份新藏品（ID: ${f.newCollectibleId}）。\n\n此操作不可撤销，将批量回收并空投，是否继续？`,
+    '藏品置换确认',
+    { type: 'warning', confirmButtonText: '确认置换', cancelButtonText: '取消' }
+  )
+  swapPwdShow.value = true
+}
+
+async function onSwapVerified() {
+  swapping.value = true
+  try {
+    const res = await swapCollectible({
+      oldCollectibleId: id,
+      newCollectibleId: Number(swapForm.value.newCollectibleId),
+      quantityPerUser: swapForm.value.quantityPerUser,
+      reason: swapForm.value.reason
+    })
+    if (res.code === 0) {
+      const d = res.data
+      ElMessage.success(`置换完成：回收 ${d.recoveredCount} 份（${d.userCount} 人），空投新藏品 ${d.airdropQuantity} 份`)
+      swapShow.value = false
+      load()
+    }
+  } finally {
+    swapping.value = false
   }
 }
 
@@ -200,6 +247,22 @@ async function onTransferableSwitch(val) {
   }
 }
 
+// ---- 求购开关（藏品级别，控制 C 端求购 tab 显隐） ----
+async function onBuyRequestSwitch(val) {
+  await ElMessageBox.confirm(
+    val
+      ? `确认开启「${detail.value.name}」的求购功能？用户端将显示求购 tab，允许用户发布求购挂单。`
+      : `确认关闭「${detail.value.name}」的求购功能？用户端将隐藏求购 tab，已有的求购挂单不再展示。`,
+    '求购开关',
+    { type: 'warning' }
+  )
+  const res = await toggleCollectibleBuyRequest(id, val)
+  if (res.code === 0) {
+    ElMessage.success(val ? '已开启求购' : '已关闭求购')
+    load()
+  }
+}
+
 // ---- 寄售开关（联动价格管控：0=不限价 1=固定价 2=区间价） ----
 const priceShow = ref(false)
 const pricePwdShow = ref(false)
@@ -279,6 +342,7 @@ async function onResaleVerified() {
               <div class="cd__price price">¥{{ fmtMoney(detail.price) }}</div>
               <div class="cd__ops">
                 <el-button type="primary" plain @click="airShow = true">独立空投</el-button>
+                <el-button type="warning" plain @click="openSwap">置换</el-button>
                 <el-button type="danger" plain @click="destroyShow = true">销毁库存</el-button>
                 <el-button plain @click="router.push(`/collectible/edit/${id}`)">编辑藏品</el-button>
                 <el-button type="primary" @click="releaseShow = true">发售配置</el-button>
@@ -339,6 +403,13 @@ async function onResaleVerified() {
               <span class="v cd__switch-ops">
                 <el-switch :model-value="detail.isTransferable" @change="onTransferableSwitch" />
                 <span class="t-tertiary" style="font-size: 12px">{{ detail.isTransferable ? '已开启：用户可无偿转赠' : '已关闭：用户端转赠入口置灰' }}</span>
+              </span>
+            </div>
+            <div class="adm-kv cd__switch-row">
+              <span class="k">求购开关</span>
+              <span class="v cd__switch-ops">
+                <el-switch :model-value="detail.isBuyRequestEnabled" @change="onBuyRequestSwitch" />
+                <span class="t-tertiary" style="font-size: 12px">{{ detail.isBuyRequestEnabled ? '已开启：用户可发布求购挂单' : '已关闭：用户端隐藏求购 tab' }}</span>
               </span>
             </div>
             <div class="adm-kv cd__switch-row">
@@ -450,6 +521,35 @@ async function onResaleVerified() {
         </template>
       </el-dialog>
 
+      <!-- 置换弹窗 -->
+      <el-dialog v-model="swapShow" title="藏品置换" width="480px" append-to-body :close-on-click-modal="false">
+        <el-form label-width="110px">
+          <el-form-item label="回收旧藏品">
+            <el-tag type="info" effect="plain">{{ detail.name }}（ID: {{ id }}）</el-tag>
+            <span class="t-tertiary" style="margin-left: 8px; font-size: 12px">将回收该藏品所有有效持仓</span>
+          </el-form-item>
+          <el-form-item label="空投新藏品ID">
+            <el-input v-model="swapForm.newCollectibleId" placeholder="请输入新藏品ID" />
+          </el-form-item>
+          <el-form-item label="每人空投份数">
+            <el-input-number v-model="swapForm.quantityPerUser" :min="1" :max="100" />
+          </el-form-item>
+          <el-form-item label="置换原因">
+            <el-input v-model="swapForm.reason" type="textarea" :rows="2" placeholder="如：版本升级置换（选填）" />
+          </el-form-item>
+        </el-form>
+        <el-alert
+          type="warning"
+          :closable="false"
+          show-icon
+          title="置换将批量回收当前藏品的所有有效持仓（含寄售中），并向完全相同的一批用户空投新藏品。单一事务保证回收与空投用户精准对齐，操作不可撤销。"
+        />
+        <template #footer>
+          <el-button @click="swapShow = false">取消</el-button>
+          <el-button type="warning" :loading="swapping" @click="onSwapSubmit">确认置换（需密码验证）</el-button>
+        </template>
+      </el-dialog>
+
       <!-- 新增配额弹窗 -->
       <el-dialog v-model="quotaShow" title="新增配额" width="460px" append-to-body :close-on-click-modal="false">
         <el-form label-width="90px">
@@ -538,6 +638,7 @@ async function onResaleVerified() {
       <!-- 密码验证 -->
       <PasswordVerify v-model="airPwdShow" title="空投验证" @verified="onAirdropVerified" />
       <PasswordVerify v-model="destroyPwdShow" title="销毁验证" @verified="onDestroyVerified" />
+      <PasswordVerify v-model="swapPwdShow" title="置换验证" @verified="onSwapVerified" />
       <PasswordVerify v-model="pricePwdShow" title="寄售管控验证" @verified="onResaleVerified" />
     </template>
   </div>

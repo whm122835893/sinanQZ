@@ -91,6 +91,7 @@ Route::group('collectibles', function () {
     Route::post(':id/destroy', 'CollectibleController/destroy')->middleware(AdminPermission::class, 'collectible:destroy');
     Route::delete(':id', 'CollectibleController/delete')->middleware(AdminPermission::class, 'collectible:delete');
     Route::post('airdrop', 'CollectibleController/airdrop')->middleware(AdminPermission::class, 'collectible:airdrop');
+    Route::post('swap', 'CollectibleController/swap')->middleware(AdminPermission::class, 'collectible:swap');
     Route::put(':id/market-config', 'CollectibleController/marketConfig')->middleware(AdminPermission::class, 'collectible:market');
     Route::post(':id/qualification', 'CollectibleController/qualification')->middleware(AdminPermission::class, 'collectible:qualification');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'collectible:list');

@@ -4,12 +4,15 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
+import AppModal from '@/components/AppModal.vue'
 import { useActivityStore } from '@/stores/activity'
+import { useUserStore } from '@/stores/user'
 import request from '@/utils/request'
 import { useLoginGate } from '@/utils/loginGate'
 
 const router = useRouter()
 const activityStore = useActivityStore()
+const userStore = useUserStore()
 const { synthesisActivities } = storeToRefs(activityStore)
 const { requireLogin } = useLoginGate()
 
@@ -18,6 +21,11 @@ const active = ref('活动')
 
 const swapOffers = ref([])
 const swapLoading = ref(false)
+
+// 发布置换弹窗
+const showSwapModal = ref(false)
+const swapForm = ref({ offerCollectibleId: '', targetCollectibleId: '', cashDiff: 0, remark: '' })
+const swapPosting = ref(false)
 
 watch(active, (t) => {
   if (t === '置换' && swapOffers.value.length === 0) loadSwaps()
@@ -33,7 +41,7 @@ async function loadSwaps() {
     const res = await request.get('/swap-offers', { params: { status: 1, page: 1, pageSize: 30 } })
     swapOffers.value = (res.list || []).map((s) => ({
       id: s.id,
-      offerUserName: s.offerUserName || s.userName || '置换方',
+      offerUserName: s.offerUserName || '置换方',
       offerCollectibleName: s.offerCollectibleName || '藏品',
       offerCollectibleImage: s.offerCollectibleImage || '',
       offerSerial: s.offerSerial || '',
@@ -41,7 +49,7 @@ async function loadSwaps() {
       targetCollectibleImage: s.targetCollectibleImage || '',
       cashDiff: Number(s.cashDiff || 0).toFixed(2),
       remark: s.remark || '',
-      createdAt: s.createdAt || '',
+      createdAt: (s.createdAt || '').slice(0, 16).replace('T', ' '),
     }))
   } catch (e) {
     swapOffers.value = []
@@ -53,14 +61,50 @@ async function loadSwaps() {
 function acceptSwap(s) {
   if (!requireLogin('/activity')) return
   request.post('/swap-offers/' + s.id + '/accept').then(() => {
-    alert('置换已接受，双方藏品将在链上完成原子交换')
     loadSwaps()
-  })
+  }).catch(() => {})
 }
 
-function openPostSwap() {
+// 打开发布置换弹窗
+async function openPostSwap() {
   if (!requireLogin('/activity')) return
-  alert('发布置换：后端接口 POST /api/swap-offers 已在数据库层预留')
+  // 加载我的藏品供选择
+  if (!userStore.inventory.length) {
+    await userStore.fetchInventory().catch(() => {})
+  }
+  swapForm.value = { offerCollectibleId: '', targetCollectibleId: '', cashDiff: 0, remark: '' }
+  showSwapModal.value = true
+}
+
+// 提交置换挂单
+async function submitSwap() {
+  const offerId = parseInt(swapForm.value.offerCollectibleId)
+  const targetId = parseInt(swapForm.value.targetCollectibleId)
+  if (!offerId) {
+    alert('请选择要置换出去的藏品')
+    return
+  }
+  if (!targetId) {
+    alert('请选择期望换得的藏品')
+    return
+  }
+  swapPosting.value = true
+  try {
+    const inv = userStore.inventory.find((i) => String(i.id) === String(offerId))
+    await request.post('/swap-offers', {
+      offerCollectibleId: offerId,
+      offerSerial: inv?.nos?.[0] || '',
+      targetCollectibleId: targetId,
+      cashDiff: Number(swapForm.value.cashDiff) || 0,
+      remark: swapForm.value.remark || '',
+    })
+    showSwapModal.value = false
+    await loadSwaps()
+  } catch (e) {
+    alert(e?.message || '发布置换失败')
+  } finally {
+    swapPosting.value = false
+  }
 }
 
 function goSynthesis(id) {
@@ -161,6 +205,37 @@ function statusOf(a) {
     <div class="act-float safe-bottom" v-if="active === '置换'">
       <button class="act-float__btn" @click="openPostSwap">+ 发布置换</button>
     </div>
+
+    <!-- 发布置换弹窗 -->
+    <AppModal v-model:show="showSwapModal" title="发布置换挂单">
+      <div class="swap-form">
+        <div class="swap-form-row">
+          <label>我出（我的藏品）</label>
+          <select v-model="swapForm.offerCollectibleId">
+            <option value="">请选择藏品</option>
+            <option v-for="i in userStore.inventory" :key="i.id" :value="i.id">{{ i.name }} (×{{ i.qty }})</option>
+          </select>
+        </div>
+        <div class="swap-form-row">
+          <label>换得（目标藏品ID）</label>
+          <input v-model="swapForm.targetCollectibleId" type="number" placeholder="输入目标藏品ID" />
+        </div>
+        <div class="swap-form-row">
+          <label>差价（¥，正=对方补我，负=我补对方）</label>
+          <input v-model="swapForm.cashDiff" type="number" step="0.01" value="0" />
+        </div>
+        <div class="swap-form-row">
+          <label>备注</label>
+          <input v-model="swapForm.remark" type="text" placeholder="选填" />
+        </div>
+        <div class="swap-form-actions">
+          <button class="swap-form-cancel" @click="showSwapModal = false">取消</button>
+          <button class="swap-form-submit" :disabled="swapPosting" @click="submitSwap">
+            {{ swapPosting ? '提交中...' : '确认发布' }}
+          </button>
+        </div>
+      </div>
+    </AppModal>
   </div>
 </template>
 
@@ -259,5 +334,39 @@ function statusOf(a) {
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
   box-shadow: 0 6px 18px rgba(59, 130, 246, 0.28);
+}
+
+.swap-form { padding: 8px 0; }
+.swap-form-row {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-bottom: 14px;
+}
+.swap-form-row label {
+  font-size: 13px; color: $color-text-secondary; font-weight: 500;
+}
+.swap-form-row input, .swap-form-row select {
+  padding: 10px 12px; border-radius: $radius-md;
+  border: 1px solid rgba(0,0,0,0.1);
+  font-size: 14px; color: $color-text-primary;
+  background: $color-bg; outline: none;
+}
+.swap-form-row input:focus, .swap-form-row select:focus {
+  border-color: $color-primary;
+}
+.swap-form-actions {
+  display: flex; gap: 12px; margin-top: 8px;
+}
+.swap-form-cancel, .swap-form-submit {
+  flex: 1; padding: 10px 0; border: none; border-radius: $radius-md;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.swap-form-cancel {
+  background: rgba(0,0,0,0.06); color: $color-text-secondary;
+}
+.swap-form-submit {
+  background: $color-primary; color: #fff;
+}
+.swap-form-submit:disabled {
+  opacity: 0.6; cursor: not-allowed;
 }
 </style>

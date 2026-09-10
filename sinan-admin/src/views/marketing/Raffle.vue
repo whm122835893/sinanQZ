@@ -26,7 +26,7 @@ onMounted(load)
 async function load() {
   loading.value = true
   try {
-    const res = await request.get('/admin/raffle', {
+    const res = await request.get('/raffle', {
       params: { page: page.value, pageSize: pageSize.value, keyword: keyword.value, status: statusFilter.value },
     })
     list.value = res.list || []
@@ -47,25 +47,25 @@ function goEdit(id) {
 
 async function doStart(row) {
   await ElMessageBox.confirm(`确认开启「${row.name}」的报名？开启后用户可以在 C 端报名抽签。`, '开启报名', { type: 'warning' })
-  await request.post(`/admin/raffle/${row.id}/start`)
+  await request.post(`/raffle/${row.id}/start`)
   ElMessage.success('已开启报名')
   load()
 }
 async function doDraw(row) {
   await ElMessageBox.confirm(`确认立即对「${row.name}」执行抽签？`, '立即抽签', { type: 'warning' })
-  const res = await request.post(`/admin/raffle/${row.id}/draw`)
+  const res = await request.post(`/raffle/${row.id}/draw`)
   ElMessage.success(`抽签完成！中签 ${res.count || 0} 人`)
   load()
 }
 async function doCancel(row) {
   await ElMessageBox.confirm(`确认取消「${row.name}」？取消后不可恢复。`, '取消活动', { type: 'warning' })
-  await request.post(`/admin/raffle/${row.id}/cancel`)
+  await request.post(`/raffle/${row.id}/cancel`)
   ElMessage.success('已取消')
   load()
 }
 async function doDelete(row) {
   await ElMessageBox.confirm(`确认删除「${row.name}」？（软删除）`, '删除', { type: 'warning' })
-  await request.delete(`/admin/raffle/${row.id}`)
+  await request.delete(`/raffle/${row.id}`)
   ElMessage.success('已删除')
   load()
 }

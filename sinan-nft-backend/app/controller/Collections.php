@@ -147,6 +147,7 @@ class Collections extends BaseController
             // 联动点 10.1：寄售/转赠开关与限价配置（控制「转赠/寄售」入口显隐，文档 5.3）
             'isTransferable'  => (int) $c['is_transferable'] === 1,
             'isResaleable'    => (int) $c['is_resaleable'] === 1,
+            'isBuyRequestEnabled' => (int) ($c['is_buy_request_enabled'] ?? 1) === 1,
             'resalePriceMode' => (int) $c['resale_price_mode'],
             'resalePriceMin'  => (float) $c['resale_price_min'],
             'resalePriceMax'  => (float) $c['resale_price_max'],

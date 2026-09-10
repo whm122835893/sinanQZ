@@ -1,7 +1,7 @@
 # 司南珍藏 · 管理后台（sinan-admin）开发文档
 
 > 版本：v2.0（BuildAdmin 数字藏品综合管理后台）· 更新日期：2026-09-05
-> 定位：数字藏品平台运营管理后台，覆盖藏品全生命周期、多角色权限、库存闭环、风控安全、区块链交互与数据统计；与 C 端（jichao-art-source）数据同构、与后端（sinan-nft-backend，ThinkPHP 8.1 app/admin）接口对齐。
+> 定位：数字藏品平台运营管理后台，覆盖藏品全生命周期、多角色权限、库存闭环、风控安全、区块链交互与数据统计；与 C 端（sinan-art-source）数据同构、与后端（sinan-nft-backend，ThinkPHP 8.1 app/admin）接口对齐。
 
 ---
 

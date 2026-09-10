@@ -61,7 +61,7 @@ class CollectibleController extends BaseController
                                c.price, c.edition, c.circulate, c.sold, c.locked_quantity,
                                c.airdropped_count, c.destroyed_count, c.reserved_count,
                                c.status, c.is_release, c.featured, c.onsale_at, c.off_sale_at, c.created_at,
-                               c.is_transferable, c.is_resaleable,
+                               c.is_transferable, c.is_resaleable, c.is_buy_request_enabled,
                                c.resale_price_mode, c.resale_price_min, c.resale_price_max,
                                (bb.id IS NOT NULL) AS is_blind_box')
             ->join('categories cat', 'cat.id = c.category_id', 'LEFT')
@@ -863,6 +863,9 @@ class CollectibleController extends BaseController
         if ($this->request->param('is_resaleable') !== null) {
             $update['is_resaleable'] = (int) $this->request->param('is_resaleable') === 1 ? 1 : 0;
         }
+        if ($this->request->param('is_buy_request_enabled') !== null) {
+            $update['is_buy_request_enabled'] = (int) $this->request->param('is_buy_request_enabled') === 1 ? 1 : 0;
+        }
         if ($this->request->param('resale_price_mode') !== null) {
             $mode = (int) $this->request->param('resale_price_mode');
             if (!in_array($mode, [0, 1, 2], true)) {
@@ -898,6 +901,154 @@ class CollectibleController extends BaseController
 
         $this->audit('collectible', 'market_config', '寄售管控「' . $c['name'] . '」', $update, 'collectible', $id);
         return $this->success(null, '寄售配置已更新');
+    }
+
+    /**
+     * POST /admin/collectibles/swap
+     * 藏品置换：批量回收旧藏品 → 向同一批用户空投新藏品（单一事务，精准对齐）
+     *
+     * 参数：
+     *   old_collectible_id  旧藏品ID（被回收）
+     *   new_collectible_id  新藏品ID（被空投）
+     *   quantity_per_user   每人空投份数（默认1）
+     *   reason              置换原因（审计）
+     *
+     * 精准控制要点：
+     *   1. 回收与空投共用同一次 SELECT 的用户列表（单一数据源）
+     *   2. 全程单事务，任一步失败全部回滚
+     *   3. 行锁锁定旧藏品持仓记录，防并发买卖
+     */
+    public function swap()
+    {
+        $oldId = $this->positiveInt('old_collectible_id');
+        $newId = $this->positiveInt('new_collectible_id');
+        $qty   = (int) $this->request->param('quantity_per_user', 1);
+        $reason = trim((string) $this->request->param('reason', ''));
+
+        if ($oldId === null || $newId === null) {
+            return $this->fail(4220, '旧藏品/新藏品 ID 不正确');
+        }
+        if ($oldId === $newId) {
+            return $this->fail(4220, '新旧藏品不能相同');
+        }
+        if ($qty < 1 || $qty > 100) {
+            return $this->fail(4220, '每人空投份数需为 1~100');
+        }
+        if ($reason === '') {
+            $reason = '藏品置换';
+        }
+
+        // 校验藏品存在
+        $oldC = Db::name('collectibles')->where('id', $oldId)->whereNull('deleted_at')->find();
+        if (!$oldC) {
+            return $this->fail(4040, '旧藏品不存在');
+        }
+        $newC = Db::name('collectibles')->where('id', $newId)->whereNull('deleted_at')->find();
+        if (!$newC) {
+            return $this->fail(4040, '新藏品不存在');
+        }
+
+        // 查询持有旧藏品的有效记录（行锁，防并发）
+        $holders = Db::name('user_collectibles')
+            ->where('collectible_id', $oldId)
+            ->whereIn('status', ['held', 'consigned', 'frozen'])
+            ->lock(true)
+            ->select()
+            ->toArray();
+
+        if (!$holders) {
+            return $this->fail(4220, '旧藏品当前无有效持仓，无需置换');
+        }
+
+        // 去重得到用户列表（置换的精准数据源）
+        $userIds = array_values(array_unique(array_map('intval', array_column($holders, 'user_id'))));
+        $userCount = count($userIds);
+        $totalRecover = count($holders);
+        $totalAirdrop = $userCount * $qty;
+
+        // 校验新藏品库存池
+        $newPool = (int) $newC['edition'] - (int) $newC['sold'] - (int) $newC['locked_quantity']
+                 - (int) $newC['reserved_count'] - (int) $newC['airdropped_count'] - (int) $newC['destroyed_count'];
+        if ($newPool < $totalAirdrop) {
+            return $this->fail(4220, "新藏品库存池不足：可空投 {$newPool} 份，需要 {$totalAirdrop} 份（{$userCount} 人 × {$qty} 份）");
+        }
+
+        // 获取用户手机号（供空投使用）
+        $phones = Db::name('users')->whereIn('id', $userIds)->whereNull('deleted_at')->column('phone');
+        if (count($phones) !== $userCount) {
+            return $this->fail(4220, '部分持仓用户已不存在或已删除，请先清理异常数据');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $operator = ['id' => $this->adminId(), 'name' => $this->adminName(), 'ip' => (string) $this->request->ip()];
+
+        Db::startTrans();
+        try {
+            // ---------- 第一步：批量回收旧藏品 ----------
+            $recovered = 0;
+            foreach ($holders as $uc) {
+                // 取消寄售挂单
+                if ($uc['status'] === 'consigned') {
+                    $listing = Db::name('resale_listings')
+                        ->where('user_collectible_id', $uc['id'])
+                        ->where('status', 'selling')
+                        ->find();
+                    if ($listing) {
+                        Db::name('resale_listings')->where('id', $listing['id'])->update([
+                            'status'             => 'cancelled',
+                            'system_delisted'    => 1,
+                            'system_delisted_at' => $now,
+                            'delist_reason'      => '藏品置换回收：' . $reason,
+                            'updated_at'         => $now,
+                        ]);
+                    }
+                }
+                // 状态置 recovered
+                Db::name('user_collectibles')->where('id', $uc['id'])->update([
+                    'status'       => 'recovered',
+                    'is_consigned' => 0,
+                    'updated_at'   => $now,
+                ]);
+                // 按来源回退计数器
+                \app\service\InventoryService::revertOnRecover($uc);
+                $recovered++;
+            }
+
+            // ---------- 第二步：向同一批用户空投新藏品 ----------
+            $airdropResult = \app\service\InventoryService::airdrop(
+                $newId,
+                $phones,
+                $qty,
+                $operator,
+                'airdrop'
+            );
+
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '置换失败：' . $e->getMessage());
+        }
+
+        $this->audit('collectible', 'swap',
+            "藏品置换：回收「{$oldC['name']}」{$recovered} 份（{$userCount} 人）→ 空投「{$newC['name']}」{$totalAirdrop} 份",
+            [
+                'old_collectible_id' => $oldId,
+                'new_collectible_id' => $newId,
+                'recovered_count'    => $recovered,
+                'user_count'         => $userCount,
+                'airdrop_quantity'   => $totalAirdrop,
+                'reason'             => $reason,
+            ],
+            'collectible', $oldId
+        );
+
+        return $this->success([
+            'oldCollectible'   => ['id' => $oldId, 'name' => $oldC['name']],
+            'newCollectible'   => ['id' => $newId, 'name' => $newC['name']],
+            'recoveredCount'   => $recovered,
+            'userCount'        => $userCount,
+            'airdropQuantity'  => $totalAirdrop,
+        ], '置换完成：已回收旧藏品并向同一批用户空投新藏品');
     }
 
     /**

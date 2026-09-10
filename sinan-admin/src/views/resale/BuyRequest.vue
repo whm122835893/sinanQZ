@@ -12,18 +12,18 @@ onMounted(load)
 async function load() {
   loading.value = true
   try {
-    const res = await request.get('/admin/buy-request', { params: { status: statusFilter.value } })
+    const res = await request.get('/buy-request', { params: { status: statusFilter.value } })
     list.value = res.list || []
   } finally { loading.value = false }
 }
 async function doClose(row) {
   await ElMessageBox.confirm(`关闭该求购挂单？`, '关闭', { type: 'warning' })
-  await request.post(`/admin/buy-request/${row.id}/close`)
+  await request.post(`/buy-request/${row.id}/close`)
   ElMessage.success('已关闭'); load()
 }
 async function doDelete(row) {
   await ElMessageBox.confirm(`软删除该求购挂单？`, '删除', { type: 'warning' })
-  await request.delete(`/admin/buy-request/${row.id}`)
+  await request.delete(`/buy-request/${row.id}`)
   ElMessage.success('已删除'); load()
 }
 </script>

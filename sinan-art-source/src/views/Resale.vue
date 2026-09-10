@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
+import AppModal from '@/components/AppModal.vue'
 import request from '@/utils/request'
 
 const route = useRoute()
@@ -14,17 +15,32 @@ const { requireLogin } = useLoginGate()
 const meta = ref(null)
 const orders = ref([])           // 寄售挂单（onsale tab）
 const buyRequests = ref([])      // 求购挂单（buying tab）
-const delegates = ref([])        // 委托挂单（delegate tab）
 const history = ref([])          // 成交动态（history tab）
 const activeTab = ref('onsale')
 const sort = ref('price-asc')
 const loading = ref(false)
 
+// 求购功能开关（藏品级别，由管理员在藏品详情配置）
+const tabs = computed(() => {
+  const list = [{ key: 'onsale', label: '当前寄售' }]
+  if (meta.value?.isBuyRequestEnabled) list.push({ key: 'buying', label: '当前求购' })
+  list.push({ key: 'history', label: '成交动态' })
+  return list
+})
+// 开关关闭时若当前在求购 tab，自动切回寄售
+watch(() => meta.value?.isBuyRequestEnabled, (on) => {
+  if (!on && activeTab.value === 'buying') activeTab.value = 'onsale'
+})
+
+// 挂求购表单
+const showPostModal = ref(false)
+const postForm = ref({ price: '', quantity: 1 })
+const posting = ref(false)
+
 onMounted(loadAll)
 
 watch(activeTab, (tab) => {
   if (tab === 'buying' && buyRequests.value.length === 0)  loadBuyRequests()
-  if (tab === 'delegate' && delegates.value.length === 0)   loadDelegates()
   if (tab === 'history' && history.value.length === 0)      loadHistory()
 })
 
@@ -34,8 +50,7 @@ async function loadAll() {
     const res = await store.fetchResale(route.params.id)
     meta.value = res.meta
     orders.value = res.orders
-    // 并行拉求购和委托（mock server 会返回空数组或真实数据）
-    await Promise.allSettled([loadBuyRequests(), loadDelegates(), loadHistory()])
+    await Promise.allSettled([loadBuyRequests(), loadHistory()])
   } finally {
     loading.value = false
   }
@@ -50,26 +65,10 @@ async function loadBuyRequests() {
       price: Number(b.price).toFixed(2),
       quantity: b.quantity || 1,
       userName: b.userName || '匿名用户',
-      createdAt: b.createdAt || '',
+      createdAt: (b.createdAt || '').slice(0, 16).replace('T', ' '),
     }))
   } catch (e) {
     buyRequests.value = []
-  }
-}
-
-async function loadDelegates() {
-  try {
-    const id = route.params.id
-    const res = await request.get('/delegates', { params: { collectibleId: id, status: 1, page: 1, pageSize: 50 } })
-    delegates.value = (res.list || []).map((d) => ({
-      id: d.id,
-      userName: d.userName || '经纪人',
-      minPrice: Number(d.minPrice || 0).toFixed(2),
-      successRate: d.successRate || 0,
-      desc: d.remark || '专业代售',
-    }))
-  } catch (e) {
-    delegates.value = []
   }
 }
 
@@ -79,10 +78,9 @@ async function loadHistory() {
     const res = await request.get('/resale/history', { params: { collectibleId: id, page: 1, pageSize: 50 } })
     history.value = (res.list || []).map((h) => ({
       id: h.id,
-      title: h.title || h.price ? `¥${h.price} 成交` : '',
       price: h.price ? Number(h.price).toFixed(2) : '',
-      at: h.createdAt || '',
-      fromUser: h.fromUser || h.userName || '',
+      fromUser: h.fromUser || '',
+      createdAt: (h.createdAt || '').slice(0, 16).replace('T', ' '),
     }))
   } catch (e) {
     history.value = []
@@ -115,23 +113,44 @@ function goOrder(o) {
 
 function acceptBuyRequest(b) {
   if (!requireLogin(route.fullPath)) return
-  // 我是卖家 → 接受此求购，自动创建订单
   request.post('/buy-requests/' + b.id + '/accept').then((res) => {
     router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: res.no || '' } })
-  })
+  }).catch(() => {})
 }
 
-function acceptDelegate(d) {
-  if (!requireLogin(route.fullPath)) return
-  // 选择经纪人挂单
-  request.post('/delegates/' + d.id + '/accept', { collectibleId: route.params.id }).then(() => {
-    alert('已委托该经纪人代售，订单号将通过站内消息告知')
-  })
-}
-
+// 打开挂求购弹窗
 function openPostBuy() {
   if (!requireLogin(route.fullPath)) return
-  alert('我要挂求购：\n后端尚未对接，但数据结构已预留\nPOST /api/buy-requests { collectibleId, price, quantity }')
+  postForm.value = { price: '', quantity: 1 }
+  showPostModal.value = true
+}
+
+// 提交求购挂单
+async function submitPostBuy() {
+  const price = parseFloat(postForm.value.price)
+  const qty = parseInt(postForm.value.quantity) || 1
+  if (!price || price <= 0) {
+    alert('请输入有效的求购单价')
+    return
+  }
+  if (qty < 1) {
+    alert('求购数量至少为 1')
+    return
+  }
+  posting.value = true
+  try {
+    await request.post('/buy-requests', {
+      collectibleId: route.params.id,
+      price,
+      quantity: qty,
+    })
+    showPostModal.value = false
+    await loadBuyRequests()
+  } catch (e) {
+    alert(e?.message || '发布求购失败')
+  } finally {
+    posting.value = false
+  }
 }
 </script>
 
@@ -158,12 +177,7 @@ function openPostBuy() {
 
     <div class="resale-tabs">
       <span
-        v-for="t in [
-          { key: 'onsale', label: '当前寄售' },
-          { key: 'buying', label: '当前求购' },
-          { key: 'delegate', label: '当前委托' },
-          { key: 'history', label: '成交动态' }
-        ]"
+        v-for="t in tabs"
         :key="t.key"
         class="resale-tabs__item"
         :class="{ active: activeTab === t.key }"
@@ -225,38 +239,15 @@ function openPostBuy() {
         </div>
       </template>
 
-      <!-- 当前委托 -->
-      <template v-else-if="activeTab === 'delegate'">
-        <div class="resale-list__item" v-for="d in delegates" :key="d.id">
-          <div class="resale-buy">
-            <div class="resale-buy__row">
-              <span class="resale-buy__label">经纪人</span>
-              <span class="resale-buy__user">{{ d.userName }}</span>
-            </div>
-            <div class="resale-buy__row">
-              <span class="resale-buy__label">底价</span>
-              <span class="resale-buy__price">¥{{ d.minPrice }}</span>
-            </div>
-            <div class="resale-buy__row">
-              <span class="resale-buy__label">成交率</span>
-              <span class="resale-buy__rate">{{ d.successRate }}%</span>
-            </div>
-          </div>
-          <div class="resale-list__right">
-            <button class="resale-list__buy resale-list__buy--blue" @click="acceptDelegate(d)">委托TA</button>
-          </div>
-        </div>
-      </template>
-
       <!-- 成交动态 -->
       <template v-else-if="activeTab === 'history'">
         <div class="resale-history__item" v-for="h in history" :key="h.id">
           <div class="resale-history__dot"></div>
           <div class="resale-history__body">
-            <p class="resale-history__title">{{ h.title || (h.price ? '成交' : '动态') }}</p>
+            <p class="resale-history__title">{{ h.price ? '成交' : '动态' }}</p>
             <p class="resale-history__meta">
               <span v-if="h.fromUser">{{ h.fromUser }}</span>
-              <span v-if="h.at"> · {{ h.at }}</span>
+              <span v-if="h.createdAt"> · {{ h.createdAt }}</span>
             </p>
           </div>
           <div class="resale-history__price" v-if="h.price">¥{{ h.price }}</div>
@@ -265,7 +256,6 @@ function openPostBuy() {
 
       <div v-if="(activeTab === 'onsale' && !orders.length) ||
                    (activeTab === 'buying' && !buyRequests.length) ||
-                   (activeTab === 'delegate' && !delegates.length) ||
                    (activeTab === 'history' && !history.length)"
            class="resale-list__empty">
         <p>{{ loading ? '加载中...' : '暂无数据' }}</p>
@@ -278,6 +268,26 @@ function openPostBuy() {
     <div class="resale-float safe-bottom" v-else-if="activeTab === 'buying'">
       <button class="resale-float__btn resale-float__btn--green" @click="openPostBuy">+ 我要挂求购</button>
     </div>
+
+    <!-- 挂求购弹窗 -->
+    <AppModal v-model:show="showPostModal" title="发布求购挂单">
+      <div class="post-buy-form">
+        <div class="post-buy-row">
+          <label>求购单价（¥）</label>
+          <input v-model="postForm.price" type="number" step="0.01" min="0" placeholder="请输入单价" />
+        </div>
+        <div class="post-buy-row">
+          <label>求购数量</label>
+          <input v-model="postForm.quantity" type="number" min="1" value="1" />
+        </div>
+        <div class="post-buy-actions">
+          <button class="post-buy-cancel" @click="showPostModal = false">取消</button>
+          <button class="post-buy-submit" :disabled="posting" @click="submitPostBuy">
+            {{ posting ? '提交中...' : '确认发布' }}
+          </button>
+        </div>
+      </div>
+    </AppModal>
   </div>
 </template>
 
@@ -332,5 +342,42 @@ function openPostBuy() {
 .resale-float__btn--green {
   background: linear-gradient(135deg, #16a34a, #15803d);
   box-shadow: 0 6px 18px rgba(22, 163, 74, 0.3);
+}
+
+.post-buy-form {
+  padding: 8px 0;
+}
+.post-buy-row {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-bottom: 16px;
+}
+.post-buy-row label {
+  font-size: 13px; color: $color-text-secondary; font-weight: 500;
+}
+.post-buy-row input {
+  padding: 10px 12px; border-radius: $radius-md;
+  border: 1px solid rgba(0,0,0,0.1);
+  font-size: 14px; color: $color-text-primary;
+  background: $color-bg;
+  outline: none;
+}
+.post-buy-row input:focus {
+  border-color: $color-primary;
+}
+.post-buy-cancel, .post-buy-submit {
+  flex: 1; padding: 10px 0; border: none; border-radius: $radius-md;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.post-buy-actions {
+  display: flex; gap: 12px; margin-top: 8px;
+}
+.post-buy-cancel {
+  background: rgba(0,0,0,0.06); color: $color-text-secondary;
+}
+.post-buy-submit {
+  background: $color-primary; color: #fff;
+}
+.post-buy-submit:disabled {
+  opacity: 0.6; cursor: not-allowed;
 }
 </style>

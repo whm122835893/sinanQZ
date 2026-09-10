@@ -209,6 +209,15 @@ export const QUALIFY_CONDITION_TYPE = {
   2: '满足全部'
 }
 
+// 资格购条件类型（用于前端条件勾选组；key 与后端字段做适配映射）
+// enabledConditions: string[]，如 ['collectible','checkin','invite']
+export const QUALIFY_CONDITION_OPTIONS = [
+  { key: 'collectible', label: '持有藏品', desc: '用户至少持有 1 件所选藏品' },
+  { key: 'checkin',     label: '累计签到', desc: '累计签到天数 ≥ 指定值' },
+  { key: 'invite',      label: '累计邀请', desc: '成功注册的邀请好友数 ≥ 指定值' },
+  { key: 'register',    label: '注册天数', desc: '账号注册满 N 天（预留）' }
+]
+
 // 角色映射（5 角色）
 export const ROLE_MAP = {
   super:    { label: '超级管理员', type: 'danger' },

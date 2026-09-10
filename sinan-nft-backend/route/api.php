@@ -45,6 +45,13 @@ Route::group('/api', function () {
 
     // 寄售挂单池（公开）
     Route::get('resale/listings', 'Resale/pool');
+    Route::get('resale/history',  'Resale/history');
+
+    // 求购挂单（公开列表）
+    Route::get('buy-requests', 'BuyRequest/list');
+
+    // 置换挂单（公开列表）
+    Route::get('swap-offers', 'Swap/list');
 
     // ========== 需要 JWT 认证 ==========
 
@@ -73,6 +80,14 @@ Route::group('/api', function () {
         Route::post('resale/listings',             'Resale/create');
         Route::post('resale/listings/:listingId/cancel', 'Resale/cancel');
         Route::get('resale/listings/mine',          'Resale/mine');
+
+        // 求购挂单
+        Route::post('buy-requests',                 'BuyRequest/create');
+        Route::post('buy-requests/:id/accept',      'BuyRequest/accept');
+
+        // 置换挂单
+        Route::post('swap-offers',                  'Swap/create');
+        Route::post('swap-offers/:id/accept',       'Swap/accept');
 
         // 转赠
         Route::post('transfers',                'Transfers/create');

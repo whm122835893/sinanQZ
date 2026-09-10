@@ -6,7 +6,7 @@
 
 ```
 sinanQZ/
-├── jichao-art-source/     # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
+├── sinan-art-source/      # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
 ├── sinan-admin/           # 管理后台（融合版，Vue 3 + Vite 5 + Pinia + Element Plus + ECharts）
 ├── sinan-nft-backend/     # 后端（ThinkPHP 8 多应用：api = C 端 / admin = 管理端）
 └── database/              # 数据库脚本
@@ -22,7 +22,7 @@ sinanQZ/
 ```
 ┌─────────────┐   /api/**     ┌──────────────────────────────┐
 │  C 端 H5     │ ───────────▶ │  ThinkPHP 8 多应用后端         │
-│ (jichao)    │   JWT-user   │  ├─ app/api    （C 端业务）     │
+│ (sinan)     │   JWT-user   │  ├─ app/api    （C 端业务）     │
 └─────────────┘               │  ├─ app/admin （管理端业务）    │      ┌──────────┐
 ┌─────────────┐   /api/admin  │  ├─ 中间件：AdminAuth(JWT)     │ ──▶  │ MySQL 8  │
 │  管理后台    │ ───────────▶ │  │         AdminPermission(RBAC)│      │ 58 张表   │
@@ -76,10 +76,10 @@ npx vite --port 5174 --host 0.0.0.0
 - 开发代理：`/api/admin/**` → `http://127.0.0.1:8080/admin/**`（见 `vite.config.js`）
 - 默认账号：`admin / admin123`（超级管理员）
 
-### 4. C 端 H5（jichao-art-source）
+### 4. C 端 H5（sinan-art-source）
 
 ```bash
-cd jichao-art-source
+cd sinan-art-source
 npm install
 npm run dev
 ```
