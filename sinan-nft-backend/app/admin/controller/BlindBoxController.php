@@ -658,7 +658,7 @@ class BlindBoxController extends BaseController
                             'serial' => 'SN-' . $c['id'] . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
                         ]);
                         Db::name('airdrop_records')->insert([
-                            'activity_id' => 0,
+                            'activity_id' => null,
                             'task_id'     => $taskId,
                             'user_id'     => $userId,
                             'phone'       => $validUsers[$userId]['phone'],

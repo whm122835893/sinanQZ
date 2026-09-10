@@ -705,7 +705,7 @@ CREATE TABLE `nft_airdrop_snapshots` (
 -- ----------------------------------------------------------------------------
 CREATE TABLE `nft_airdrop_records` (
   `id`                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `activity_id`         INT UNSIGNED    NOT NULL                COMMENT '空投活动ID，FK→nft_airdrop_activities.id',
+  `activity_id`         INT UNSIGNED    NULL DEFAULT NULL       COMMENT '空投活动ID，FK→nft_airdrop_activities.id（独立空投任务发放时为NULL）',
   `user_id`             BIGINT UNSIGNED NULL DEFAULT NULL       COMMENT '接收用户ID，FK→nft_users.id（直投可先手机号后注册）',
   `phone`               VARCHAR(11)     NOT NULL                COMMENT '接收手机号',
   `collectible_id`      INT UNSIGNED    NOT NULL                COMMENT '空投藏品ID，FK→nft_collectibles.id',

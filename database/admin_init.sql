@@ -681,6 +681,34 @@ SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
   'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
+-- 3.10 nft_users 强制登出时间（JwtAuth 中间件依赖：非空时 iat 早于该值的 token 全部失效）
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_users' AND COLUMN_NAME='logout_before')=0,
+  'ALTER TABLE `nft_users` ADD COLUMN `logout_before` DATETIME NULL DEFAULT NULL COMMENT ''强制登出时间（早于该时间的token失效）'' AFTER `is_blacklisted`',
+  'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- 3.11 nft_collectibles 求购开关（管理端藏品列表/C端详情依赖）
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_collectibles' AND COLUMN_NAME='is_buy_request_enabled')=0,
+  'ALTER TABLE `nft_collectibles` ADD COLUMN `is_buy_request_enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT ''是否允许求购：1可 0不可'' AFTER `is_resaleable`',
+  'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- 3.12 nft_community_groups 成员数（管理端社群列表依赖）
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_community_groups' AND COLUMN_NAME='members')=0,
+  'ALTER TABLE `nft_community_groups` ADD COLUMN `members` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT ''成员数'' AFTER `qr_code`',
+  'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- 3.13 nft_airdrop_records.activity_id 允许 NULL（独立空投任务发放不关联活动）
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_airdrop_records' AND COLUMN_NAME='activity_id' AND IS_NULLABLE='NO')=1,
+  'ALTER TABLE `nft_airdrop_records` MODIFY COLUMN `activity_id` INT UNSIGNED NULL DEFAULT NULL COMMENT ''空投活动ID，FK→nft_airdrop_activities.id（独立空投任务发放时为NULL）''',
+  'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
 -- ----------------------------------------------------------------------------
 -- 四、种子数据
 -- ----------------------------------------------------------------------------

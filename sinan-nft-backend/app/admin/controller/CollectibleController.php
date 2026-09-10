@@ -717,7 +717,9 @@ class CollectibleController extends BaseController
         }
 
         // 用户有效性校验（存在、未删除、非黑名单）
-        $validUsers = Db::name('users')->where(function ($q) use ($phones, $idLike) {
+        // 注意：column() 多于2个字段时返回数字索引的行数组而非以id为键，
+        // 必须 select() 后显式取 id，否则 array_keys 会拿到 0/1 等错误“用户ID”
+        $validRows = Db::name('users')->where(function ($q) use ($phones, $idLike) {
             if ($phones) {
                 $q->whereIn('phone', $phones);
             }
@@ -725,7 +727,11 @@ class CollectibleController extends BaseController
                 $q->whereOr('id', 'IN', $idLike);
             }
         })->whereNull('deleted_at')
-            ->where('is_blacklisted', 0)->column('id, phone, uid');
+            ->where('is_blacklisted', 0)->field('id, phone, uid')->select()->toArray();
+        $validUsers = []; // [user_id => ['phone'=>.., 'uid'=>..]]
+        foreach ($validRows as $row) {
+            $validUsers[(int) $row['id']] = ['phone' => $row['phone'], 'uid' => $row['uid']];
+        }
         $validIds = array_map('intval', array_keys($validUsers));
         $invalidCount = count($users) - count($validIds);
         if (!$validIds) {
@@ -782,7 +788,7 @@ class CollectibleController extends BaseController
                         ]);
 
                         Db::name('airdrop_records')->insert([
-                            'activity_id' => 0,
+                            'activity_id' => null,
                             'task_id'     => $taskId,
                             'user_id'     => $userId,
                             'phone'       => $validUsers[$userId]['phone'],
