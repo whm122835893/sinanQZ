@@ -81,7 +81,8 @@ class RewardGrantService
                     if (!$c) {
                         throw new RewardGrantException("藏品 #{$cid} 不存在");
                     }
-                    if ((int) $c['is_blind_box'] === 1 && !isset($config['allowBlindBox'])) {
+                    $isBlindBox = Db::name('blind_boxes')->where('collectible_id', $cid)->count() > 0;
+                    if ($isBlindBox && !isset($config['allowBlindBox'])) {
                         throw new RewardGrantException("藏品 #{$cid} 是盲盒，请选择 blindbox 奖励类型");
                     }
                 }
@@ -452,7 +453,6 @@ class RewardGrantService
         if ($exists) {
             Db::name('qualification_whitelists')->where('id', $exists['id'])->update([
                 'expires_at' => $expires,
-                'status'     => 1,
                 'updated_at' => $now,
             ]);
             $wid = (int) $exists['id'];
@@ -461,7 +461,6 @@ class RewardGrantService
                 'config_id'  => (int) $config['id'],
                 'user_id'    => $userId,
                 'phone'      => $phone,
-                'status'     => 1,
                 'expires_at' => $expires,
                 'created_at' => $now,
                 'updated_at' => $now,

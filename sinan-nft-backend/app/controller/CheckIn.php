@@ -110,18 +110,21 @@ class CheckIn extends BaseController
                 $legacy = json_decode((string) ($configs['checkin_rewards'] ?? ''), true) ?: [];
                 $amount = (int) ($legacy[$streak] ?? 0);
                 if ($amount > 0) {
+                    // 与新版 grantPoints 语义一致：奖励为司南币（points），
+                    // balance_after 必须记录 points 变动后的值，而非 balance+amount
+                    Db::name('wallets')->where('user_id', $userId)->update([
+                        'points'     => Db::raw("points + {$amount}"),
+                        'updated_at' => $now,
+                    ]);
+                    $pointsAfter = (float) Db::name('wallets')->where('user_id', $userId)->value('points');
                     Db::name('wallet_transactions')->insert([
                         'user_id'        => $userId,
                         'trans_type'     => 'reward',
                         'title'          => '签到奖励（连续' . $streak . '天）',
                         'direction'      => 1,
                         'amount'         => $amount,
-                        'balance_after'  => (float) Db::name('wallets')->where('user_id', $userId)->value('balance') + $amount,
+                        'balance_after'  => $pointsAfter,
                         'created_at'     => $now,
-                    ]);
-                    Db::name('wallets')->where('user_id', $userId)->update([
-                        'points'     => Db::raw("points + {$amount}"),
-                        'updated_at' => $now,
                     ]);
                     $reward = [
                         'type'        => 'points',

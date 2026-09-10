@@ -108,10 +108,10 @@ class PurchaseQualifyService
         $result['requirements'] = $requirements;
 
         // A. 额外手机号白名单命中（无条件通道，文档 5.1-4）
+        // 注：nft_qualification_whitelists 无 status 列（管理端添加 API 亦不写入），仅按有效期判定
         $wl = Db::name('qualification_whitelists')
             ->where('config_id', (int) $config['id'])
             ->where('user_id', $userId)
-            ->where('status', 1)
             ->find();
         $whitelistHit = $wl
             && (empty($wl['expires_at']) || strtotime((string) $wl['expires_at']) > $nowTs);

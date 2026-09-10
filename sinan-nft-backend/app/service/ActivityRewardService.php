@@ -203,7 +203,8 @@ class ActivityRewardService
         }
         $result = [];
         foreach ($rewards as $reward) {
-            $type = (string) ($reward['type'] ?? '');
+            // 兼容两种输入：管理端原始格式（type）与已规范化存储格式（rewardType）
+            $type = (string) ($reward['type'] ?? $reward['rewardType'] ?? '');
             $result[] = RewardGrantService::validate($type, $reward);
         }
         return $result;
@@ -442,10 +443,12 @@ class ActivityRewardService
             ->where('status', 'enabled')
             ->whereNull('deleted_at')
             ->where(function ($q) {
-                $q->whereNull('start_time')->where('start_time', '<=', date('Y-m-d H:i:s'), 'OR');
+                // MK-D3 修复：where() 不支持第 4 个逻辑参数（生成悬空 OR 导致 SQL 1064，
+                // 实名审核结算被 settleQuietly 吞掉，邀请/注册奖励从未发放），改用 whereOr
+                $q->whereNull('start_time')->whereOr('start_time', '<=', date('Y-m-d H:i:s'));
             })
             ->where(function ($q) {
-                $q->whereNull('end_time')->where('end_time', '>=', date('Y-m-d H:i:s'), 'OR');
+                $q->whereNull('end_time')->whereOr('end_time', '>=', date('Y-m-d H:i:s'));
             })
             ->order('id', 'desc')
             ->find();
@@ -556,7 +559,8 @@ class ActivityRewardService
             ->where('tiers', '<>', '')
             ->whereNotNull('tiers')
             ->where(function ($q) {
-                $q->whereNull('end_time')->where('end_time', '>=', date('Y-m-d H:i:s'), 'OR');
+                // MK-D3 修复：同上，whereOr 替代第 4 参（悬空 OR SQL 1064）
+                $q->whereNull('end_time')->whereOr('end_time', '>=', date('Y-m-d H:i:s'));
             })
             ->order('id', 'desc')
             ->find();
@@ -577,8 +581,10 @@ class ActivityRewardService
 
         // ---- 1. 被邀请人奖励（每人一次）----
         $inviteeReward = json_decode((string) ($act['invitee_reward_config'] ?? ''), true);
-        if ($inviteeReward && !empty($inviteeReward['type'])) {
-            $reward = RewardGrantService::validate((string) $inviteeReward['type'], $inviteeReward);
+        // 兼容已规范化存储格式（rewardType）与原始格式（type）
+        $inviteeType = (string) ($inviteeReward['type'] ?? $inviteeReward['rewardType'] ?? '');
+        if ($inviteeReward && $inviteeType !== '') {
+            $reward = RewardGrantService::validate($inviteeType, $inviteeReward);
             self::grantRewards(
                 [$reward], $inviteeId, 'invite', (int) $act['id'],
                 (string) $act['name'], $grantMode,

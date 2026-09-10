@@ -115,6 +115,8 @@ class MarketingController extends BaseController
                     ]);
                 }
             }
+            // MK-D1：同步镜像到 C 端消费的 priority_sales / priority_sale_whitelists
+            $this->syncPrioritySale((int) $id);
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
@@ -123,6 +125,88 @@ class MarketingController extends BaseController
 
         $this->audit('marketing', 'priority_save', '保存优先购活动「' . $name . '」', ['id' => $id], 'priority_activity', $id);
         return $this->success(['id' => $id], '优先购活动已保存');
+    }
+
+    /**
+     * MK-D1 修复：管理端优先购双轨同步
+     *
+     * 管理端配置体系（priority_activities + priority_whitelists）保存后，
+     * 镜像同步到 C 端消费体系（priority_sales + priority_sale_whitelists）：
+     * - 按藏品定位唯一 sale 行（priority_activities.collectible_id 唯一）：
+     *   不存在则创建，存在则覆盖名称/窗口/状态（status: enabled→1，其余→0）；
+     *   活动未配置时间时 start=now、end=2099-12-31（C 端两列 NOT NULL）
+     * - 白名单逐行 upsert（uk_sale_user）：phone/max_quantity/expires_at/status
+     *   以管理端为准（管理端显式配置覆盖奖励叠加值），used_quantity 保留（已购不重置）
+     * - 须在调用方事务内执行
+     *
+     * @return int 同步目标 priority_sales.id
+     */
+    private function syncPrioritySale(int $activityId): int
+    {
+        $act = Db::name('priority_activities')->where('id', $activityId)->find();
+        if (!$act) {
+            return 0;
+        }
+
+        $now   = date('Y-m-d H:i:s');
+        $start = $act['start_time'] ?: $now;
+        $end   = $act['end_time'] ?: '2099-12-31 23:59:59';
+        $saleStatus = $act['status'] === 'enabled' ? 1 : 0;
+
+        $sale = Db::name('priority_sales')->where('collectible_id', $act['collectible_id'])->lock(true)->find();
+        if ($sale) {
+            Db::name('priority_sales')->where('id', $sale['id'])->update([
+                'name'       => $act['name'],
+                'status'     => $saleStatus,
+                'start_time' => $start,
+                'end_time'   => $end,
+                'updated_at' => $now,
+            ]);
+            $saleId = (int) $sale['id'];
+        } else {
+            $saleId = (int) Db::name('priority_sales')->insertGetId([
+                'collectible_id' => $act['collectible_id'],
+                'name'           => $act['name'],
+                'status'         => $saleStatus,
+                'start_time'     => $start,
+                'end_time'       => $end,
+                'created_at'     => $now,
+                'updated_at'     => $now,
+            ]);
+        }
+
+        $rows = Db::name('priority_whitelists')->where('activity_id', $activityId)->select()->toArray();
+        foreach ($rows as $w) {
+            $expires = $w['expires_at'] ?: $end;
+            $exists  = Db::name('priority_sale_whitelists')
+                ->where('priority_sale_id', $saleId)
+                ->where('user_id', $w['user_id'])
+                ->lock(true)
+                ->find();
+            if ($exists) {
+                Db::name('priority_sale_whitelists')->where('id', $exists['id'])->update([
+                    'phone'       => $w['phone'],
+                    'max_quantity' => $w['max_quantity'],
+                    'expires_at'  => $expires,
+                    'status'      => 1,
+                    'updated_at'  => $now,
+                ]);
+            } else {
+                Db::name('priority_sale_whitelists')->insert([
+                    'priority_sale_id' => $saleId,
+                    'user_id'          => $w['user_id'],
+                    'phone'            => $w['phone'],
+                    'max_quantity'     => $w['max_quantity'],
+                    'used_quantity'    => 0,
+                    'expires_at'       => $expires,
+                    'status'           => 1,
+                    'created_at'       => $now,
+                    'updated_at'       => $now,
+                ]);
+            }
+        }
+
+        return $saleId;
     }
 
     /**
@@ -206,17 +290,26 @@ class MarketingController extends BaseController
         }
 
         $now = date('Y-m-d H:i:s');
-        Db::name('priority_whitelists')->insert([
-            'activity_id'  => $activityId,
-            'user_id'      => $user['id'],
-            'phone'        => $phone,
-            'max_quantity' => $maxQuantity,
-            'used_quantity'=> 0,
-            'expires_at'   => $expiresAt,
-            'status'       => 1,
-            'created_at'   => $now,
-            'updated_at'   => $now,
-        ]);
+        Db::startTrans();
+        try {
+            Db::name('priority_whitelists')->insert([
+                'activity_id'  => $activityId,
+                'user_id'      => $user['id'],
+                'phone'        => $phone,
+                'max_quantity' => $maxQuantity,
+                'used_quantity'=> 0,
+                'expires_at'   => $expiresAt,
+                'status'       => 1,
+                'created_at'   => $now,
+                'updated_at'   => $now,
+            ]);
+            // MK-D1：同步镜像到 C 端白名单
+            $this->syncPrioritySale($activityId);
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '添加失败：' . $e->getMessage());
+        }
 
         $this->audit('marketing', 'priority_whitelist_add',
             '优先购白名单添加（活动「' . $act['name'] . '」用户 ' . $phone . '，限购 ' . $maxQuantity . ' 份）',
@@ -238,7 +331,26 @@ class MarketingController extends BaseController
         }
 
         $act = Db::name('priority_activities')->where('id', (int) $row['activity_id'])->find();
-        Db::name('priority_whitelists')->where('id', $id)->delete();
+        Db::startTrans();
+        try {
+            Db::name('priority_whitelists')->where('id', $id)->delete();
+            // MK-D1：同步撤销 C 端白名单资格（软失效，保留审计痕迹）
+            if ($act) {
+                $saleId = (int) Db::name('priority_sales')
+                    ->where('collectible_id', $act['collectible_id'])
+                    ->value('id');
+                if ($saleId > 0) {
+                    Db::name('priority_sale_whitelists')
+                        ->where('priority_sale_id', $saleId)
+                        ->where('user_id', $row['user_id'])
+                        ->update(['status' => 0, 'updated_at' => date('Y-m-d H:i:s')]);
+                }
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '移除失败：' . $e->getMessage());
+        }
 
         $this->audit('marketing', 'priority_whitelist_remove',
             '移除优先购白名单（活动「' . ($act['name'] ?? '#' . $row['activity_id']) . '」用户 ' . $row['phone'] . '）',
@@ -1538,7 +1650,7 @@ class MarketingController extends BaseController
         $out = fopen('php://output', 'w');
         // BOM 头（Excel 乱码）
         fwrite($out, "\xEF\xBB\xBF");
-        fputcsv($out, ['记录ID', '活动类型', '活动ID', '活动名称', '用户ID', '手机号', '奖励类型', '奖励内容', '状态', '发放时间', '发放结果', '创建时间']);
+        fputcsv($out, ['记录ID', '活动类型', '活动ID', '活动名称', '用户ID', '手机号', '奖励类型', '奖励内容', '状态', '发放时间', '发放结果', '创建时间'], ',', '"', '\\');
         foreach ($rows as $row) {
             fputcsv($out, [
                 $row['id'],
@@ -1553,7 +1665,7 @@ class MarketingController extends BaseController
                 $row['issued_at'] ?: '',
                 $row['issue_result'] ?: '',
                 $row['created_at'],
-            ]);
+            ], ',', '"', '\\');
         }
         fclose($out);
         exit;
