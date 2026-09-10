@@ -13,7 +13,7 @@
 --   1. 本脚本可重复执行：新表 DROP 后重建；ALTER 通过 information_schema
 --      条件判断，已存在则跳过（兼容 MySQL 8 与 MariaDB）
 --   2. 管理员与 C 端用户完全隔离：独立表、独立 JWT 密钥
---   3. 默认超管账号 admin / Admin@123456（首次登录后请立即修改）
+--   3. 默认超管账号 admin / admin123（首次登录后请立即修改）
 --   4. 敏感配置（短信密钥、支付密钥）通过应用层 AES-256-CBC 加密存储，
 --      本脚本仅写入明文占位，由后台页面保存时加密
 -- ============================================================================
@@ -797,11 +797,11 @@ INSERT INTO `nft_admin_permissions` (`id`, `name`, `code`, `module`, `type`, `pa
 (1800, '平台运维', 'platform:log', 'platform', 1, 0, '/platform/logs', 'Delete', 18),
 (1801, '一键清库', 'platform:cleanup', 'platform', 2, 1800, '', '', 1);
 
--- 4.3 超级管理员账号（admin / Admin@123456，首次登录后请修改）
+-- 4.3 超级管理员账号（admin / admin123，首次登录后请修改）
 INSERT INTO `nft_admin_users`
   (`id`, `username`, `password_hash`, `real_name`, `role_id`, `phone`, `status`)
 VALUES
-  (1, 'admin', '$2y$10$Np3xWwfIO6UhrWRGguaGH.0oGTihpo.XhqJ1b04ba4IMVkq9psyFC', '超级管理员', 1, '13800000000', 1);
+  (1, 'admin', '$2y$10$MZezM8D3P/6A97GsugEux.HuOiICuhcmmrwHGigMpjehdeCOnQwiG', '超级管理员', 1, '13800000000', 1);
 
 -- 4.4 角色权限映射
 -- 超级管理员：全部权限

@@ -149,6 +149,12 @@ class BlindBoxes extends BaseController
                 'updated_at' => $now,
             ]);
 
+            // 奖品藏品流通量 +1（与发售/空投路径保持一致，保证 circulate = 资产行总数）
+            Db::name('collectibles')->where('id', $prizeCollectibleId)->update([
+                'circulate'  => Db::raw('circulate + 1'),
+                'updated_at' => $now,
+            ]);
+
             Db::commit();
 
             $prizeCollectible = Db::name('collectibles')->where('id', $prizeCollectibleId)->find();

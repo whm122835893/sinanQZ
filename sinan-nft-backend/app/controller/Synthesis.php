@@ -218,6 +218,12 @@ class Synthesis extends BaseController
                 'updated_at' => $now,
             ]);
 
+            // 产物藏品流通量 +1（与发售/空投/盲盒奖品路径保持一致，保证 circulate = 资产行总数）
+            Db::name('collectibles')->where('id', $act['result_collectible_id'])->update([
+                'circulate'  => Db::raw('circulate + 1'),
+                'updated_at' => $now,
+            ]);
+
             // 写合成记录
             Db::name('synthesis_records')->insert([
                 'user_id'                    => $userId,

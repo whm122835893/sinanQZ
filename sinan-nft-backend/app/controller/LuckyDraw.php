@@ -265,6 +265,11 @@ class LuckyDraw extends BaseController
                         'serial'     => $serial,
                         'updated_at' => $now,
                     ]);
+                    // 奖品藏品流通量 +1（与发售/空投/盲盒/合成路径保持一致，保证 circulate = 资产行总数）
+                    Db::name('collectibles')->where('id', $winner['collectible_id'])->update([
+                        'circulate'  => Db::raw('circulate + 1'),
+                        'updated_at' => $now,
+                    ]);
                     Db::name('lucky_draw_records')->where('id', $recordId)->update(['user_collectible_id' => $userCollectibleId]);
                 } elseif ($winner['prize_type'] === 'points') {
                     $coinAmount = (float) ($winner['coin_amount'] ?? 0);

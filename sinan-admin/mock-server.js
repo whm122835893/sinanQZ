@@ -108,5 +108,5 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  司南珍藏 · 管理后台（真实后端联调版）`)
   console.log(`  前端预览: http://localhost:${PORT}`)
   console.log(`  后端代理: ${BACKEND}`)
-  console.log(`  默认账号: admin / Admin@123456\n`)
+  console.log(`  默认账号: admin / admin123\n`)
 })

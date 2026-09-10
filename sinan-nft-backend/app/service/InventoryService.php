@@ -724,19 +724,16 @@ class InventoryService
                 // 配额消耗回退：used_quantity −1（quota_type 6抽奖 / 7其他-合成）
                 $quotaType = $source === 'lucky_draw' ? 6 : 7;
                 $quotaReverted = self::revertQuotaUsage($collectibleId, $quotaType);
-                // 仅走配额路径发放的资产才回退 circulate：
-                // C 端直接合成/抽奖发放不经过配额，发放时未计入 circulate，无条件回减会导致流通量虚低
-                $ok = false;
-                if ($quotaReverted) {
-                    $ok = Db::name('collectibles')
-                        ->where('id', $collectibleId)
-                        ->where('circulate', '>=', 1)
-                        ->update([
-                            'circulate'  => Db::raw('circulate - 1'),
-                            'updated_at' => $now,
-                        ]);
-                }
+                // 所有发放路径（C端直接合成/抽奖 + 配额路径）均已计入 circulate，回收时无条件回减
+                $ok = Db::name('collectibles')
+                    ->where('id', $collectibleId)
+                    ->where('circulate', '>=', 1)
+                    ->update([
+                        'circulate'  => Db::raw('circulate - 1'),
+                        'updated_at' => $now,
+                    ]);
                 $detail['counter'] = "quota[{$quotaType}].used_quantity";
+                $detail['quotaReverted'] = $quotaReverted;
                 break;
 
             default:
@@ -811,7 +808,10 @@ class InventoryService
         $statusMap = [];
         foreach ($byStatus as $row) {
             $statusMap[$row['status']] = (int) $row['cnt'];
-            $assetTotal += (int) $row['cnt'];
+        }
+        // 仅统计流通相关状态（与公式一致）：recovered/destroyed 已从 circulate 扣减，不计入
+        foreach (['held', 'consigned', 'frozen', 'transferred', 'consumed'] as $st) {
+            $assetTotal += $statusMap[$st] ?? 0;
         }
         $sourceMap = [];
         foreach ($bySource as $row) {

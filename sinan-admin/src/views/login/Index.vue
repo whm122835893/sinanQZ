@@ -13,7 +13,7 @@ const adminStore = useAdminStore()
 const site = useSiteStore()
 
 const formRef = ref(null)
-const form = ref({ username: 'admin', password: 'Admin@123456' })
+const form = ref({ username: 'admin', password: 'admin123' })
 const submitting = ref(false)
 const year = new Date().getFullYear()
 
@@ -92,7 +92,7 @@ async function onSubmit() {
       </el-form>
 
       <div class="login__hint">
-        默认账号：admin / Admin@123456（超级管理员，已接入真实后端）
+        默认账号：admin / admin123（超级管理员，已接入真实后端）
       </div>
     </div>
 
