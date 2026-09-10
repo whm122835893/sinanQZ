@@ -25,7 +25,7 @@ class Synthesis extends BaseController
                   ->whereOr('a.type', 'permanent');
             })
             ->order('a.start_time', 'desc')
-            ->field('a.id, a.type, a.title, a.rules, a.start_time, a.end_time, a.result_collectible_id, a.per_user_limit, a.total_limit, a.used_count, a.image, c.name as c_name, c.image as c_image')
+            ->field('a.id, a.type, a.title, a.rules, a.start_time, a.end_time, a.result_collectible_id, a.result_quantity, a.per_user_limit, a.total_limit, a.used_count, a.image, c.name as c_name, c.image as c_image')
             ->select()
             ->toArray();
 
@@ -38,6 +38,7 @@ class Synthesis extends BaseController
                 'startTime'        => $a['start_time'],
                 'endTime'          => $a['end_time'],
                 'resultCollectible'=> ['id' => (int) $a['result_collectible_id'], 'name' => $a['c_name'], 'image' => $a['c_image']],
+                'resultQuantity'   => (int) ($a['result_quantity'] ?? 1),
                 'image'            => $a['image'],
                 'perUserLimit'     => (int) $a['per_user_limit'],
                 'totalLimit'       => $a['total_limit'] === null ? null : (int) $a['total_limit'],
@@ -97,6 +98,7 @@ class Synthesis extends BaseController
                 'image'   => $result['image'],
                 'edition' => (int) $result['edition'],
             ],
+            'resultQuantity' => (int) ($act['result_quantity'] ?? 1),
             'materials' => array_map(function ($m) use ($myAvailable) {
                 return [
                     'collectibleId' => (int) $m['collectible_id'],
@@ -199,36 +201,44 @@ class Synthesis extends BaseController
                 'updated_at'  => $now,
             ]);
 
-            // 生成产物：先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
-            Db::name('user_collectibles')->insert([
-                'user_id'        => $userId,
-                'collectible_id' => $act['result_collectible_id'],
-                'serial'         => gen_serial_placeholder(),
-                'source'         => 'synthesis',
-                'acquired_price' => 0,
-                'acquired_at'    => $now,
-                'status'         => 'held',
-                'created_at'     => $now,
-                'updated_at'     => $now,
-            ]);
-            $resultUcId = (int) Db::name('user_collectibles')->getLastInsID();
-            $resultSerial = 'SN-' . $act['result_collectible_id'] . '-' . str_pad((string) $resultUcId, 4, '0', STR_PAD_LEFT);
-            Db::name('user_collectibles')->where('id', $resultUcId)->update([
-                'serial'     => $resultSerial,
-                'updated_at' => $now,
-            ]);
+            // 生成产物：按 result_quantity 发放（SY23 修复：此前硬编码每次只发 1 份）
+            // 先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
+            $resultQty   = max(1, (int) ($act['result_quantity'] ?? 1));
+            $resultList  = []; // [['id'=>ucId, 'serial'=>serial], ...]
+            $firstResultUcId = 0;
+            for ($i = 0; $i < $resultQty; $i++) {
+                Db::name('user_collectibles')->insert([
+                    'user_id'        => $userId,
+                    'collectible_id' => $act['result_collectible_id'],
+                    'serial'         => gen_serial_placeholder(),
+                    'source'         => 'synthesis',
+                    'acquired_price' => 0,
+                    'acquired_at'    => $now,
+                    'status'         => 'held',
+                    'created_at'     => $now,
+                    'updated_at'     => $now,
+                ]);
+                $resultUcId = (int) Db::name('user_collectibles')->getLastInsID();
+                $resultSerial = 'SN-' . $act['result_collectible_id'] . '-' . str_pad((string) $resultUcId, 4, '0', STR_PAD_LEFT);
+                Db::name('user_collectibles')->where('id', $resultUcId)->update([
+                    'serial'     => $resultSerial,
+                    'updated_at' => $now,
+                ]);
+                $resultList[] = ['id' => $resultUcId, 'serial' => $resultSerial];
+                if ($i === 0) $firstResultUcId = $resultUcId;
+            }
 
-            // 产物藏品流通量 +1（与发售/空投/盲盒奖品路径保持一致，保证 circulate = 资产行总数）
+            // 产物藏品流通量 +N（与发售/空投/盲盒奖品路径保持一致，保证 circulate = 资产行总数）
             Db::name('collectibles')->where('id', $act['result_collectible_id'])->update([
-                'circulate'  => Db::raw('circulate + 1'),
+                'circulate'  => Db::raw('circulate + ' . $resultQty),
                 'updated_at' => $now,
             ]);
 
-            // 写合成记录
+            // 写合成记录（一次合成一条记录，引用首件产物；限次按合成次数计数）
             Db::name('synthesis_records')->insert([
                 'user_id'                    => $userId,
                 'activity_id'                => $activityId,
-                'result_user_collectible_id' => $resultUcId,
+                'result_user_collectible_id' => $firstResultUcId,
                 'created_at'                 => $now,
             ]);
             $recordId = (int) Db::name('synthesis_records')->getLastInsID();
@@ -246,13 +256,15 @@ class Synthesis extends BaseController
 
             $resultC = Db::name('collectibles')->where('id', $act['result_collectible_id'])->find();
             return $this->success([
-                'recordId' => $recordId,
+                'recordId'       => $recordId,
+                'resultQuantity' => $resultQty,
                 'resultCollectible' => [
                     'id'     => (int) $resultC['id'],
                     'name'   => $resultC['name'],
                     'image'  => $resultC['image'],
-                    'no'     => $resultSerial,
+                    'no'     => $resultList[0]['serial'],
                 ],
+                'resultSerials'  => array_column($resultList, 'serial'),
             ]);
         } catch (\Throwable $e) {
             Db::rollback();

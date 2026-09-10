@@ -158,13 +158,34 @@ CREATE TABLE IF NOT EXISTS `nft_decompose_records` (
 -- 5. 给 collectibles 加 schedule_time（定时发售调度）
 --    原表有 onsale_at 作为发售时间点，但没有"到点自动上架"的调度字段
 -- ----------------------------------------------------------------
-ALTER TABLE `nft_collectibles`
-  ADD COLUMN IF NOT EXISTS `schedule_time` DATETIME NULL COMMENT '定时上架时间（到点自动从 upcoming→onsale）' AFTER `onsale_at`,
-  ADD COLUMN IF NOT EXISTS `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT '是否定时发售（1=启用）' AFTER `schedule_time`;
+-- MySQL 8.0 不支持 ADD COLUMN IF NOT EXISTS（MariaDB 语法），改用 information_schema 幂等判断
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_collectibles' AND COLUMN_NAME = 'schedule_time');
+SET @ddl := IF(@col = 0,
+  'ALTER TABLE `nft_collectibles` ADD COLUMN `schedule_time` DATETIME NULL COMMENT \'定时上架时间（到点自动从 upcoming→onsale）\' AFTER `onsale_at`',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-ALTER TABLE `nft_blind_boxes`
-  ADD COLUMN IF NOT EXISTS `schedule_time` DATETIME NULL COMMENT '定时上架时间' AFTER `onsale_at`,
-  ADD COLUMN IF NOT EXISTS `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT '是否定时发售' AFTER `schedule_time`;
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_collectibles' AND COLUMN_NAME = 'is_scheduled');
+SET @ddl := IF(@col = 0,
+  'ALTER TABLE `nft_collectibles` ADD COLUMN `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT \'是否定时发售（1=启用）\' AFTER `schedule_time`',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_blind_boxes' AND COLUMN_NAME = 'schedule_time');
+SET @ddl := IF(@col = 0,
+  'ALTER TABLE `nft_blind_boxes` ADD COLUMN `schedule_time` DATETIME NULL COMMENT \'定时上架时间\' AFTER `opened_count`',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_blind_boxes' AND COLUMN_NAME = 'is_scheduled');
+SET @ddl := IF(@col = 0,
+  'ALTER TABLE `nft_blind_boxes` ADD COLUMN `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT \'是否定时发售\' AFTER `schedule_time`',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- ----------------------------------------------------------------
 -- 6. 回收站：给核心业务表补 deleted_at 软删除字段

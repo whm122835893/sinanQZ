@@ -21,6 +21,8 @@ const featured = store.featured
 const calendarIcon = computed(() => iconTheme.getFeatureIcon('calendar'))
 const activityIcon = computed(() => iconTheme.getFeatureIcon('activity'))
 const lotteryIcon  = computed(() => iconTheme.getFeatureIcon('lottery'))
+// 抽签购暂无专属主题图标，回退复用抽奖图标
+const raffleIcon   = computed(() => iconTheme.getFeatureIcon('raffle') || iconTheme.getFeatureIcon('lottery'))
 
 // 发售倒计时：每秒刷新状态
 const now = ref(Date.now())
@@ -170,6 +172,7 @@ const notices = [
 function goCalendar() { router.push('/calendar') }
 function goActivity() { router.push('/activity') }
 function goLottery() { router.push('/lottery') }
+function goRaffle() { router.push('/raffle') }
 function goDetail(id) { router.push('/collection/' + id) }
 
 // 关注/取消关注藏品
@@ -289,6 +292,18 @@ function onSign() {
           <span class="side-card__tag">
             <img v-if="lotteryIcon?.type === 'image'" :src="lotteryIcon.image" alt="" draggable="false" @contextmenu.prevent />
             <AppIcon v-else-if="lotteryIcon?.type === 'svg'" :name="lotteryIcon.icon" :size="30" color="#C00000" />
+          </span>
+        </div>
+        <div class="side-card" @click="goRaffle">
+          <div class="side-card__text">
+            <div class="side-card__head">
+              <span class="side-card__title">抽签购</span>
+            </div>
+            <span class="side-card__sub">中签专享购买</span>
+          </div>
+          <span class="side-card__tag">
+            <img v-if="raffleIcon?.type === 'image'" :src="raffleIcon.image" alt="" draggable="false" @contextmenu.prevent />
+            <AppIcon v-else-if="raffleIcon?.type === 'svg'" :name="raffleIcon.icon" :size="30" color="#C00000" />
           </span>
         </div>
       </div>

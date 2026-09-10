@@ -55,6 +55,39 @@ class Resale extends BaseController
             }
 
             $collectible = Db::name('collectibles')->where('id', $uc['collectible_id'])->find();
+
+            // K01 寄售开关：藏品级 is_resaleable 校验（管理端可实时关闭）
+            if (!$collectible || (int) $collectible['is_resaleable'] !== 1) {
+                Db::rollback();
+                return $this->fail(1001, '该藏品已关闭寄售，无法挂单');
+            }
+
+            // K04 单品价格管控：resale_price_mode 0不限价/1固定价/2区间价
+            $priceMode = (int) $collectible['resale_price_mode'];
+            if ($priceMode === 1) {
+                $fixed = (float) $collectible['resale_price_min'];
+                if (abs($price - $fixed) > 0.001) {
+                    Db::rollback();
+                    return $this->fail(1001, '该藏品为固定价寄售，寄售价必须为 ¥' . number_format($fixed, 2));
+                }
+            } elseif ($priceMode === 2) {
+                $pMin = (float) $collectible['resale_price_min'];
+                $pMax = (float) $collectible['resale_price_max'];
+                if ($price < $pMin || $price > $pMax) {
+                    Db::rollback();
+                    return $this->fail(1001, '该藏品限价寄售，寄售价需在 ¥' . number_format($pMin, 2) . ' ~ ¥' . number_format($pMax, 2) . ' 之间');
+                }
+            }
+
+            // K05 全局最高价：resale_price_global_max（管理端市场配置，实时生效）
+            $globalMax = (float) Db::name('system_configs')
+                ->where('config_key', 'resale_price_global_max')
+                ->value('config_value');
+            if ($globalMax > 0 && $price > $globalMax) {
+                Db::rollback();
+                return $this->fail(1001, '寄售价不能超过平台全局最高价 ¥' . number_format($globalMax, 2));
+            }
+
             $feeRate     = (float) Db::name('system_configs')
                 ->where('config_key', 'resale_fee_rate')
                 ->value('config_value');

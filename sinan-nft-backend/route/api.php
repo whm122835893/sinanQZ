@@ -32,6 +32,11 @@ Route::group('/api', function () {
     // 抽奖
     Route::get('lucky-draw/activity', 'LuckyDraw/activity');
 
+    // 抽签发售（RF03：C 端入口）
+    Route::get('raffle/activities',    'Raffle/activities');
+    Route::get('raffle/activities/:id', 'Raffle/detail')
+        ->middleware(\app\middleware\OptionalJwtAuth::class);
+
     // 文物展馆
     Route::get('artifacts',      'Artifacts/index');
     Route::get('artifacts/:id',  'Artifacts/detail');
@@ -109,6 +114,11 @@ Route::group('/api', function () {
         // 抽奖
         Route::post('lucky-draw/draw',          'LuckyDraw/draw');
         Route::get('lucky-draw/records',        'LuckyDraw/records');
+
+        // 抽签发售
+        Route::post('raffle/activities/:id/register', 'Raffle/register');
+        Route::post('raffle/activities/:id/purchase', 'Raffle/purchase');
+        Route::get('raffle/registrations/mine',        'Raffle/mine');
 
         // 钱包
         Route::get('wallet',                    'Wallet/info');
