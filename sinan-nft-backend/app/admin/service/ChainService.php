@@ -309,13 +309,16 @@ class ChainService
 
         $query->whereNotNull('uc.tx_hash');
 
-        $total = (clone $query)->count();
-        $rows = $query->field('uc.id, uc.tx_hash, uc.block_number, uc.token_id, uc.status AS uc_status, uc.updated_at,
-                               uc.serial, u.uid, u.username, c.name AS collectible_name, c.image,
-                               c.chain_type, c.contract, c.token_standard')
+        // F7-D5 修复：join 必须在 count() 之前注册——
+        // 筛选条件引用了 c./u. 别名（chainCode/keyword），count 时未 join 会直接 SQL 报错
+        $query->field('uc.id, uc.tx_hash, uc.block_number, uc.token_id, uc.status AS uc_status, uc.updated_at,
+                       uc.serial, u.uid, u.username, c.name AS collectible_name, c.image,
+                       c.chain_type, c.contract, c.token_standard')
             ->join('users u', 'u.id = uc.user_id', 'LEFT')
-            ->join('collectibles c', 'c.id = uc.collectible_id', 'LEFT')
-            ->order('uc.block_number', 'desc')
+            ->join('collectibles c', 'c.id = uc.collectible_id', 'LEFT');
+
+        $total = (clone $query)->count();
+        $rows = $query->order('uc.block_number', 'desc')
             ->page($page, $pageSize)
             ->select()->toArray();
 

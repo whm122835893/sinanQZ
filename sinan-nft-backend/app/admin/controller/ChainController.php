@@ -114,10 +114,15 @@ class ChainController extends BaseController
         if (mb_strlen($address) < 10 || mb_strlen($address) > 100) {
             return $this->fail(4220, '合约地址长度需为 10~100 字符');
         }
-        if (Db::name('chain_contracts')->where('contract_address', $address)->whereNull('deleted_at')->count() > 0) {
+        if (Db::name('chain_contracts')->where('contract_address', $address)->count() > 0) {
             return $this->fail(4220, '该合约地址已登记');
         }
 
+        // F7-D6 修复：显式传入的非法类型必须拒绝，不得静默替换为默认值
+        $rawType = $this->request->param('contract_type');
+        if ($rawType !== null && $rawType !== '' && !in_array((string) $rawType, ['erc721', 'erc1155', 'ddc721', 'ddc1155'], true)) {
+            return $this->fail(4220, '合约类型仅支持 erc721/erc1155/ddc721/ddc1155');
+        }
         $type = $this->enumParam('contract_type', ['erc721', 'erc1155', 'ddc721', 'ddc1155'], 'erc721');
 
         $now = date('Y-m-d H:i:s');

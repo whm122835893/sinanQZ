@@ -419,7 +419,8 @@ class CmsController extends BaseController
             return $this->fail(4220, '不支持的协议键：' . $key . '（允许：' . implode('、', array_keys(self::AGREEMENT_KEYS)) . '）');
         }
 
-        $content = trim((string) $this->request->param('content', ''));
+        // F7-D3 修复：协议富文本与公告同样消毒（前端以富文本渲染，防止存储型 XSS）
+        $content = $this->sanitizeRichText(trim((string) $this->request->param('content', '')));
         if ($content === '') {
             return $this->fail(4220, '协议内容不能为空');
         }

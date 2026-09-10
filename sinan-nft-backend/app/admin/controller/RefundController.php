@@ -248,10 +248,12 @@ class RefundController extends BaseController
             $recoveredQty = count($ucs);
 
             // 2. 库存回滚：sold -= recovered（回冲库存池）、circulate -= recovered
+            //    注意：sold/circulate 为 BIGINT UNSIGNED，直接 sold - N 在存量不足时会先溢出报 1690，
+            //    需 CAST 为 SIGNED 再 GREATEST 兜底（防数据漂移导致退款卡死）
             if ($recoveredQty > 0) {
                 Db::name('collectibles')->where('id', $order['collectible_id'])->update([
-                    'sold'      => Db::raw('GREATEST(0, sold - ' . $recoveredQty . ')'),
-                    'circulate' => Db::raw('GREATEST(0, circulate - ' . $recoveredQty . ')'),
+                    'sold'      => Db::raw('GREATEST(CAST(sold AS SIGNED) - ' . $recoveredQty . ', 0)'),
+                    'circulate' => Db::raw('GREATEST(CAST(circulate AS SIGNED) - ' . $recoveredQty . ', 0)'),
                     'updated_at' => $now,
                 ]);
             }
