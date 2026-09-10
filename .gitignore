@@ -54,3 +54,4 @@ sinan-nft-backend/public/uploads/
 # 备份/临时文件
 *.bak
 *.broken
+qa/backups/

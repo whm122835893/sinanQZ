@@ -136,8 +136,13 @@ class PlatformController extends BaseController
         $affectedUsers  = (int) Db::name('users')->whereNull('deleted_at')->count();
         $affectedOrders = (int) Db::name('orders')->count();
 
-        // 执行前备份
-        $backupPath = $this->backupBeforeCleanup();
+        // 执行前备份（F7-D7：备份失败必须阻断清库——本系统最高危操作不允许带伤执行）
+        try {
+            $backupPath = $this->backupBeforeCleanup();
+        } catch (\RuntimeException $e) {
+            $this->audit('platform', 'cleanup_execute', '平台清库已阻断：' . $e->getMessage(), ['reason' => $reason]);
+            return $this->fail(5000, '清库已阻断：' . $e->getMessage());
+        }
 
         $startTime = microtime(true);
         $status    = 1;
@@ -270,9 +275,8 @@ class PlatformController extends BaseController
         exec($cmd, $output, $code);
 
         if ($code !== 0 || !is_file($file) || filesize($file) < 100) {
-            // 备份失败：写入保护性空备份标记（清库仍可执行，但路径注明失败）
-            file_put_contents($file, "-- backup command failed (exit {$code}) at " . date('Y-m-d H:i:s') . "\n");
-            return $file . ' (备份命令失败，请人工核查 mysqldump 可用性)';
+            // F7-D7 修复：备份失败必须抛异常阻断清库（原实现仅写失败标记后继续执行，属最高危操作带伤放行）
+            throw new \RuntimeException('执行前备份失败（mysqldump exit=' . $code . '，file=' . (is_file($file) ? (string) filesize($file) : 'missing') . 'B），请人工核查备份环境后重试');
         }
 
         return $file;

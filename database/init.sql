@@ -154,11 +154,13 @@ CREATE TABLE `nft_wallet_transactions` (
 -- 登录/注册/找回密码验证码：5 分钟有效、60 秒重发频控、一次性核销。
 -- v2.2.1 修正：code 由 VARCHAR(6) 扩为 VARCHAR(128)，支持 bcrypt/scrypt 哈希存储
 -- （6 位仅能存明文，与安全存储要求冲突）
+-- v2.2.2 修正（F7-D8）：scene 由 ENUM 扩为 VARCHAR(32)——管理端敏感操作验证码
+-- （platform_cleanup 等）超出 C 端遗留 ENUM 值域，插入报 1265 截断
 -- ----------------------------------------------------------------------------
 CREATE TABLE `nft_verification_codes` (
   `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `phone`      VARCHAR(11)     NOT NULL                COMMENT '接收手机号',
-  `scene`      ENUM('register','login','reset_password') NOT NULL COMMENT '使用场景：register注册/login登录/reset_password重置密码',
+  `scene`      VARCHAR(32)     NOT NULL                COMMENT '使用场景：C端 register/login/reset_password；管理端敏感操作（platform_cleanup 等）',
   `code`       VARCHAR(128)    NOT NULL                 COMMENT '验证码（哈希存储，bcrypt/scrypt 输出≥60字符）',
   `expires_at` DATETIME(3)     NOT NULL                 COMMENT '过期时间（发送时刻+5分钟）',
   `used_at`    DATETIME(3)     NULL DEFAULT NULL        COMMENT '核销时间（一次性，用过即失效）',
