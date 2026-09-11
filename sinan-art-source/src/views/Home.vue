@@ -495,7 +495,7 @@ function onSign() {
       strong { font-size: 26px; color: $color-primary; font-family: $font-price; }
       span { font-size: 13px; color: $color-text-tertiary; }
     }
-    :deep(.app-btn) { margin-top: auto; }
+    :deep(.app-btn) { margin-top: auto; border-radius: 8px; }
   }
   .grid-side { flex: 1; display: flex; flex-direction: column; gap: 12px; }
   .side-card {

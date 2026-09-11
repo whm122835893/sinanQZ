@@ -74,6 +74,8 @@ export const useSiteStore = defineStore('site', {
       for (const k of Object.keys(DEFAULTS)) {
         if (site[k] !== undefined && site[k] !== null && site[k] !== '') next[k] = site[k]
       }
+      // siteName 允许清空：B 端清空站点名后应回退展示小篆图，而非沿用缓存旧值
+      if (site.siteName !== undefined && site.siteName !== null) next.siteName = site.siteName
       // buttonRadius 需为数值
       if (next.buttonRadius !== undefined) next.buttonRadius = Number(next.buttonRadius) || 0
       Object.assign(this, next)
