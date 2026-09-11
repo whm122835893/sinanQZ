@@ -10,7 +10,7 @@ import request from '@/utils/request'
 
 const CACHE_KEY = 'jc_site_cfg'
 const DEFAULTS = {
-  siteName: '司南艺术',
+  siteName: '',           // 空=展示小篆"千年司南｜一器载道"图；运营在 B 端填 siteName 后覆盖
   siteLogo: '',
   siteAvatar: '',
   themeColor: '#C00000',
