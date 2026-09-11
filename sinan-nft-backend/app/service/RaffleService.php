@@ -21,16 +21,19 @@ class RaffleService
      */
     public static function saveActivity(int $adminId, array $data): array
     {
-        $collectibleId = (int) ($data['collectibleId'] ?? 0);
-        $winnerCount   = (int) ($data['winnerCount'] ?? 0);
-        $saleQuantity  = (int) ($data['saleQuantity'] ?? 1);
-        $ticketPrice   = (float) ($data['ticketPrice'] ?? 0);
-        $salePrice     = (float) ($data['salePrice'] ?? 0);
-        $regStart      = $data['registrationStart'] ?? '';
-        $regEnd        = $data['registrationEnd'] ?? '';
-        $drawTime      = $data['drawTime'] ?? '';
-        $purchaseStart = $data['purchaseStart'] ?? null;
-        $purchaseEnd   = $data['purchaseEnd'] ?? null;
+        $collectibleId   = (int) ($data['collectibleId'] ?? 0);
+        $winnerCount     = (int) ($data['winnerCount'] ?? 0);
+        $saleQuantity    = (int) ($data['saleQuantity'] ?? 1);
+        $ticketPrice     = (float) ($data['ticketPrice'] ?? 0);
+        $salePrice       = (float) ($data['salePrice'] ?? 0);
+        $drawCodeEnabled = (int) ($data['drawCodeEnabled'] ?? 0) ? 1 : 0;
+        $drawCodePrice   = (float) ($data['drawCodePrice'] ?? 0);
+        $maxDrawCodes    = max(0, (int) ($data['maxDrawCodes'] ?? 0));
+        $regStart        = $data['registrationStart'] ?? '';
+        $regEnd          = $data['registrationEnd'] ?? '';
+        $drawTime        = $data['drawTime'] ?? '';
+        $purchaseStart   = $data['purchaseStart'] ?? null;
+        $purchaseEnd     = $data['purchaseEnd'] ?? null;
 
         if ($collectibleId <= 0 || $winnerCount <= 0 || $saleQuantity <= 0) {
             throw new \InvalidArgumentException('参数缺失：藏品、中签数、每人限购');
@@ -47,6 +50,9 @@ class RaffleService
             'name'                  => (string) ($data['name'] ?? ''),
             'description'           => (string) ($data['description'] ?? ''),
             'ticket_price'          => $ticketPrice,
+            'draw_code_enabled'     => $drawCodeEnabled,
+            'draw_code_price'       => $drawCodePrice,
+            'max_draw_codes'        => $maxDrawCodes,
             'limit_per_user'        => (int) ($data['limitPerUser'] ?? 1),
             'winner_count'          => $winnerCount,
             'sale_quantity'         => $saleQuantity,
@@ -97,8 +103,17 @@ class RaffleService
         $existing = Db::name('raffle_registrations')
             ->where('activity_id', $activityId)->where('user_id', $userId)->find();
 
-        $limit = (int) $activity['limit_per_user'];
-        $payAmount = round($ticketCount * (float) $activity['ticket_price'], 2);
+        $limit     = (int) $activity['limit_per_user'];
+        $drawCodes = [];
+
+        // 最大抽签码校验（报名发放计入，0 = 不限）
+        $maxCodes = (int) ($activity['max_draw_codes'] ?? 0);
+        if ($maxCodes > 0) {
+            $current = count(DrawCodeService::activityCodes($userId, $activityId));
+            if ($current + $ticketCount > $maxCodes) {
+                throw new \RuntimeException("每人最多持有 {$maxCodes} 个抽签码");
+            }
+        }
 
         Db::startTrans();
         try {
@@ -109,24 +124,29 @@ class RaffleService
                 }
                 Db::name('raffle_registrations')->where('id', $existing['id'])->update([
                     'ticket_count' => $newCount,
-                    'pay_amount'   => round((float) $existing['pay_amount'] + $payAmount, 2),
                 ]);
             } else {
                 Db::name('raffle_registrations')->insert([
                     'activity_id'  => $activityId,
                     'user_id'      => $userId,
                     'ticket_count' => $ticketCount,
-                    'pay_amount'   => $payAmount,
-                    'pay_status'   => (float) $activity['ticket_price'] > 0 ? 0 : 1,
+                    'pay_amount'   => 0,
+                    'pay_status'   => 1,
                 ]);
             }
+
+            // 免费报名：每报名 1 票（1 次报名）发放 1 个抽签码凭证，可累积
+            for ($i = 0; $i < $ticketCount; $i++) {
+                $drawCodes[] = DrawCodeService::grant($userId, DrawCodeService::SOURCE_RAFFLE, $activityId);
+            }
+
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
             throw $e;
         }
 
-        return ['ticketCount' => $ticketCount, 'payAmount' => $payAmount];
+        return ['ticketCount' => $ticketCount, 'payAmount' => 0, 'drawCodes' => $drawCodes];
     }
 
     /**

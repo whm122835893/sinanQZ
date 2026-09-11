@@ -41,6 +41,10 @@ class Collections extends BaseController
         $blindBoxIds = Db::name('blind_boxes')->column('collectible_id');
         $blindBoxSet = array_flip($blindBoxIds);
 
+        // 优先购 / 资格购藏品集合（用于列表角标标签 saleType，联动点 10.1）
+        $prioritySet    = array_flip(array_filter(Db::name('priority_sales')->where('status', 1)->column('collectible_id')));
+        $eligibilitySet = array_flip(array_filter(Db::name('qualification_configs')->where('is_enabled', 1)->column('collectible_id')));
+
         $query = Db::name('collectibles')
             ->whereNull('deleted_at')
             ->where('is_release', 1)
@@ -50,7 +54,7 @@ class Collections extends BaseController
         $total = $query->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
-        $items = array_map(function ($c) use ($blindBoxSet) {
+        $items = array_map(function ($c) use ($blindBoxSet, $prioritySet, $eligibilitySet) {
             $sold     = (int) ($c['sold'] ?? 0);
             $locked   = (int) ($c['locked_quantity'] ?? 0);
             $edition  = (int) ($c['edition'] ?? 0);
@@ -69,6 +73,9 @@ class Collections extends BaseController
                 'status'    => $c['status'],
                 'stock'     => max(0, $edition - $sold - $locked),
                 'isBlindBox' => isset($blindBoxSet[$cid]),
+                'saleType'   => isset($blindBoxSet[$cid]) ? 'blindbox'
+                    : (isset($prioritySet[$cid]) ? 'priority'
+                        : (isset($eligibilitySet[$cid]) ? 'eligibility' : 'normal')),
             ];
         }, $list);
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
+use app\service\DrawCodeService;
 use app\service\RaffleService;
 use think\facade\Db;
 
@@ -84,25 +85,36 @@ class Raffle extends BaseController
         $userId = $this->userId();
         $id     = $this->intParam('id');
 
-        $r = Db::name('raffle_activities')->alias('r')
-            ->join('collectibles c', 'c.id = r.collectible_id', 'LEFT')
-            ->where('r.id', $id)
-            ->whereNull('r.deleted_at')
-            ->field('r.*, c.name as collectible_name, c.image as collectible_image, c.price as collectible_price')
-            ->find();
+        $r = Db::name('raffle_activities')->where('id', $id)->whereNull('deleted_at')->find();
         if (!$r) return $this->fail(1002, '活动不存在');
         if ((int) $r['status'] === 0) return $this->fail(1002, '活动不存在');
+
+        // 关联藏品完整字段（对齐 /api/collections/:id 详情，供前端复用藏品详情页样式）
+        $c = Db::name('collectibles')->where('id', (int) $r['collectible_id'])->whereNull('deleted_at')->find();
+        $collectible = $c ? [
+            'id'               => (int) $c['id'],
+            'name'             => $c['name'],
+            'subtitle'         => $c['subtitle'] ?? '',
+            'image'            => $c['image'] ?? '',
+            'price'            => (float) $c['price'],
+            'edition'          => (int) $c['edition'],
+            'issueCount'       => (int) $c['edition'],
+            'circulationCount' => (int) $c['circulate'],
+            'todayCount'       => (int) $c['vol'],
+            'description'      => $c['description'] ?? '',
+            'issuer'           => $c['issuer'] ?? '司南文创',
+        ] : [
+            'id'    => (int) $r['collectible_id'],
+            'name'  => '',
+            'image' => '',
+        ];
 
         $now = date('Y-m-d H:i:s');
         $data = [
             'activityId'         => (int) $r['id'],
             'name'               => $r['name'],
             'description'        => $r['description'] ?? '',
-            'collectible'       => [
-                'id'    => (int) $r['collectible_id'],
-                'name'  => $r['collectible_name'] ?? '',
-                'image' => $r['collectible_image'] ?? '',
-            ],
+            'collectible'        => $collectible,
             'ticketPrice'       => (float) $r['ticket_price'],
             'limitPerUser'      => (int) $r['limit_per_user'],
             'winnerCount'       => (int) $r['winner_count'],
@@ -115,6 +127,14 @@ class Raffle extends BaseController
             'purchaseEnd'       => $r['purchase_end'],
             'status'            => (int) $r['status'],
             'phase'             => $this->phase($r, $now),
+            'drawCodeEnabled'   => (int) ($r['draw_code_enabled'] ?? 0) === 1,
+            'drawCodePrice'     => (float) ($r['draw_code_price'] ?? 0),
+            'maxDrawCodes'      => (int) ($r['max_draw_codes'] ?? 0),
+            'drawCodeCount'     => $userId ? DrawCodeService::count($userId) : 0,
+            'drawCodes'         => $userId ? DrawCodeService::codes($userId) : [],
+            'drawCodeCapped'    => $userId
+                && (int) ($r['max_draw_codes'] ?? 0) > 0
+                && count(DrawCodeService::activityCodes($userId, $id)) >= (int) ($r['max_draw_codes'] ?? 0),
         ];
 
         // 我的报名状态（draw_status 不暴露他人信息）
@@ -128,6 +148,7 @@ class Raffle extends BaseController
                     'ticketCount'       => (int) $reg['ticket_count'],
                     'payAmount'          => (float) $reg['pay_amount'],
                     'payStatus'          => (int) $reg['pay_status'],
+                    'drawCodes'          => DrawCodeService::activityCodes($userId, $id),
                     'drawStatus'         => (int) $reg['draw_status'],
                     'purchasedQuantity'  => (int) ($reg['purchased_quantity'] ?? 0),
                     'purchasable'        => $this->purchasable($r, $reg, $now),
@@ -155,51 +176,10 @@ class Raffle extends BaseController
         if (!$activity) return $this->fail(1002, '活动不存在');
         if ((int) $activity['status'] !== 1) return $this->fail(1001, '活动当前不在报名中');
 
-        $ticketPrice = (float) $activity['ticket_price'];
-        $payAmount   = round($ticketPrice * $ticketCount, 2);
-
-        Db::startTrans();
+        // 免费报名：报名成功即发放抽签码凭证（每 1 次报名发 1 码）
         try {
-            // 收费报名：先锁钱包校验余额
-            $wallet = null;
-            if ($payAmount > 0) {
-                $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
-                if (!$wallet || (float) $wallet['available'] < $payAmount) {
-                    Db::rollback();
-                    return $this->fail(4003, '余额不足，无法支付报名费');
-                }
-            }
-
-            // 服务内部嵌套事务（savepoint），报名写入/限报校验
             $reg = RaffleService::register($id, $userId, $ticketCount);
-
-            // 扣报名费 + 流水 + 置已支付
-            if ($payAmount > 0) {
-                $now = date('Y-m-d H:i:s.v');
-                Db::name('wallets')->where('user_id', $userId)->update([
-                    'balance'    => Db::raw("balance - {$payAmount}"),
-                    'available'  => Db::raw("available - {$payAmount}"),
-                    'updated_at' => $now,
-                ]);
-                Db::name('wallet_transactions')->insert([
-                    'user_id'       => $userId,
-                    'trans_type'    => 'buy',
-                    'title'         => '抽签报名费',
-                    'direction'     => 2,
-                    'amount'        => $payAmount,
-                    'balance_after' => (float) $wallet['available'] - $payAmount,
-                    'biz_no'        => 'RAFFLE-' . $id,
-                    'created_at'    => $now,
-                ]);
-                Db::name('raffle_registrations')
-                    ->where('activity_id', $id)
-                    ->where('user_id', $userId)
-                    ->update(['pay_status' => 1]);
-            }
-
-            Db::commit();
         } catch (\Throwable $e) {
-            Db::rollback();
             $msg = $e->getMessage();
             return $this->fail(1001, $msg ?: '报名失败');
         }
@@ -207,7 +187,89 @@ class Raffle extends BaseController
         return $this->success([
             'activityId'  => (int) $id,
             'ticketCount' => $reg['ticketCount'] ?? $ticketCount,
-            'payAmount'   => $payAmount,
+            'drawCodes'   => $reg['drawCodes'] ?? [],
+        ]);
+    }
+
+    /**
+     * POST /api/raffle/activities/:id/purchase-draw-code { quantity }
+     * 购买抽签码：每活动开关（draw_code_enabled），单价 draw_code_price 与藏品 sale_price 分离，余额扣款
+     */
+    public function purchaseDrawCode()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $id  = $this->intParam('id');
+        $qty = max(1, $this->intParam('quantity', 1));
+        if ($id <= 0) return $this->fail(1001, '活动不存在');
+
+        Db::startTrans();
+        try {
+            $act = Db::name('raffle_activities')->where('id', $id)->whereNull('deleted_at')->lock(true)->find();
+            if (!$act) { Db::rollback(); return $this->fail(1002, '活动不存在'); }
+            if ((int) $act['draw_code_enabled'] !== 1) {
+                Db::rollback();
+                return $this->fail(1001, '当前活动未开放购买抽签码');
+            }
+
+            $unitPrice  = (float) $act['draw_code_price'];
+            if ($unitPrice <= 0) {
+                Db::rollback();
+                return $this->fail(1001, '抽签码价格未配置');
+            }
+
+            // 最大抽签码校验（0 = 不限）
+            $maxCodes = (int) ($act['max_draw_codes'] ?? 0);
+            if ($maxCodes > 0) {
+                $current = count(DrawCodeService::activityCodes($userId, $id));
+                if ($current + $qty > $maxCodes) {
+                    Db::rollback();
+                    return $this->fail(1001, "每人最多持有 {$maxCodes} 个抽签码");
+                }
+            }
+            $totalPrice = round($unitPrice * $qty, 2);
+
+            $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
+            if (!$wallet || (float) $wallet['available'] < $totalPrice) {
+                Db::rollback();
+                return $this->fail(4003, '余额不足');
+            }
+
+            $nowV = date('Y-m-d H:i:s.v');
+            Db::name('wallets')->where('user_id', $userId)->update([
+                'balance'    => Db::raw("balance - {$totalPrice}"),
+                'available'  => Db::raw("available - {$totalPrice}"),
+                'updated_at' => $nowV,
+            ]);
+            Db::name('wallet_transactions')->insert([
+                'user_id'       => $userId,
+                'trans_type'    => 'buy',
+                'title'         => '购买抽签码',
+                'direction'     => 2,
+                'amount'        => $totalPrice,
+                'balance_after' => (float) $wallet['available'] - $totalPrice,
+                'biz_no'        => 'DC-' . $id . '-' . date('ymdHis'),
+                'created_at'    => $nowV,
+            ]);
+
+            $codes = [];
+            for ($i = 0; $i < $qty; $i++) {
+                $codes[] = DrawCodeService::grant($userId, DrawCodeService::SOURCE_PURCHASE, $id);
+            }
+
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            $msg = $e->getMessage();
+            return $this->fail(1001, $msg ?: '购买失败');
+        }
+
+        return $this->success([
+            'activityId' => (int) $id,
+            'quantity'   => $qty,
+            'payAmount'  => $totalPrice,
+            'drawCodes'  => $codes,
         ]);
     }
 

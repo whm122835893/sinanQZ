@@ -17,7 +17,7 @@ export const useCollectionStore = defineStore('collection', () => {
     featured.value = (res.list || []).map((c) => ({
       id: String(c.id),
       name: c.name,
-      tag: c.tag,
+      tag: ({ blindbox: '盲盒', priority: '优先购', eligibility: '资格购' }[c.saleType]) || c.tag || '首发',
       price: Number(c.price).toFixed(2),
       total: `${c.edition}份`,
       coverImage: c.image,

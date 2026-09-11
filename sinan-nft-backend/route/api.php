@@ -126,6 +126,7 @@ Route::group('/api', function () {
         // 抽签发售
         Route::post('raffle/activities/:id/register', 'Raffle/register');
         Route::post('raffle/activities/:id/purchase', 'Raffle/purchase');
+        Route::post('raffle/activities/:id/purchase-draw-code', 'Raffle/purchaseDrawCode');
         Route::get('raffle/registrations/mine',        'Raffle/mine');
 
         // 钱包

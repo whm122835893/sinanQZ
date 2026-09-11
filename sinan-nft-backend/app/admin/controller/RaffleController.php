@@ -61,11 +61,11 @@ class RaffleController extends BaseController
             ->find();
         if (!$row) return $this->fail(4040, '活动不存在');
 
-        $row['registrations'] = Db::name('raffle_registrations')
-            ->where('activity_id', $id)
-            ->join('users u', 'u.id = raffle_registrations.user_id', 'LEFT')
-            ->field('raffle_registrations.*, u.username, u.phone')
-            ->order('id', 'desc')
+        $row['registrations'] = Db::name('raffle_registrations')->alias('reg')
+            ->join('users u', 'u.id = reg.user_id', 'LEFT')
+            ->where('reg.activity_id', $id)
+            ->field('reg.*, u.username, u.phone')
+            ->order('reg.id', 'desc')
             ->select()->toArray();
 
         return $this->success(camelize_keys($row));

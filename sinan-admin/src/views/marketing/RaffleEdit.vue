@@ -17,6 +17,9 @@ const form = ref({
   name: '',
   description: '',
   ticketPrice: 0,
+  drawCodeEnabled: false,
+  drawCodePrice: 0,
+  maxDrawCodes: 0,
   limitPerUser: 1,
   winnerCount: 10,
   saleQuantity: 1,
@@ -40,6 +43,9 @@ onMounted(async () => {
       name: res.name,
       description: res.description,
       ticketPrice: res.ticketPrice,
+      drawCodeEnabled: !!res.drawCodeEnabled,
+      drawCodePrice: res.drawCodePrice || 0,
+      maxDrawCodes: res.maxDrawCodes || 0,
       limitPerUser: res.limitPerUser,
       winnerCount: res.winnerCount,
       saleQuantity: res.saleQuantity,
@@ -104,10 +110,6 @@ async function save() {
           <el-option v-for="c in collectibles" :key="c.id" :value="c.id" :label="c.name" />
         </el-select>
       </el-form-item>
-      <el-form-item label="报名费">
-        <el-input-number v-model="form.ticketPrice" :min="0" :precision="2" :step="1" />
-        <span style="margin-left:10px;color:#999;font-size:12px">0 = 免费报名</span>
-      </el-form-item>
       <el-form-item label="每人限报" required>
         <el-input-number v-model="form.limitPerUser" :min="1" />
         <span style="margin-left:10px;color:#999;font-size:12px">同一用户可报名的最大票数</span>
@@ -121,6 +123,18 @@ async function save() {
       </el-form-item>
       <el-form-item label="中签购买价" required>
         <el-input-number v-model="form.salePrice" :min="0" :precision="2" />
+      </el-form-item>
+      <el-form-item label="购买抽签码">
+        <el-switch v-model="form.drawCodeEnabled" />
+        <span style="margin-left:10px;color:#999;font-size:12px">开启后 C 端用户可购买抽签码</span>
+      </el-form-item>
+      <el-form-item label="抽签码单价">
+        <el-input-number v-model="form.drawCodePrice" :min="0" :precision="2" />
+        <span style="margin-left:10px;color:#999;font-size:12px">与中签购买价（藏品价）分离</span>
+      </el-form-item>
+      <el-form-item label="最大抽签码数">
+        <el-input-number v-model="form.maxDrawCodes" :min="0" />
+        <span style="margin-left:10px;color:#999;font-size:12px">每用户在本活动最多持有的抽签码总数（报名+购买），0 = 不限制</span>
       </el-form-item>
       <el-form-item label="报名开始" required>
         <el-date-picker v-model="form.registrationStart" type="datetime" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm" />

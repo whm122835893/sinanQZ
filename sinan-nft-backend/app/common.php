@@ -116,6 +116,15 @@ function gen_order_no(): string
 }
 
 /**
+ * 抽签码：报名后生成的抽签凭证（展示给用户），S + 日期(6) + 随机(6) = 13 字符
+ */
+function gen_draw_code(): string
+{
+    return 'S' . date('ymd')
+        . str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+}
+
+/**
  * 藏品编号占位串（20字符内，保证并发插入不撞唯一索引 uk_collectible_serial）
  */
 function gen_serial_placeholder(): string

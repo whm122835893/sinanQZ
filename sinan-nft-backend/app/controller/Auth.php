@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
+use app\service\DrawCodeService;
 use app\service\JwtService;
 use think\facade\Db;
 
@@ -180,6 +181,8 @@ class Auth extends BaseController
                             'created_at'  => $now,
                             'updated_at'  => $now,
                         ]);
+                        // 邀请注册奖励：邀请人 +1 抽签码（事务内）
+                        DrawCodeService::grant((int) $inviter['id'], DrawCodeService::SOURCE_INVITE);
                     }
                 }
             }

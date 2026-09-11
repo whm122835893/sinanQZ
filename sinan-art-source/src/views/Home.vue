@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
+import request from '@/utils/request'
 import { useCollectionStore } from '@/stores/collection'
 import { useIconThemeStore } from '@/stores/iconTheme'
 import { useSiteStore } from '@/stores/site'
@@ -54,6 +55,34 @@ const featuredWithStatus = computed(() => {
     saleTimeText: formatSaleTime(item.saleTime)
   }))
 })
+
+// 抽签发售（混入藏品发售区：卡片大小与正常藏品一致，左上角角标"抽签购"，点击进抽签详情）
+const raffleSales = ref([])
+const RAFFLE_PHASE_TEXT = {
+  upcoming: '报名未开始',
+  registering: '报名中',
+  drawing: '抽签中',
+  drawn: '已抽签',
+  finished: '已结束'
+}
+async function fetchRaffleSales() {
+  try {
+    const res = await request.get('/raffle/activities', { params: { page: 1, pageSize: 50 } })
+    raffleSales.value = (res.list || []).map((a) => ({
+      id: String(a.activityId),
+      name: a.collectible?.name || a.name,
+      coverImage: a.collectible?.image || '/images/platform-logo.png',
+      price: Number(a.salePrice).toFixed(2),
+      total: `${a.saleQuantity}份`,
+      tag: '抽签购',
+      type: 'raffle',
+      phase: a.phase
+    }))
+  } catch { /* 抽签活动拉取失败静默，不影响藏品发售 */ }
+}
+
+// 首页"藏品发售"区：正常发售藏品 + 抽签发售
+const releaseItems = computed(() => [...featuredWithStatus.value, ...raffleSales.value])
 
 // 发售时间文案：2026.12.09  17:00
 function formatSaleTime(ts) {
@@ -158,6 +187,8 @@ onMounted(() => {
   startAuto()
   saleTimer = setInterval(() => { now.value = Date.now() }, 1000)
   scheduleMidnightUpdate()
+  store.fetchFeatured().catch(() => {})
+  fetchRaffleSales()
 })
 onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer); if (midnightTimer) clearTimeout(midnightTimer) })
 
@@ -171,6 +202,7 @@ function goCalendar() { router.push('/calendar') }
 function goActivity() { router.push('/activity') }
 function goLottery() { router.push('/lottery') }
 function goDetail(id) { router.push('/collection/' + id) }
+function onCardClick(item) { router.push(item.type === 'raffle' ? '/raffle/' + item.id : '/collection/' + item.id) }
 
 // 关注/取消关注藏品
 function onFav(id) {
@@ -302,21 +334,24 @@ function onSign() {
       </div>
       <div class="home-releases__grid">
         <div
-          v-for="item in featuredWithStatus"
+          v-for="item in releaseItems"
           :key="item.id"
           class="release-card"
-          @click="goDetail(item.id)"
+          @click="onCardClick(item)"
         >
           <div class="release-card__cover">
             <img class="release-card__img" :src="item.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <span class="release-card__tag">{{ item.tag }}</span>
-            <span class="release-card__fav" :class="{ active: store.isFavorite(item.id) }" @click.stop="onFav(item.id)">
+            <span v-if="item.type !== 'raffle'" class="release-card__fav" :class="{ active: store.isFavorite(item.id) }" @click.stop="onFav(item.id)">
               <AppIcon :name="store.isFavorite(item.id) ? 'heartFill' : 'heart'" :size="14" />
             </span>
-            <!-- 液态玻璃：发售时间/状态 -->
+            <!-- 液态玻璃：发售时间/状态（抽签发售显示报名阶段） -->
             <div class="release-card__glass">
-              <span v-if="item.status === 'countdown'" class="release-card__status is-time">发售时间：{{ item.saleTimeText }}</span>
-              <span v-else class="release-card__status" :class="{ 'is-soldout': item.status === 'soldout' }">{{ STATUS_TEXT[item.status] }}</span>
+              <span v-if="item.type === 'raffle'" class="release-card__status">{{ RAFFLE_PHASE_TEXT[item.phase] || '抽签购' }}</span>
+              <template v-else>
+                <span v-if="item.status === 'countdown'" class="release-card__status is-time">发售时间：{{ item.saleTimeText }}</span>
+                <span v-else class="release-card__status" :class="{ 'is-soldout': item.status === 'soldout' }">{{ STATUS_TEXT[item.status] }}</span>
+              </template>
             </div>
           </div>
           <p class="release-card__name">{{ item.name }}</p>

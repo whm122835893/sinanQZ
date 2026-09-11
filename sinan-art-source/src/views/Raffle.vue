@@ -83,7 +83,7 @@ onMounted(() => {
               <span class="raffle-card__count">{{ a.winnerCount }} 个名额</span>
             </div>
             <p class="raffle-card__time">报名：{{ a.registrationStart?.slice(5, 16) }} ~ {{ a.registrationEnd?.slice(5, 16) }}</p>
-            <p class="raffle-card__time">开奖：{{ a.drawTime?.slice(5, 16) }}<template v-if="a.ticketPrice > 0"> · 报名费 ¥{{ a.ticketPrice }}/票</template></p>
+            <p class="raffle-card__time">开奖：{{ a.drawTime?.slice(5, 16) }}</p>
           </div>
         </div>
       </div>
