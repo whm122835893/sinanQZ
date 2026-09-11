@@ -50,15 +50,17 @@ class LuckyDraw extends BaseController
             }
         }
 
-        $activityId = $activity ? (int) $activity['id']
-            : (int) (Db::name('lucky_draw_prizes')->min('activity_id') ?: 1);
+        $activityId = $activity ? (int) $activity['id'] : 0;
 
-        $items = Db::name('lucky_draw_prizes')
-            ->where('activity_id', $activityId)
-            ->whereNull('deleted_at')
-            ->order('sort_order', 'asc')
-            ->select()
-            ->toArray();
+        // 无进行中活动 → 返回空奖池（不展示已下线活动的旧奖池，与 draw() 拦截口径一致）
+        $items = $activityId > 0
+            ? Db::name('lucky_draw_prizes')
+                ->where('activity_id', $activityId)
+                ->whereNull('deleted_at')
+                ->order('sort_order', 'asc')
+                ->select()
+                ->toArray()
+            : [];
 
         // 过滤 NULL（非藏品奖），否则 NULL 作数组下标触发 PHP8.1+ 弃用告警、whereIn 出现 0
         $collectibleIds = array_values(array_unique(array_filter(array_column($items, 'collectible_id'))));
@@ -127,7 +129,7 @@ class LuckyDraw extends BaseController
             // 判定"无台账"而双双放行；持用户行锁后第二个事务必然看到首个事务的落库。
             Db::name('users')->where('id', $userId)->lock(true)->find();
 
-            // ---- 1. 定位抽奖活动（启用中 + 时间窗内；无活动实体时回退奖项最小活动号，兼容存量）----
+            // ---- 1. 定位抽奖活动（启用中 + 时间窗内；无活动 → 拦截，禁止回退旧奖池继续抽）----
             $activity = null;
             $acts = Db::name('lucky_draw_activities')
                 ->where('status', 1)
@@ -156,7 +158,10 @@ class LuckyDraw extends BaseController
                     return $this->fail(3002, $eligibility['reason']);
                 }
             } else {
-                $activityId = (int) (Db::name('lucky_draw_prizes')->min('activity_id') ?: 1);
+                // 活动下线（status=0 / 时间窗外）= 运营明确意图停抽：
+                // 直接拦截。旧逻辑静默回退 prizes.min(activity_id) 会从已下线活动继续发奖且无日志。
+                Db::rollback();
+                return $this->fail(3002, '当前没有进行中的抽奖活动');
             }
 
             // ---- 2. 消耗抽奖次数（从未获得过次数的用户可免费抽，兼容存量）----
@@ -279,10 +284,14 @@ class LuckyDraw extends BaseController
                 } elseif ($winner['prize_type'] === 'points') {
                     $coinAmount = (float) ($winner['coin_amount'] ?? 0);
                     if ($coinAmount > 0) {
-                        Db::name('wallets')->where('user_id', $userId)->update([
+                        $affected = Db::name('wallets')->where('user_id', $userId)->update([
                             'points'     => Db::raw("points + {$coinAmount}"),
                             'updated_at' => $now,
                         ]);
+                        if (!$affected) {
+                            // coinAmount>0 时 points 必变，affected=0 无歧义 = 钱包行缺失；拒绝静默入账
+                            throw new \RuntimeException("用户 #{$userId} 钱包行缺失，司南币入账失败");
+                        }
                         $pointsAfter = (float) Db::name('wallets')->where('user_id', $userId)->value('points');
                         Db::name('wallet_transactions')->insert([
                             'user_id'       => $userId,

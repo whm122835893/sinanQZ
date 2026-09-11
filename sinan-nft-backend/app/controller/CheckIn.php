@@ -112,10 +112,14 @@ class CheckIn extends BaseController
                 if ($amount > 0) {
                     // 与新版 grantPoints 语义一致：奖励为司南币（points），
                     // balance_after 必须记录 points 变动后的值，而非 balance+amount
-                    Db::name('wallets')->where('user_id', $userId)->update([
+                    $affected = Db::name('wallets')->where('user_id', $userId)->update([
                         'points'     => Db::raw("points + {$amount}"),
                         'updated_at' => $now,
                     ]);
+                    if (!$affected) {
+                        // amount>0 时 points 必变，affected=0 无歧义 = 钱包行缺失；拒绝静默入账
+                        throw new \RuntimeException("用户 #{$userId} 钱包行缺失，签到奖励入账失败");
+                    }
                     $pointsAfter = (float) Db::name('wallets')->where('user_id', $userId)->value('points');
                     Db::name('wallet_transactions')->insert([
                         'user_id'        => $userId,

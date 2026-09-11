@@ -22,13 +22,18 @@ function seedOrder($uid,$cid,$qty,$unit,$source,$status){global $PDO;
     VALUES ('$no',$uid,$cid,NULL,$unit,$qty,".($unit*$qty).",'$status','$source','$now','$now','$now','$now','$now')");
   $oid=(int)v("SELECT id FROM nft_orders WHERE order_no='$no'");
   if($oid<=0){fwrite(STDERR,"[seedOrder] 订单落库失败 order_no=$no\n");return [0,0,$no];}
-  $PDO->exec("INSERT INTO nft_payments (order_id,user_id,amount,payment_method,transaction_no,status,paid_at,created_at,updated_at)
-    VALUES ($oid,$uid,".($unit*$qty).",'balance','TX-F71-$oid','success','$now','$now','$now')");
-  $pid=(int)v("SELECT id FROM nft_payments WHERE order_id=$oid");
-  for($i=0;$i<$qty;$i++){
-    $s='SN-F71-'.$oid.'-'.$i;
-    $PDO->exec("INSERT INTO nft_user_collectibles (user_id,collectible_id,order_id,serial,source,acquired_price,acquired_at,status,created_at,updated_at)
-      VALUES ($uid,$cid,$oid,'$s','purchase',$unit,'$now','held','$now','$now')");
+  // 状态机对齐真实路径：pending 订单未支付 → 无支付单、无资产行（资产在支付成功后才创建；
+  // 否则 z_abort Z2-4 / z_identity Z5-2 会判定 held 资产为 pending 订单脏数据）
+  $pid=0;
+  if($status!=='pending'){
+    $PDO->exec("INSERT INTO nft_payments (order_id,user_id,amount,payment_method,transaction_no,status,paid_at,created_at,updated_at)
+      VALUES ($oid,$uid,".($unit*$qty).",'balance','TX-F71-$oid','success','$now','$now','$now')");
+    $pid=(int)v("SELECT id FROM nft_payments WHERE order_id=$oid");
+    for($i=0;$i<$qty;$i++){
+      $s='SN-F71-'.$oid.'-'.$i;
+      $PDO->exec("INSERT INTO nft_user_collectibles (user_id,collectible_id,order_id,serial,source,acquired_price,acquired_at,status,created_at,updated_at)
+        VALUES ($uid,$cid,$oid,'$s','purchase',$unit,'$now','held','$now','$now')");
+    }
   }
   // 模拟真实购买态：release+completed → sold/circulate 已累加；release+pending → 锁定库存；market → 不变
   if($source==='release'){
@@ -221,6 +226,31 @@ T('7.7.1 已退款资产全部 recovered（无游离）', $diff==0, "游离 $dif
 $balNow=(float)v("SELECT available FROM nft_wallets WHERE user_id=$uid");
 $expect=1000.0+200+1500+200; // 初始+O1+O2+O7 三笔退款
 T('7.7.2 用户资金账实相符（1000+200+1500+200）', abs($balNow-$expect)<0.001, "实际 $balNow 期望 $expect");
+
+echo "\n=== 7.8 环境清理（还原夹具，保证 z 系列全库审计干净）===\n";
+// 与 7.1 开头清理对称：删 F71 订单族 + 退款/审批残留 + 还原 9401~9406 + 删 t7 专属用户
+$fu=q("SELECT id FROM nft_users WHERE phone LIKE '139000071%'");
+if($fu){$fids=implode(',',array_column($fu,'id'));
+  exe("SET FOREIGN_KEY_CHECKS=0");
+  foreach(['nft_wallets','nft_wallet_transactions','nft_user_collectibles','nft_orders','nft_payments','nft_refunds'] as $t) exe("DELETE FROM $t WHERE user_id IN ($fids)");
+  exe("DELETE FROM nft_users WHERE id IN ($fids)");
+  exe("SET FOREIGN_KEY_CHECKS=1");
+}
+exe("DELETE FROM nft_user_collectibles WHERE order_id IN (SELECT id FROM nft_orders WHERE order_no LIKE 'F71-%')");
+exe("DELETE FROM nft_payments WHERE order_id IN (SELECT id FROM nft_orders WHERE order_no LIKE 'F71-%')");
+exe("DELETE FROM nft_refunds WHERE order_id IN (SELECT id FROM nft_orders WHERE order_no LIKE 'F71-%')");
+exe("DELETE FROM nft_approval_requests WHERE target_type='refund' AND target_id NOT IN (SELECT id FROM nft_refunds)");
+exe("DELETE FROM nft_orders WHERE order_no LIKE 'F71-%'");
+// 9401~9406 为多脚本共用夹具段：先清引用行（transfers/盲盒奖品/历史资产），再删藏品，避免 FK RESTRICT
+exe("DELETE FROM nft_transfers WHERE collectible_id IN (9401,9402,9403,9404,9405,9406)");
+exe("DELETE FROM nft_blind_box_items WHERE prize_collectible_id IN (9401,9402,9403,9404,9405,9406)");
+exe("DELETE FROM nft_user_collectibles WHERE collectible_id IN (9401,9402,9403,9404,9405,9406)");
+exe("DELETE FROM nft_collectibles WHERE id IN (9401,9402,9403,9404,9405,9406)");
+exe("DELETE FROM nft_verification_codes WHERE phone LIKE '139000071%'");
+T('7.8.1 F71 订单族已清理', v("SELECT COUNT(*) FROM nft_orders WHERE order_no LIKE 'F71-%'")==0);
+T('7.8.2 测试用户已清理', v("SELECT COUNT(*) FROM nft_users WHERE phone LIKE '139000071%'")==0);
+T('7.8.3 退款测试藏品已清理', v("SELECT COUNT(*) FROM nft_collectibles WHERE id IN (9401,9402,9403,9404,9405,9406)")==0);
+T('7.8.4 无孤儿审批单', v("SELECT COUNT(*) FROM nft_approval_requests WHERE target_type='refund' AND target_id NOT IN (SELECT id FROM nft_refunds)")==0);
 
 echo "\n=== 汇总 ===\n";
 echo "PASS=$pass FAIL=$fail\n";

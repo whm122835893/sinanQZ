@@ -30,7 +30,8 @@ try {
   $pdo2=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
   $pdo2->exec("SET SESSION innodb_lock_wait_timeout=1");
   $pdo2->beginTransaction();
-  $pdo2->exec("SELECT id FROM nft_collectibles WHERE id=1 FOR UPDATE");
+  // exec() 跑 SELECT 不释放结果集会触发 2014；用 query+fetchAll 消费结果
+  $pdo2->query("SELECT id FROM nft_collectibles WHERE id=1 FOR UPDATE")->fetchAll();
   $pdo2->rollBack();
   $pdo2->exec("SET SESSION innodb_lock_wait_timeout=50");
   T('Z2-2 lock_wait_timeout=1 可设置并恢复', true);

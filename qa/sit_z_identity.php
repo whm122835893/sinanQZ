@@ -1,9 +1,11 @@
 <?php
 /** Z1 数据恒等式全库校验
- *  资金恒等式：∑(balance) = ∑(充值) - ∑(消费) - ∑(提现) + ∑(奖励)
+ *  资金恒等式：∑(balance) = ∑(充值) - ∑(消费) - ∑(提现)
+ *    注：reward 流水为司南币发放（balance_after 记 points 快照，见 CheckIn/RewardGrantService），
+ *    不进入法币恒等式；direction 口径为 1=收入 2=支出（与表注释及全部写入点一致）
  *  库存恒等式：edition ≥ circulate ≥ sold
  *  盲盒恒等式：opened_count(表) == 已开数量(资产 consumed)
- *  钱包流水恒等式：最后流水 balance_after == 钱包余额（抽样）
+ *  钱包流水恒等式：最后一条法币流水 balance_after == 钱包余额（抽样；reward 流水对账 points，排除）
  */
 date_default_timezone_set('Asia/Shanghai');
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
@@ -16,11 +18,10 @@ function v($s){global $PDO;$r=$PDO->query($s)->fetch(PDO::FETCH_NUM);return $r?$
 echo "=== Z1 资金恒等式 ===\n";
 $wallets=(float)q1("SELECT COALESCE(SUM(balance),0) FROM nft_wallets");
 $recharges=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='recharge' AND direction=1");
-$consumes=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='buy' AND direction=-1");
-$withdraw=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='withdraw' AND direction=-1");
-$rewards=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='reward' AND direction=1");
-$diff=round($recharges - $consumes - $withdraw + $rewards - $wallets, 2);
-T('Z1-1 全库余额 = 充值-消费-提现+奖励（差异≤0.01）', abs($diff)<=0.01, "wallet=$wallets rec=$recharges buy=$consumes wd=$withdraw rw=$rewards diff=$diff");
+$consumes=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='buy' AND direction=2");
+$withdraw=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='withdraw' AND direction=2");
+$diff=round($recharges - $consumes - $withdraw - $wallets, 2);
+T('Z1-1 全库余额 = 充值-消费-提现（差异≤0.01）', abs($diff)<=0.01, "wallet=$wallets rec=$recharges buy=$consumes wd=$withdraw diff=$diff");
 
 echo "\n=== Z2 藏品库存恒等式 ===\n";
 $cols=q("SELECT id,name,edition,sold,circulate FROM nft_collectibles WHERE deleted_at IS NULL");
@@ -46,15 +47,19 @@ $boxOpened=(int)q1("SELECT COALESCE(SUM(opened_count),0) FROM nft_blind_boxes");
 T('Z3-1 盲盒已开 == opened_count 汇总', $boxConsumed===$boxOpened, "consumed=$boxConsumed opened=$boxOpened");
 
 echo "\n=== Z4 钱包流水恒等式 ===\n";
-$sample=q("SELECT user_id FROM nft_wallet_transactions GROUP BY user_id HAVING COUNT(*)>=2 ORDER BY RAND() LIMIT 20");
+// reward 流水 balance_after 记的是 points（司南币）快照，对账法币余额时排除
+$fiatTypes="('recharge','buy','withdraw')";
+$sample=q("SELECT user_id FROM nft_wallet_transactions WHERE trans_type IN $fiatTypes GROUP BY user_id HAVING COUNT(*)>=2 ORDER BY RAND() LIMIT 20");
 $balMismatch=0;
 foreach($sample as $u){
   $uid=(int)$u['user_id'];
   $wBal=(float)v("SELECT balance FROM nft_wallets WHERE user_id=$uid");
-  $lastTx=(float)v("SELECT balance_after FROM nft_wallet_transactions WHERE user_id=$uid ORDER BY id DESC LIMIT 1");
+  $row=v("SELECT balance_after FROM nft_wallet_transactions WHERE user_id=$uid AND trans_type IN $fiatTypes ORDER BY id DESC LIMIT 1");
+  $lastTx=$row===null?0.0:(float)$row;
+  if($row===null && $wBal>0.01){$balMismatch++;echo "    无法币流水但余额>0 user=$uid wallet=$wBal\n";continue;}
   if(abs($wBal-$lastTx)>0.01){$balMismatch++;echo "    余额不连续 user=$uid wallet=$wBal lastTx=$lastTx\n";}
 }
-T('Z4-1 抽样20用户：最后流水 balance_after ≈ 钱包余额', $balMismatch===0, "不连续=$balMismatch");
+T('Z4-1 抽样20用户：最后法币流水 balance_after ≈ 钱包余额', $balMismatch===0, "不连续=$balMismatch");
 
 echo "\n=== Z5 资产状态机恒等式 ===\n";
 $noAsset=(int)q1("SELECT COUNT(*) FROM nft_orders o WHERE o.status='completed' AND o.source IN ('release','priority','eligibility') AND NOT EXISTS (SELECT 1 FROM nft_user_collectibles uc WHERE uc.order_id=o.id AND uc.status='held')");

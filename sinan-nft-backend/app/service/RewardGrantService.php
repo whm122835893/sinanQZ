@@ -319,10 +319,14 @@ class RewardGrantService
     private static function grantPoints(float $amount, int $userId, string $title): array
     {
         $now = date('Y-m-d H:i:s.v');
-        Db::name('wallets')->where('user_id', $userId)->update([
+        $affected = Db::name('wallets')->where('user_id', $userId)->update([
             'points'     => Db::raw('points + ' . $amount),
             'updated_at' => $now,
         ]);
+        if (!$affected) {
+            // amount>0 时 points 必变，affected=0 无歧义 = 钱包行缺失；拒绝静默入账
+            throw new RewardGrantException("用户 #{$userId} 钱包行缺失，司南币入账失败");
+        }
         $after = (float) Db::name('wallets')->where('user_id', $userId)->value('points');
         Db::name('wallet_transactions')->insert([
             'user_id'       => $userId,
