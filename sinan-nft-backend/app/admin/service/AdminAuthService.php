@@ -37,11 +37,20 @@ class AdminAuthService
         return json(['code' => 200, 'message' => $message, 'data' => $data]);
     }
 
+    /**
+     * SEC-J1 修复（安全专项 3.3）：管理端 JWT 密钥必须显式配置（jwt.ADMIN_SECRET，≥32 字节），
+     * 禁止回落源码默认值——源码可见的默认密钥等于任何人可伪造管理端令牌（fail-open）。
+     * 未配置/过短时直接抛异常：登录签发立即失败（5001，日志可查），
+     * verifyToken 全量拒绝（catch Throwable → null），实现 fail-closed。
+     */
     private static function secret(): string
     {
-        // HS256 要求密钥 >= 32 字节（firebase/php-jwt 强制校验）
-        $secret = (string) env('jwt.ADMIN_SECRET', 'sinan-nft-admin-jwt-secret-2026-strong-hmac-key');
-        return strlen($secret) >= 32 ? $secret : str_pad($secret, 32, '#');
+        $secret = (string) env('jwt.ADMIN_SECRET', '');
+        if ($secret === '' || strlen($secret) < 32) {
+            \think\facade\Log::error('管理端 JWT 密钥未配置或不安全：请在 .env 设置 jwt.ADMIN_SECRET（≥32 字节随机串）');
+            throw new \RuntimeException('admin jwt secret not configured or too short');
+        }
+        return $secret;
     }
 
     private static function algo(): string

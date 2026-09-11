@@ -163,9 +163,22 @@ class RaffleService
                 }
             }
 
-            // Fisher-Yates 洗牌 + 取前 winner_count 个
+            // Fisher-Yates 洗牌 + 顺序抽取去重
+            // RF11 修复：原实现 array_unique(array_slice(...)) 在同一用户多票被连续抽中时
+            // 去重后人数 < winner_count；现改为跳过已中签用户继续抽取，
+            // 保证中签人数 = min(winner_count, 不同报名用户数)
             shuffle($pool);
-            $pickedUserIds = array_unique(array_slice($pool, 0, min($winnerCount, count($pool))));
+            $pickedUserIds = [];
+            foreach ($pool as $uid) {
+                if (isset($pickedUserIds[$uid])) {
+                    continue;
+                }
+                $pickedUserIds[$uid] = true;
+                if (count($pickedUserIds) >= $winnerCount) {
+                    break;
+                }
+            }
+            $pickedUserIds = array_keys($pickedUserIds);
 
             // 更新抽签结果
             Db::name('raffle_registrations')

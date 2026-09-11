@@ -33,6 +33,15 @@ class UploadController extends BaseController
      */
     public function image()
     {
+        // ---- SEC-U1 修复（安全专项 7.5）：PHP 层上传错误先行检查 ----
+        // 超过 php.ini upload_max_filesize 时框架 Request::file() 会直接抛异常
+        //（think\Request::dealUploadFile → throwUploadFileError → 5001），
+        // 必须在调用 $request->file() 之前检查原始 $_FILES 错误码，统一转为 4220 业务码
+        $upErr = (int) ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($upErr !== UPLOAD_ERR_OK) {
+            return $this->fail(4220, '图片上传失败：' . $this->uploadErrMsg($upErr));
+        }
+
         $file = $this->request->file('file');
         if (!$file) {
             return $this->fail(4220, '请选择要上传的图片文件（字段名 file）');
@@ -96,5 +105,19 @@ class UploadController extends BaseController
         ]);
 
         return $this->success(['url' => $url], '上传成功');
+    }
+
+    /** SEC-U1：PHP 上传错误码 → 用户可读信息 */
+    private function uploadErrMsg(int $code): string
+    {
+        return match ($code) {
+            UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => '文件超过大小限制（≤5MB）',
+            UPLOAD_ERR_PARTIAL => '文件仅部分上传，请重试',
+            UPLOAD_ERR_NO_FILE => '没有文件被上传',
+            UPLOAD_ERR_NO_TMP_DIR => '服务器缺少临时目录',
+            UPLOAD_ERR_CANT_WRITE => '文件写入失败',
+            UPLOAD_ERR_EXTENSION => '上传被 PHP 扩展中止',
+            default => '未知上传错误（' . $code . '）',
+        };
     }
 }

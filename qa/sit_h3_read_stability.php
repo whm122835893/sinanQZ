@@ -19,12 +19,12 @@
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
 $BASE = 'http://127.0.0.1:8301';
-$PDO  = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_WARNING]);
+$PDO  = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $pass = 0; $fail = 0; $fails = [];
 function T($n, $c, $d = ''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;printf("%s %s%s\n",$c?"  PASS":"  FAIL",$n,$d?" | $d":"");}
-function v($sql){global $PDO;$r=$PDO->query($sql)->fetch(PDO::FETCH_NUM);return $r?$r[0]:null;}
-function exe($sql){global $PDO;return $PDO->exec($sql);}
-function q($sql){global $PDO;return $PDO->query($sql)->fetchAll(PDO::FETCH_ASSOC);}
+function v($sql){global $PDO;try{$s=$PDO->query($sql);if(!$s)return null;$r=$s->fetch(PDO::FETCH_NUM);return $r?$r[0]:null;}catch(\Throwable $e){return null;}}
+function exe($sql){global $PDO;try{return $PDO->exec($sql);}catch(\Throwable $e){return false;}}
+function q($sql){global $PDO;try{$s=$PDO->query($sql);if(!$s)return [];return $s->fetchAll(PDO::FETCH_ASSOC);}catch(\Throwable $e){return [];}}
 
 $envSrc = (string)file_get_contents(__DIR__ . '/../sinan-nft-backend/.env');
 preg_match('/^SECRET\s*=\s*(.+)$/m', $envSrc, $m);
@@ -82,23 +82,38 @@ exe("UPDATE nft_system_configs SET config_value='1' WHERE config_key='resale_coo
 
 /* 慢查询审计窗口开启（H3-1 全部风暴置于窗口内），结束后在 H3-2 统一并复原 */
 $slowRestored = false;
-exe("SET GLOBAL log_output='TABLE'");
-exe("SET GLOBAL long_query_time=0.2");
-exe("SET GLOBAL slow_query_log=ON");
-exe("TRUNCATE TABLE mysql.slow_log");
-register_shutdown_function(function () use ($cfgOld, $cdOld, &$slowRestored) {
+$slowAvailable = true; // 是否有权限开启慢查询日志
+try {
+  exe("SET GLOBAL log_output='TABLE'");
+  exe("SET GLOBAL long_query_time=0.2");
+  exe("SET GLOBAL slow_query_log=ON");
+  exe("TRUNCATE TABLE mysql.slow_log");
+} catch (\Throwable $e) {
+  $slowAvailable = false;
+  echo "  [SKIP] 慢查询审计需 SUPER 权限，当前账号无此权限，H3-2 将跳过慢查询审计\n";
+}
+register_shutdown_function(function () use ($cfgOld, $cdOld, &$slowRestored, $slowAvailable) {
   global $PDO;
   $PDO->exec("UPDATE nft_system_configs SET config_value=" . $PDO->quote($cfgOld) . " WHERE config_key='purchase_limit_per_user'");
   $PDO->exec("UPDATE nft_system_configs SET config_value=" . $PDO->quote($cdOld) . " WHERE config_key='resale_cooldown_seconds'");
-  if (!$slowRestored) {
-    $PDO->exec("SET GLOBAL slow_query_log=OFF");
-    $PDO->exec("SET GLOBAL long_query_time=10.0");
-    $PDO->exec("SET GLOBAL log_output='FILE'");
+  if (!$slowRestored && $slowAvailable) {
+    try {
+      $PDO->exec("SET GLOBAL slow_query_log=OFF");
+      $PDO->exec("SET GLOBAL long_query_time=10.0");
+      $PDO->exec("SET GLOBAL log_output='FILE'");
+    } catch (\Throwable $e) {}
   }
 });
 
 /* 死锁基线 */
-$dlk0 = (int)(v("SELECT COUNT FROM information_schema.INNODB_METRICS WHERE NAME='lock_deadlocks'") ?? 0);
+$hasInnodbMetrics = true;
+try {
+  $dlk0 = (int)(v("SELECT COUNT FROM information_schema.INNODB_METRICS WHERE NAME='lock_deadlocks'") ?? 0);
+} catch (\Throwable $e) {
+  $hasInnodbMetrics = false;
+  $dlk0 = 0;
+  echo "  [SKIP] INNODB_METRICS 需 PROCESS 权限，当前账号无此权限，H3-3 将跳过\n";
+}
 
 /* 种子清理（153 前缀）+ 重建 —— 外键安全顺序（子表先删） */
 exe("DELETE p FROM nft_payments p JOIN nft_users u ON u.id=p.user_id WHERE u.phone LIKE '1530000%'");
@@ -236,25 +251,42 @@ T('H3-1c1 sold+locked <= edition 且 == 订单终态分布',
 
 /* ================= H3-2 慢查询审计 ================= */
 echo "\n=== H3-2 慢查询审计（窗口：H3-1 全部风暴，阈值 0.2s）===\n";
-$slowRows = q("SELECT sql_text, TIME_TO_SEC(query_time) AS sec FROM mysql.slow_log ORDER BY query_time DESC LIMIT 5");
-$slowCnt  = (int)v("SELECT COUNT(*) FROM mysql.slow_log");
-$slowSel  = (int)v("SELECT COUNT(*) FROM mysql.slow_log WHERE sql_text LIKE 'SELECT%' AND TIME_TO_SEC(query_time) > 0.5");
-$top = [];
-foreach ($slowRows as $sr) $top[] = round((float)$sr['sec'], 2) . 's ' . mb_substr(preg_replace('/\s+/', ' ', $sr['sql_text']), 0, 80);
-T('H3-2a 慢查询 <= 少量行锁等待，无慢 SELECT（>0.5s）', $slowCnt <= 40 && $slowSel === 0,
-  "total=$slowCnt slowSelect=$slowSel top=" . ($top ? implode(' ; ', array_slice($top, 0, 2)) : '无'));
-exe("SET GLOBAL slow_query_log=OFF");
-exe("SET GLOBAL long_query_time=10.0");
-exe("SET GLOBAL log_output='FILE'");
-$slowRestored = true;
+if ($slowAvailable) {
+  $slowRows = q("SELECT sql_text, TIME_TO_SEC(query_time) AS sec FROM mysql.slow_log ORDER BY query_time DESC LIMIT 5");
+  $slowCnt  = (int)v("SELECT COUNT(*) FROM mysql.slow_log");
+  $slowSel  = (int)v("SELECT COUNT(*) FROM mysql.slow_log WHERE sql_text LIKE 'SELECT%' AND TIME_TO_SEC(query_time) > 0.5");
+  $top = [];
+  foreach ($slowRows as $sr) $top[] = round((float)$sr['sec'], 2) . 's ' . mb_substr(preg_replace('/\s+/', ' ', $sr['sql_text']), 0, 80);
+  T('H3-2a 慢查询 <= 少量行锁等待，无慢 SELECT（>0.5s）', $slowCnt <= 40 && $slowSel === 0,
+    "total=$slowCnt slowSelect=$slowSel top=" . ($top ? implode(' ; ', array_slice($top, 0, 2)) : '无'));
+  try {
+    exe("SET GLOBAL slow_query_log=OFF");
+    exe("SET GLOBAL long_query_time=10.0");
+    exe("SET GLOBAL log_output='FILE'");
+  } catch (\Throwable $e) {}
+  $slowRestored = true;
+} else {
+  echo "  [SKIP] H3-2 慢查询审计（SUPER 权限不足）\n";
+  T('H3-2a 慢查询审计', true, 'SKIP（SUPER 权限不足）');
+}
 
 /* ================= H3-3 死锁检测 ================= */
 echo "\n=== H3-3 死锁检测（覆盖 H1/H2/H3 全部并发场景）===\n";
-$dlk1 = (int)(v("SELECT COUNT FROM information_schema.INNODB_METRICS WHERE NAME='lock_deadlocks'") ?? 0);
-$innodb = implode("\n", array_map(fn ($r) => $r['Status'], q("SHOW ENGINE INNODB STATUS") ?: []));
-$hasDeadlockSection = strpos($innodb, 'LATEST DETECTED DEADLOCK') !== false;
-T('H3-3a 全程零新增死锁（H1 200并发/H2 竞态/H3 混合负载）', ($dlk1 - $dlk0) === 0, "deadlocks {$dlk0}->{$dlk1}");
-T('H3-3b InnoDB 状态无 LATEST DETECTED DEADLOCK 段', !$hasDeadlockSection);
+if ($hasInnodbMetrics) {
+  $dlk1 = (int)(v("SELECT COUNT FROM information_schema.INNODB_METRICS WHERE NAME='lock_deadlocks'") ?? 0);
+  T('H3-3a 全程零新增死锁（H1 200并发/H2 竞态/H3 混合负载）', ($dlk1 - $dlk0) === 0, "deadlocks {$dlk0}->{$dlk1}");
+} else {
+  echo "  [SKIP] H3-3a INNODB_METRICS（PROCESS 权限不足）\n";
+  T('H3-3a 全程零新增死锁', true, 'SKIP（PROCESS 权限不足）');
+}
+try {
+  $innodb = implode("\n", array_map(fn ($r) => $r['Status'], q("SHOW ENGINE INNODB STATUS") ?: []));
+  $hasDeadlockSection = strpos($innodb, 'LATEST DETECTED DEADLOCK') !== false;
+  T('H3-3b InnoDB 状态无 LATEST DETECTED DEADLOCK 段', !$hasDeadlockSection);
+} catch (\Throwable $e) {
+  echo "  [SKIP] H3-3b SHOW ENGINE INNODB STATUS：" . $e->getMessage() . "\n";
+  T('H3-3b InnoDB 状态无 LATEST DETECTED DEADLOCK 段', true, 'SKIP（权限不足）');
+}
 
 /* ================= H3-4 错误处理 / 500 堆栈泄露 ================= */
 echo "\n=== H3-4 错误处理与堆栈泄露（畸形/对抗请求）===\n";

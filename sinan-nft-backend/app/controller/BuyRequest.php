@@ -82,9 +82,15 @@ class BuyRequest extends BaseController
             return $this->fail(1001, '求购单价必须大于 0');
         }
 
-        $collectible = Db::name('collectibles')->where('id', $collectibleId)->find();
+        // K06 修复：过滤软删除（deleted_at IS NULL），已删除藏品不可再发布求购
+        $collectible = Db::name('collectibles')->where('id', $collectibleId)->whereNull('deleted_at')->find();
         if (!$collectible) {
             return $this->fail(1001, '藏品不存在');
+        }
+
+        // K03 修复：藏品级求购开关校验（is_buy_request_enabled，管理端可实时关闭）
+        if ((int) $collectible['is_buy_request_enabled'] !== 1) {
+            return $this->fail(1001, '该藏品未开启求购，无法发布求购单');
         }
 
         $expiresAt = date('Y-m-d H:i:s', time() + 7 * 86400);

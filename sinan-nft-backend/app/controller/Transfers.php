@@ -49,6 +49,13 @@ class Transfers extends BaseController
                 return $this->fail(1001, '藏品不可转赠');
             }
 
+            // K02 修复：藏品级转赠开关校验（is_transferable，管理端可实时关闭）
+            $collectible = Db::name('collectibles')->where('id', $uc['collectible_id'])->find();
+            if (!$collectible || (int) $collectible['is_transferable'] !== 1) {
+                Db::rollback();
+                return $this->fail(1001, '该藏品已关闭转赠，无法发起转赠');
+            }
+
             $now = date('Y-m-d H:i:s.v');
             Db::name('transfers')->insert([
                 'from_user_id'        => $userId,

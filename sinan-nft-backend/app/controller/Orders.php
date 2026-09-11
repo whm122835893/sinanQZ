@@ -301,7 +301,7 @@ class Orders extends BaseController
                 'updated_at'     => $now,
             ]);
 
-            if ($order['source'] === 'release') {
+            if (in_array($order['source'], ['release', 'priority', 'eligibility'], true)) {
                 // ===== 发售模式：生成藏品 + 更新库存 =====
                 $collectible = Db::name('collectibles')
                     ->where('id', $order['collectible_id'])
@@ -451,15 +451,19 @@ class Orders extends BaseController
                 'updated_at'    => $now,
             ]);
 
-            if ($order['source'] === 'release') {
+            if (in_array($order['source'], ['release', 'priority', 'eligibility'], true)) {
                 // 条件释放锁定库存：仅当锁定量足够时扣减（配合 CHECK 防负数）
-                Db::name('collectibles')
+                $affected = Db::name('collectibles')
                     ->where('id', $order['collectible_id'])
                     ->whereRaw('locked_quantity >= ' . (int) $order['quantity'])
                     ->update([
                         'locked_quantity' => Db::raw("locked_quantity - {$order['quantity']}"),
                         'updated_at'      => $now,
                     ]);
+                if (!$affected) {
+                    Db::rollback();
+                    return $this->fail(5001, '库存锁定量异常（可能已被并发释放），请联系管理员');
+                }
             } elseif ($order['resale_listing_id']) {
                 // 市场单：资产从未过户（支付时才过户），仅需恢复挂单在售
                 Db::name('resale_listings')

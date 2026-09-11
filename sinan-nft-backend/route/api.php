@@ -29,6 +29,10 @@ Route::group('/api', function () {
     Route::get('synthesis/activities/:id',   'Synthesis/detail')
         ->middleware(\app\middleware\OptionalJwtAuth::class);
 
+    // 分解（DC03：C 端规则列表 + 执行入口 + 记录，补齐功能闭环）
+    Route::get('decompose/rules',            'Decompose/rules')
+        ->middleware(\app\middleware\OptionalJwtAuth::class);
+
     // 抽奖
     Route::get('lucky-draw/activity', 'LuckyDraw/activity');
 
@@ -105,6 +109,10 @@ Route::group('/api', function () {
         // 合成
         Route::post('synthesis/submit',         'Synthesis/submit');
         Route::get('synthesis/records',         'Synthesis/records');
+
+        // 分解（DC03）
+        Route::post('decompose/execute',        'Decompose/execute');
+        Route::get('decompose/records',         'Decompose/records');
 
         // 签到
         Route::post('check-in',                 'CheckIn/perform');

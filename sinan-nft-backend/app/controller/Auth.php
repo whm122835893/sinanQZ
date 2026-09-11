@@ -13,6 +13,33 @@ use think\facade\Db;
  */
 class Auth extends BaseController
 {
+    /** SEC-R1：验证码单手机号+场景最大失败尝试次数 */
+    private const CODE_MAX_FAIL = 5;
+
+    /** SEC-R1：失败计数窗口（秒） */
+    private const CODE_FAIL_WINDOW = 900;
+
+    /**
+     * SEC-R1 修复（安全专项 9.2）：验证码失败尝试限制
+     * 6 位码 5 分钟有效期内可被无限次爆破，此处按 手机号+场景 维度计数，
+     * 窗口内累计失败达上限后即使验证码正确也拒绝，需等待窗口过期或重新发送。
+     */
+    private function codeFailLimited(string $phone, string $scene): bool
+    {
+        return (int) (cache('code_fail_' . $scene . '_' . $phone) ?: 0) >= self::CODE_MAX_FAIL;
+    }
+
+    private function codeFailIncr(string $phone, string $scene): void
+    {
+        $key = 'code_fail_' . $scene . '_' . $phone;
+        cache($key, (int) (cache($key) ?: 0) + 1, self::CODE_FAIL_WINDOW);
+    }
+
+    private function codeFailClear(string $phone, string $scene): void
+    {
+        cache('code_fail_' . $scene . '_' . $phone, null);
+    }
+
     /**
      * POST /api/auth/send-code
      * 发送短信验证码
@@ -65,7 +92,8 @@ class Auth extends BaseController
     {
         $phone      = $this->request->post('phone', '');
         $code       = $this->request->post('code', '');
-        $nickname   = $this->request->post('nickname', '');
+        // SEC-X1 修复（安全专项 5.1）：昵称剥离 HTML 标签，防止存储型 XSS 原样入库回显
+        $nickname   = strip_tags(trim((string) $this->request->post('nickname', '')));
         $inviteCode = $this->request->post('inviteCode', '');
 
         if (!preg_match('/^1\d{10}$/', $phone)) {
@@ -84,6 +112,11 @@ class Auth extends BaseController
             return $this->fail(1001, '该手机号已注册');
         }
 
+        // SEC-R1：失败次数超限拒绝（防爆破）
+        if ($this->codeFailLimited($phone, 'register')) {
+            return $this->fail(1003, '验证码错误次数过多，请 15 分钟后重试');
+        }
+
         // 校验验证码
         $vc = Db::name('verification_codes')
             ->where('phone', $phone)
@@ -91,12 +124,11 @@ class Auth extends BaseController
             ->where('used_at', null)
             ->order('id', 'desc')
             ->find();
-        if (!$vc || strtotime($vc['expires_at']) < time()) {
-            return $this->fail(1001, '验证码已过期');
+        if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            $this->codeFailIncr($phone, 'register');
+            return $this->fail(1001, '验证码错误或已过期');
         }
-        if (!verify_password($code, $vc['code'])) {
-            return $this->fail(1001, '验证码错误');
-        }
+        $this->codeFailClear($phone, 'register');
 
         $now = date('Y-m-d H:i:s.v');
 
@@ -187,6 +219,11 @@ class Auth extends BaseController
             return $this->fail(1001, '手机号格式错误');
         }
 
+        // SEC-R1：失败次数超限拒绝（防爆破）
+        if ($this->codeFailLimited($phone, 'login')) {
+            return $this->fail(1003, '验证码错误次数过多，请 15 分钟后重试');
+        }
+
         $vc = Db::name('verification_codes')
             ->where('phone', $phone)
             ->where('scene', 'login')
@@ -194,8 +231,10 @@ class Auth extends BaseController
             ->order('id', 'desc')
             ->find();
         if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            $this->codeFailIncr($phone, 'login');
             return $this->fail(1001, '验证码错误或已过期');
         }
+        $this->codeFailClear($phone, 'login');
 
         $user = Db::name('users')->where('phone', $phone)->find();
         if (!$user) {
@@ -251,6 +290,11 @@ class Auth extends BaseController
             return $this->fail(1001, '密码长度需在 6-20 位之间');
         }
 
+        // SEC-R1：失败次数超限拒绝（防爆破，重置交易密码场景同样敏感）
+        if ($this->codeFailLimited($phone, 'reset_password')) {
+            return $this->fail(1003, '验证码错误次数过多，请 15 分钟后重试');
+        }
+
         $vc = Db::name('verification_codes')
             ->where('phone', $phone)
             ->where('scene', 'reset_password')
@@ -258,8 +302,10 @@ class Auth extends BaseController
             ->order('id', 'desc')
             ->find();
         if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            $this->codeFailIncr($phone, 'reset_password');
             return $this->fail(1001, '验证码错误或已过期');
         }
+        $this->codeFailClear($phone, 'reset_password');
 
         $user = Db::name('users')->where('phone', $phone)->find();
         if (!$user) {

@@ -63,13 +63,14 @@ class BlindBoxes extends BaseController
         Db::startTrans();
         try {
             // 显式字段：uc.id 与 bb.id 同名，SELECT * 会发生列覆盖导致取错值
+            // BB35 修复：原实现限定 uc.source='purchase'，空投（airdrop）等来源的盲盒无法开启；
+            // 开盒资格以"持有该盲盒藏品（bb.is_openable=1）且状态 held"为准，不区分获得渠道
             $uc = Db::name('user_collectibles')
                 ->alias('uc')
                 ->join('blind_boxes bb', 'bb.collectible_id = uc.collectible_id')
                 ->where('uc.id', $userCollectibleId)
                 ->where('uc.user_id', $userId)
                 ->where('uc.status', 'held')
-                ->where('uc.source', 'purchase')
                 ->where('bb.is_openable', 1)
                 ->field('uc.id as uc_id, uc.collectible_id, bb.id as bb_id')
                 ->lock(true)

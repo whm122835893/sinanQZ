@@ -59,6 +59,8 @@ class User extends BaseController
 
         $update = [];
         if ($nickname !== null) {
+            // SEC-X1 修复（安全专项 5.1）：昵称剥离 HTML 标签，防止存储型 XSS 原样入库回显
+            $nickname = strip_tags(trim((string) $nickname));
             if (mb_strlen($nickname) < 2 || mb_strlen($nickname) > 20) {
                 return $this->fail(1001, '昵称长度需在 2-20 字之间');
             }

@@ -3,10 +3,34 @@
  *  注：QF-D1（qualification_whitelists 无 status 列导致 500）已在测试前修复，本脚本含回归验证
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8080';
+$BASE='http://127.0.0.1:8301';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
-$tok=json_decode(file_get_contents('/tmp/sit_tokens.json'),true);
-$atok=trim(file_get_contents('/tmp/sit_admin_token.txt'));
+// 确保冒烟用户 id=1/2/3 实名 + 交易密码，签到用户 id=4/6/7/8 就绪
+$pwdHash='$2y$12$MOtq8as9FfrvOSoK1LOjCusHuC9Y8Qc7ydjTyaZUIkBpfcTrX81fW'; // password_hash('Trade#2026', PASSWORD_BCRYPT)
+$PDO->exec("UPDATE nft_users SET is_realname=1, transaction_password='$pwdHash' WHERE id IN (1,2,3)");
+// 给冒烟用户补钱包（如果没有）
+foreach([1,2,3] as $uid){
+  $cnt=(int)$PDO->query("SELECT COUNT(*) FROM nft_wallets WHERE user_id=$uid")->fetchColumn();
+  if($cnt===0){
+    $PDO->exec("INSERT INTO nft_wallets (user_id,balance,frozen,total_recharge,total_withdraw,created_at,updated_at) VALUES ($uid,1000,0,1000,0,NOW(),NOW())");
+  }
+}
+// 登录拿 token（用 seed 冒烟用户的 phone=13900000001~3）
+$tok=[];
+$map=['1'=>'13900000001','2'=>'13900000002','3'=>'13900000003','4'=>'13800000004','6'=>'13842453421','7'=>'13878445723','8'=>'13841161376'];
+foreach($map as $uid=>$phone){
+  $PDO->exec("DELETE FROM nft_verification_codes WHERE phone='$phone'");
+  $PDO->exec("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','login','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
+  $ch=curl_init($BASE.'/api/auth/login');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
+    CURLOPT_POSTFIELDS=>json_encode(['phone'=>$phone,'code'=>'654321'])]);
+  $j=json_decode(curl_exec($ch),true)?:[];curl_close($ch);
+  $tok[$uid]=(string)($j['data']['token']??'');
+}
+// 管理端登录
+$ch=curl_init($BASE.'/admin/auth/login');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
+  CURLOPT_POSTFIELDS=>json_encode(['username'=>'admin','password'=>'admin123'])]);
+$ar=json_decode(curl_exec($ch),true)?:[];curl_close($ch);
+$atok=(string)($ar['data']['token']??'');
 $pass=0;$fail=0;$defects=[];
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function D($n,$c,$d=''){global $fail,$defects;if($c){$fail++;$defects[]=$n;$d and $n.=" | $d";echo "  DEFECT $n\n";}else echo "  PASS(无缺陷) $n\n";}

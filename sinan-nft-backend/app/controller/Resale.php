@@ -44,12 +44,15 @@ class Resale extends BaseController
             }
 
             // 冷却期检查
+            // D1 修复：系统下架/强制下架的挂单同样落在此查询（status=cancelled），但 cooldown_until 为 NULL，
+            // strtotime(null) 在 PHP8.1+ 触发 Deprecated 被 ThinkPHP 转异常（500），导致资产永久无法重新挂单。
+            // NULL 视为无冷却，直接放行。
             $existing = Db::name('resale_listings')
                 ->where('user_collectible_id', $userCollectibleId)
                 ->where('status', 'cancelled')
                 ->order('id', 'desc')
                 ->find();
-            if ($existing && strtotime($existing['cooldown_until']) > time()) {
+            if ($existing && !empty($existing['cooldown_until']) && strtotime((string) $existing['cooldown_until']) > time()) {
                 Db::rollback();
                 return $this->fail(1001, '寄售冷却中，请稍后再试');
             }

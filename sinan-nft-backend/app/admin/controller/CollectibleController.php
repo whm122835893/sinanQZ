@@ -903,10 +903,60 @@ class CollectibleController extends BaseController
         }
 
         $update['updated_at'] = date('Y-m-d H:i:s');
-        Db::name('collectibles')->where('id', $id)->update($update);
+
+        Db::startTrans();
+        try {
+            Db::name('collectibles')->where('id', $id)->update($update);
+
+            // K07 修复：关闭寄售开关时联动下架该藏品全部在售挂单
+            // （否则已挂单资产绕过开关继续在市场流通，开关对存量挂单不生效）
+            $resaleOff = isset($update['is_resaleable'])
+                && (int) $update['is_resaleable'] === 0
+                && (int) $c['is_resaleable'] === 1;
+            $delistedCount = 0;
+            if ($resaleOff) {
+                $nowStr  = date('Y-m-d H:i:s');
+                $selling = Db::name('resale_listings')
+                    ->where('collectible_id', $id)
+                    ->where('status', 'selling')
+                    ->lock(true)
+                    ->column('user_collectible_id');
+                if ($selling) {
+                    Db::name('resale_listings')
+                        ->where('collectible_id', $id)
+                        ->where('status', 'selling')
+                        ->update([
+                            'status'             => 'cancelled',
+                            'is_system_delisted' => 1,
+                            'system_delisted_at' => $nowStr,
+                            'delist_reason'      => '藏品寄售开关已关闭，系统自动下架',
+                            'updated_at'         => $nowStr,
+                        ]);
+                    // 资产退回持有（条件更新：仅 consigned 状态）
+                    Db::name('user_collectibles')
+                        ->whereIn('id', $selling)
+                        ->where('status', 'consigned')
+                        ->update([
+                            'status'       => 'held',
+                            'is_consigned' => 0,
+                            'updated_at'   => $nowStr,
+                        ]);
+                    $delistedCount = count($selling);
+                }
+            }
+
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '寄售配置更新失败：' . $e->getMessage());
+        }
 
         $this->audit('collectible', 'market_config', '寄售管控「' . $c['name'] . '」', $update, 'collectible', $id);
-        return $this->success(null, '寄售配置已更新');
+        $msg = '寄售配置已更新';
+        if ($delistedCount > 0) {
+            $msg .= '；已联动下架 ' . $delistedCount . ' 个在售挂单';
+        }
+        return $this->success(null, $msg);
     }
 
     /**
