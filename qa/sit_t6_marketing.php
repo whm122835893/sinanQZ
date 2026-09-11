@@ -99,7 +99,7 @@ $pq=$r['data']['myPriorityQualification']??'NOTSET';
 T('TC-PR03a C端详情返回优先购字段', ($r['code']??0)===0&&$pq!=='NOTSET', "code={$r['code']} pq=".json_encode($pq,JSON_UNESCAPED_UNICODE));
 D('MK-D1 管理端优先购白名单C端不生效(双轨断链)', $pq===null||$pq==='NOTSET',
   "管理端priority_activities#{$paId}已配置user2白名单(max=2,status=enabled)，但C端myPriorityQualification未返回 —— 双轨同步(syncPrioritySale)未生效");
-$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['2']);
+$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['2']);
 $used2=(int)v("SELECT used_quantity FROM nft_priority_sale_whitelists WHERE priority_sale_id=(SELECT id FROM nft_priority_sales WHERE collectible_id=$prCid) AND user_id=2");
 T('TC-PR03b 白名单用户公售前优先购下单成功', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 T('TC-PR03c 同步白名单used_quantity+1', $used2===1, "used=$used2");
@@ -109,26 +109,26 @@ exe("INSERT INTO nft_priority_sale_whitelists (priority_sale_id,user_id,phone,ma
 $r=http('GET',"/api/collections/$prCid",null,$tok['1']);
 $pq=$r['data']['myPriorityQualification']??null;
 T('TC-PR04 详情展示优先购资格', $pq&&($pq['remaining']??0)===2&&($pq['saleId']??0)===$psId, json_encode($pq,JSON_UNESCAPED_UNICODE));
-$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['1']);
+$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['1']);
 $used=(int)v("SELECT used_quantity FROM nft_priority_sale_whitelists WHERE priority_sale_id=$psId AND user_id=1");
 $osrc=v("SELECT source FROM nft_orders WHERE user_id=1 AND collectible_id=$prCid ORDER BY id DESC LIMIT 1");
 T('TC-PR05 公售前优先购下单成功', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 T('TC-PR05b 订单source=priority', $osrc==='priority', "source=$osrc");
 T('TC-PR05c used_quantity+1', $used===1, "used=$used");
-$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['1']);
+$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['1']);
 $used=(int)v("SELECT used_quantity FROM nft_priority_sale_whitelists WHERE priority_sale_id=$psId AND user_id=1");
 T('TC-PR06 第二次优先购used=2', ($r['code']??0)===0&&$used===2, "code={$r['code']} used=$used");
-$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['1']);
+$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['1']);
 T('TC-PR07 资格耗尽回落公售拦截', ($r['code']??0)===1001, "code={$r['code']} msg={$r['message']}");
 exe("UPDATE nft_priority_sale_whitelists SET used_quantity=0 WHERE priority_sale_id=$psId AND user_id=1");
-$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>3,'paymentPassword'=>'123456'],$tok['1']);
+$r=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>3,'paymentPassword'=>'Trade#2026'],$tok['1']);
 T('TC-PR08 单次超过max被拒3004', ($r['code']??0)===3004, "code={$r['code']} msg={$r['message']}");
 exe("UPDATE nft_priority_sale_whitelists SET used_quantity=2 WHERE priority_sale_id=$psId AND user_id=1");
 // 过期资格：user2（TC-PR02 白名单经 syncPrioritySale 已镜像出该行，改为置过期）
 exe("UPDATE nft_priority_sale_whitelists SET expires_at='".date('Y-m-d H:i:s',time()-60)."' WHERE priority_sale_id=$psId AND user_id=2");
 $r=http('GET',"/api/collections/$prCid",null,$tok['2']);
 $pq2=$r['data']['myPriorityQualification']??null;
-$r2=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['2']);
+$r2=http('POST','/api/orders',['collectibleId'=>$prCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['2']);
 T('TC-PR09 过期资格不生效', $pq2===null&&($r2['code']??0)===1001, "pq=".json_encode($pq2)." orderCode={$r2['code']}");
 // 活动窗口结束：user3
 exe("INSERT INTO nft_priority_sale_whitelists (priority_sale_id,user_id,phone,max_quantity,used_quantity,expires_at,status) VALUES ($psId,3,'13800000003',2,0,'".date('Y-m-d H:i:s',time()+86400)."',1)");
@@ -161,45 +161,45 @@ $r=http('GET',"/api/collections/$qfCid",null,$tok['3']);
 $qual=$r['data']['qualification']??null;
 T('QF-D1回归 资格购详情不再500', ($r['code']??0)===0&&is_array($qual)&&($qual['enabled']??false)===true, "code={$r['code']} qual=".json_encode($qual,JSON_UNESCAPED_UNICODE));
 T('TC-QF01 无资格用户qualified=false', ($qual['qualified']??true)===false&&($qual['reason']??'')!=='', "reason=".($qual['reason']??''));
-$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['3']);
+$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['3']);
 T('TC-QF01b 无资格用户下单被拒3004', ($r['code']??0)===3004, "code={$r['code']} msg={$r['message']}");
 // user3 签到 → 任一条件满足
 $r=http('POST','/api/check-in',[],$tok['3']);
 T('TC-QF02a user3签到满足任一条件', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 $r=http('GET',"/api/collections/$qfCid",null,$tok['3']);
 T('TC-QF02b 签到后qualified=true', ($r['data']['qualification']['qualified']??false)===true);
-$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['3']);
+$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['3']);
 $osrc=v("SELECT source FROM nft_orders WHERE user_id=3 AND collectible_id=$qfCid ORDER BY id DESC LIMIT 1");
 T('TC-QF02c 资格购下单成功', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 T('TC-QF02d 订单source=eligibility', $osrc==='eligibility', "source=$osrc");
 // 全部条件：签到1+邀请1
 exe("UPDATE nft_qualification_configs SET condition_type=2 WHERE id=$qcId");
-$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['3']);
+$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['3']);
 T('TC-QF03 全部条件未满足被拒', ($r['code']??0)===3004, "code={$r['code']} msg={$r['message']}");
 // 白名单通道（管理端API添加 user2）
 $r=http('POST','/admin/collectibles/qualification-whitelist',['config_id'=>$qcId,'phones'=>['13800000002'],'expires_at'=>date('Y-m-d H:i:s',time()+86400)],$atok);
 T('TC-QF04a 管理端添加资格购白名单', ($r['code']??0)===200&&(int)($r['data']['added']??0)===1, json_encode($r,JSON_UNESCAPED_UNICODE));
 $r=http('GET',"/api/collections/$qfCid",null,$tok['2']);
 T('TC-QF04b 白名单用户qualified=true', ($r['data']['qualification']['qualified']??false)===true);
-$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['2']);
+$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['2']);
 T('TC-QF04c 白名单用户购买成功', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 // user1：签到+邀请 → 全部满足（uk_invitee 唯一：先清历史再造数）
 exe("DELETE FROM nft_invite_records WHERE invitee_id=100");
 exe("INSERT INTO nft_invite_records (inviter_id,invitee_id,invite_code,status) VALUES (1,100,'".v("SELECT invite_code FROM nft_users WHERE id=1")."','registered')");
 http('POST','/api/check-in',[],$tok['1']);
-$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['1']);
+$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['1']);
 T('TC-QF06 签到✓邀请✓全部条件通过', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 // 未开始：全员拦截（含白名单 user2）
 exe("UPDATE nft_qualification_configs SET valid_start_at='".date('Y-m-d H:i:s',time()+3600)."' WHERE id=$qcId");
 $r=http('GET',"/api/collections/$qfCid",null,$tok['2']);
 $reason=$r['data']['qualification']['reason']??'';
-$r2=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['2']);
+$r2=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['2']);
 T('TC-QF07 未开始全员拦截', strpos($reason,'尚未开始')!==false&&($r2['code']??0)===3004, "reason=$reason code={$r2['code']}");
 // 关闭 → 恢复公售
 exe("UPDATE nft_qualification_configs SET valid_start_at='".date('Y-m-d H:i:s',time()-60)."', is_enabled=0 WHERE id=$qcId");
 $r=http('GET',"/api/collections/$qfCid",null,$tok['2']);
 T('TC-QF08a 关闭后enabled=false', ($r['data']['qualification']['enabled']??true)===false);
-$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'123456'],$tok['2']);
+$r=http('POST','/api/orders',['collectibleId'=>$qfCid,'quantity'=>1,'paymentPassword'=>'Trade#2026'],$tok['2']);
 $osrc=v("SELECT source FROM nft_orders WHERE user_id=2 AND collectible_id=$qfCid ORDER BY id DESC LIMIT 1");
 T('TC-QF08b 关闭后公售购买source=release', ($r['code']??0)===0&&$osrc==='release', "code={$r['code']} source=$osrc");
 
