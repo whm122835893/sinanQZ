@@ -236,6 +236,9 @@ class Collections extends BaseController
                 'todayCount'       => (int) $c['vol'],
                 'ordersCount'      => (int) ($c['orders_count'] ?? 0),
                 'isFavorite'       => in_array($c['id'], $favs),
+                // 寄售限价配置（与详情接口对齐，前端 limitPrice 数据源）
+                'resalePriceMin'   => (float) ($c['resale_price_min'] ?? 0),
+                'resalePriceMax'   => (float) ($c['resale_price_max'] ?? 0),
             ];
         }, $list);
 

@@ -49,7 +49,7 @@ function readCache() {
 }
 
 export const useSiteStore = defineStore('site', {
-  state: () => ({ ...DEFAULTS, ...readCache(), loaded: false }),
+  state: () => ({ ...DEFAULTS, purchaseLimitPerUser: 5, ...readCache(), loaded: false }),
 
   getters: {
     /** 品牌头像（优先平台头像，回退 Logo/默认） */
@@ -65,6 +65,8 @@ export const useSiteStore = defineStore('site', {
       try {
         const cfg = await request.get('/config')
         if (cfg?.site) this.set(cfg.site)
+        // 全局限购数（与后端 perUserLimit 兜底同源：purchase_limit_per_user）
+        if (cfg?.purchaseLimitPerUser) this.purchaseLimitPerUser = Number(cfg.purchaseLimitPerUser) || 5
       } catch { /* 网络异常时沿用缓存 */ }
       this.loaded = true
     },

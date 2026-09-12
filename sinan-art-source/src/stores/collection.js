@@ -1,12 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import request from '@/utils/request'
+import { useSiteStore } from './site'
 
 // 藏品状态：列表 / 详情 / 筛选
 // MOCK_REPLACED: 原数据来自本文件内联 mock 常量（featured/marketCollections/exhibits/resaleOrders），
 // 现已全部接入真实接口：/api/collections/featured、/api/market/collections、
 // /api/collections/:id、/api/resale/listings、/api/artifacts、/api/collections/:id/favorite
 export const useCollectionStore = defineStore('collection', () => {
+  // 限购兜底与后端 perUserLimit 同源：purchase_limit_per_user 系统配置（/api/config）
+  const site = useSiteStore()
   // 后端时间字符串（YYYY-MM-DD HH:mm:ss）→ 时间戳
   const toTs = (s) => (s ? new Date(String(s).replace(/-/g, '/')).getTime() : 0)
 
@@ -45,7 +48,7 @@ export const useCollectionStore = defineStore('collection', () => {
       issueCount: String(c.issueCount),
       circulationCount: String(c.circulationCount),
       todayCount: String(c.todayCount),
-      limitPrice: '10000',
+      limitPrice: String(Number(c.resalePriceMin) || 0), // 寄售限价下限（后端 resale_price_min，0 = 不限）
       isBuyRequestEnabled: c.isBuyRequestEnabled !== false
     }
     return resaleCollection.value
@@ -78,7 +81,7 @@ export const useCollectionStore = defineStore('collection', () => {
       issueCount: String(c.issueCount),
       circulationCount: String(c.circulationCount),
       todayCount: String(c.todayCount),
-      limitPrice: '100',
+      limitPrice: String(Number(c.resalePriceMin) || 0), // 寄售限价下限（后端 resale_price_min，0 = 不限）
       orders: [Number(c.price).toFixed(2)],
       isFavorite: !!c.isFavorite
     }))
@@ -151,7 +154,7 @@ export const useCollectionStore = defineStore('collection', () => {
       circulationCount: String(d.circulationCount),
       todayCount: String(d.todayCount),
       myOwned: d.myOwned || 0,
-      saleLimit: d.saleLimit || 5,
+      saleLimit: d.saleLimit ?? site.purchaseLimitPerUser ?? 5,
       isBuyRequestEnabled: d.isBuyRequestEnabled !== false,
       raw: d
     }

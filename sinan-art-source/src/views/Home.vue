@@ -189,14 +189,19 @@ onMounted(() => {
   scheduleMidnightUpdate()
   store.fetchFeatured().catch(() => {})
   fetchRaffleSales()
+  fetchNotices()
 })
 onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer); if (midnightTimer) clearTimeout(midnightTimer) })
 
-const notices = [
-  "司南艺术·全域'生态星推官'共建招募，共创价值！",
-  '司南商城实物兑换专区上线，司南币兑专属周边。',
-  '“司南暴富”合成活动开启，限量发行先到先得。'
-]
+// 公告轮播（真实接口：GET /api/announcements，仅已发布且到生效时间的公告，置顶优先）
+const notices = ref(['欢迎来到司南艺术·数字藏品平台'])
+async function fetchNotices() {
+  try {
+    const res = await request.get('/announcements', { params: { page: 1, pageSize: 5 } })
+    const list = (res.list || []).map((a) => a.title).filter(Boolean)
+    if (list.length) notices.value = list
+  } catch { /* 拉取失败时保留默认欢迎文案 */ }
+}
 
 function goCalendar() { router.push('/calendar') }
 function goActivity() { router.push('/activity') }
