@@ -88,6 +88,7 @@ const routes = [
       { path: 'marketing/raffle/edit/:id?', name: 'raffle-edit', component: () => import('@/views/marketing/RaffleEdit.vue'), meta: { title: '编辑抽签活动', perm: 'marketing' } },
       { path: 'marketing/raffle/registrations', name: 'raffle-registrations', component: () => import('@/views/marketing/RaffleRegistrations.vue'), meta: { title: '报名与中签记录', perm: 'marketing' } },
       { path: 'marketing/raffle/codes', name: 'raffle-codes', component: () => import('@/views/marketing/RaffleCodes.vue'), meta: { title: '抽签码管理', perm: 'marketing' } },
+      { path: 'marketing/raffle/logs', name: 'raffle-logs', component: () => import('@/views/marketing/RaffleLogs.vue'), meta: { title: '抽签操作日志', perm: 'marketing' } },
 
       // ---- 分解活动 ----
       { path: 'marketing/decompose', name: 'decompose', component: () => import('@/views/marketing/Decompose.vue'), meta: { title: '分解活动', perm: 'marketing' } },

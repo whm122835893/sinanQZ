@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -11,48 +12,49 @@ import { showToast } from 'vant'
 const router = useRouter()
 const user = useUserStore()
 
-// 已认证则默认展示认证结果，可再次编辑
-const editing = ref(!user.userInfo.isRealName)
-const realName = ref(user.userInfo.realName || '')
-const idCard = ref(user.userInfo.idCard || '')
+// 实名状态（后端 realnameStatus）：0未提交 1待审核 2已通过 3已驳回
+const status = computed(() => user.userInfo.realnameStatus ?? 0)
+// 已认证则默认展示认证结果；驳回时展示原因并允许重新提交
+const editing = ref(status.value !== 2)
+const realName = ref('')
+const idCard = ref('')
+const submitting = ref(false)
 
 const nameValid = computed(() => /^[\u4e00-\u9fa5·a-zA-Z]{2,15}$/.test(realName.value.trim()))
 const idValid = computed(() => /^\d{17}[\dXx]$/.test(idCard.value.trim()))
-const canSubmit = computed(() => nameValid.value && idValid.value)
+const canSubmit = computed(() => nameValid.value && idValid.value && !submitting.value)
 
 function nameError() {
   if (!realName.value) return ''
   return nameValid.value ? '' : '请输入 2-15 位真实姓名'
 }
+
 function idError() {
   if (!idCard.value) return ''
   return idValid.value ? '' : '请输入 18 位有效身份证号'
 }
 
-const maskedName = computed(() => {
-  const n = user.userInfo.realName || realName.value
-  if (!n) return ''
-  return n.length <= 1 ? n : n[0] + '*'.repeat(n.length - 1)
-})
-const maskedId = computed(() => {
-  const id = user.userInfo.idCard || idCard.value
-  if (!id || id.length < 8) return id
-  return id.slice(0, 4) + ' ********** ' + id.slice(-4)
-})
-
-function onSubmit() {
+// 提交实名认证（真实接口：POST /api/user/realname，提交后进入待审核，管理端审核通过后 is_realname=1）
+async function onSubmit() {
   if (!canSubmit.value) {
     if (!nameValid.value) showToast(nameError())
     else showToast(idError())
     return
   }
-  user.setUserInfo({
-    isRealName: true,
-    realName: realName.value.trim(),
-    idCard: idCard.value.trim().toUpperCase()
-  })
-  showToast('认证提交成功')
-  editing.value = false
+  submitting.value = true
+  try {
+    await request.post('/user/realname', {
+      realName: realName.value.trim(),
+      idCard: idCard.value.trim().toUpperCase()
+    })
+    showToast('已提交，等待审核')
+    editing.value = false
+    await user.fetchUserInfo()
+  } catch (e) {
+    showToast(e.message || '提交失败')
+  } finally {
+    submitting.value = false
+  }
 }
 function onEdit() {
   editing.value = true
@@ -63,35 +65,38 @@ function onEdit() {
   <div class="realname page--no-tabbar">
     <AppNavBar title="实名认证" @click-left="$router.back()" />
 
-    <!-- 已认证结果 -->
+    <!-- 已认证 / 审核中 结果 -->
     <template v-if="!editing">
       <div class="realname-done">
         <div class="realname-done__icon">
           <AppIcon name="shield" :size="28" color="#fff" />
         </div>
-        <p class="realname-done__title">已通过实名认证</p>
-        <p class="realname-done__desc">实名信息已加密存储，仅用于钱包开通与提现校验</p>
+        <p class="realname-done__title">{{ status === 2 ? '已通过实名认证' : '实名认证审核中' }}</p>
+        <p class="realname-done__desc">
+          {{ status === 2 ? '实名信息已加密存储，仅用于钱包开通与提现校验' : '工作人员正在审核您的实名信息，审核通过后即可参与中签购买' }}
+        </p>
       </div>
 
       <div class="realname-result">
         <div class="realname-result__row">
-          <span>真实姓名</span><b>{{ maskedName }}</b>
+          <span>认证状态</span>
+          <b :class="status === 2 ? 'ok' : 'pending'">{{ status === 2 ? '已认证' : '审核中' }}</b>
         </div>
-        <div class="realname-result__row">
-          <span>身份证号</span><b>{{ maskedId }}</b>
-        </div>
-        <div class="realname-result__row">
-          <span>认证状态</span><b class="ok">已认证</b>
+        <div v-if="status === 3 && user.userInfo.realnameRejectReason" class="realname-result__row">
+          <span>驳回原因</span><b class="fail">{{ user.userInfo.realnameRejectReason }}</b>
         </div>
       </div>
 
-      <div class="realname-actions">
+      <div v-if="status === 2" class="realname-actions">
         <AppButton type="outline" @click="onEdit">修改认证信息</AppButton>
       </div>
     </template>
 
     <!-- 认证表单 -->
     <template v-else>
+      <p v-if="status === 3 && user.userInfo.realnameRejectReason" class="realname-reject">
+        驳回原因：{{ user.userInfo.realnameRejectReason }}，请修改后重新提交
+      </p>
       <p class="realname-tip">
         实名认证用于开通钱包与提现，请填写本人真实信息，信息提交后不可随意更改。
       </p>
@@ -128,6 +133,10 @@ function onEdit() {
 .realname-tip {
   margin: 16px; font-size: 13px; color: $color-text-secondary; line-height: 1.6;
 }
+.realname-reject {
+  margin: 16px 16px 0; padding: 10px 12px; font-size: 13px; line-height: 1.6;
+  color: #e54d42; background: rgba(229, 77, 66, 0.08); border-radius: $radius-md;
+}
 .realname-form { padding: 0 16px; }
 
 .realname-notice {
@@ -154,6 +163,8 @@ function onEdit() {
     &:not(:last-child) { border-bottom: 1px solid $color-border; }
     b { color: $color-text-primary; font-weight: 600; }
     .ok { color: $color-primary; }
+    .pending { color: #ff976a; }
+    .fail { color: #e54d42; }
   }
 }
 .realname-actions { padding: 20px 16px 0; }

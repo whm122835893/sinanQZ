@@ -85,6 +85,9 @@ export const useUserStore = defineStore('user', () => {
       avatar: u.avatar || '',
       phone: u.phone,
       isRealName: !!u.isRealName,
+      // 实名审核状态：0未提交 1待审核 2已通过 3已驳回（姓名/身份证后端不下发明文）
+      realnameStatus: u.realnameStatus ?? 0,
+      realnameRejectReason: u.realnameRejectReason || '',
       inviteCode: u.inviteCode,
       wallet: u.wallet
     })

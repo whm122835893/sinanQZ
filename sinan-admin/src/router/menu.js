@@ -31,7 +31,8 @@ export const menuGroups = [
       { path: '/marketing/qualification', title: '资格购管理', icon: 'Key', perm: 'marketing' },
       { path: '/marketing/raffle', title: '抽签活动管理', icon: 'Tickets', perm: 'marketing' },
       { path: '/marketing/raffle/registrations', title: '报名与中签记录', icon: 'List', perm: 'marketing' },
-      { path: '/marketing/raffle/codes', title: '抽签码管理', icon: 'Ticket', perm: 'marketing' }
+      { path: '/marketing/raffle/codes', title: '抽签码管理', icon: 'Ticket', perm: 'marketing' },
+      { path: '/marketing/raffle/logs', title: '抽签操作日志', icon: 'Document', perm: 'marketing' }
     ]
   },
   {
