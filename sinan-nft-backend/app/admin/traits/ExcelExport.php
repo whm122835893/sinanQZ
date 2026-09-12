@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\traits;
 
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use think\Response;
@@ -38,34 +39,32 @@ trait ExcelExport
             $sheet->setTitle(mb_substr((string) ($sheetData['sheet'] ?? "Sheet{$index}"), 0, 31));
             $headers = $sheetData['headers'] ?? [];
             $rows = $sheetData['rows'] ?? [];
+            $lastCol = Coordinate::stringFromColumnIndex(max(1, count($headers)));
 
             // 表头
-            $col = 'A';
-            foreach ($headers as $header) {
-                $sheet->setCellValue("{$col}1", $header);
-                $col++;
+            foreach (array_values($headers) as $i => $header) {
+                $sheet->setCellValue(Coordinate::stringFromColumnIndex($i + 1) . '1', $header);
             }
-            $sheet->getStyle('A1:' . chr(ord('A') + count($headers) - 1) . '1')->getFont()->setBold(true);
+            $sheet->getStyle("A1:{$lastCol}1")->getFont()->setBold(true);
 
             // 数据行
             $rowNum = 2;
             foreach ($rows as $row) {
-                $col = 'A';
-                foreach ($row as $cell) {
+                foreach (array_values($row) as $i => $cell) {
+                    $cellRef = Coordinate::stringFromColumnIndex($i + 1) . $rowNum;
                     // 长数字（如订单号/手机号）强制文本，防止科学计数法
                     if (is_string($cell) && is_numeric($cell) && strlen($cell) > 11) {
-                        $sheet->setCellValueExplicit("{$col}{$rowNum}", $cell, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                        $sheet->setCellValueExplicit($cellRef, $cell, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                     } else {
-                        $sheet->setCellValue("{$col}{$rowNum}", $cell);
+                        $sheet->setCellValue($cellRef, $cell);
                     }
-                    $col++;
                 }
                 $rowNum++;
             }
 
             // 自动列宽（简单版）
-            foreach (range('A', chr(ord('A') + count($headers) - 1)) as $c) {
-                $sheet->getColumnDimension($c)->setWidth(16);
+            for ($i = 1; $i <= count($headers); $i++) {
+                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($i))->setWidth(16);
             }
         }
 

@@ -83,9 +83,11 @@ const routes = [
       { path: 'system/security', name: 'security', component: () => import('@/views/system/Security.vue'), meta: { title: '安全策略', perm: 'system' } },
       { path: 'system/cleanup', name: 'cleanup', component: () => import('@/views/system/Cleanup.vue'), meta: { title: '平台清库', perm: 'cleanup' } },
 
-      // ---- 抽签购 ----
-      { path: 'marketing/raffle', name: 'raffle', component: () => import('@/views/marketing/Raffle.vue'), meta: { title: '抽签购管理', perm: 'marketing' } },
+      // ---- 抽签购（三大模块：活动 / 报名与中签 / 抽签码）----
+      { path: 'marketing/raffle', name: 'raffle', component: () => import('@/views/marketing/Raffle.vue'), meta: { title: '抽签活动管理', perm: 'marketing' } },
       { path: 'marketing/raffle/edit/:id?', name: 'raffle-edit', component: () => import('@/views/marketing/RaffleEdit.vue'), meta: { title: '编辑抽签活动', perm: 'marketing' } },
+      { path: 'marketing/raffle/registrations', name: 'raffle-registrations', component: () => import('@/views/marketing/RaffleRegistrations.vue'), meta: { title: '报名与中签记录', perm: 'marketing' } },
+      { path: 'marketing/raffle/codes', name: 'raffle-codes', component: () => import('@/views/marketing/RaffleCodes.vue'), meta: { title: '抽签码管理', perm: 'marketing' } },
 
       // ---- 分解活动 ----
       { path: 'marketing/decompose', name: 'decompose', component: () => import('@/views/marketing/Decompose.vue'), meta: { title: '分解活动', perm: 'marketing' } },

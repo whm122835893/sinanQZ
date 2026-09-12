@@ -389,15 +389,41 @@ Route::group('reports', function () {
 
 // ---------------------------------------------------------------------------
 // 抽签发售（marketing:raffle:*）— P0
+// 模块：活动管理 / 报名记录（必中）/ 抽签码 / 中签记录 / 操作日志
+// 静态路由须注册在 :id 通配路由之前（否则 /registrations 会被 :id 吸收）
 // ---------------------------------------------------------------------------
 Route::group('raffle', function () {
+    // ---- 活动 CRUD ----
     Route::get('', 'RaffleController/list');
-    Route::get(':id', 'RaffleController/detail');
     Route::post('save', 'RaffleController/save');
-    Route::post(':id/start', 'RaffleController/start');
-    Route::post(':id/draw', 'RaffleController/draw');
-    Route::post(':id/cancel', 'RaffleController/cancel');
-    Route::delete(':id', 'RaffleController/delete');
+
+    // ---- 报名记录（设为必中 / 批量必中 / 实时统计）----
+    Route::get('registrations', 'RaffleController/registrations');
+    Route::post('registrations/force-win', 'RaffleController/forceWin')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+
+    // ---- 抽签码管理 ----
+    Route::get('codes', 'RaffleController/codes');
+    Route::post('codes', 'RaffleController/codeCreate')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::post('codes/import', 'RaffleController/codeImport')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::post('codes/:id/invalidate', 'RaffleController/codeInvalidate')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::delete('codes/:id', 'RaffleController/codeDelete')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+
+    // ---- 中签记录 ----
+    Route::get('winners', 'RaffleController/winners');
+    Route::get('winners/export', 'RaffleController/winnersExport');
+    Route::post('winners/:id/mark-paid', 'RaffleController/winnerMarkPaid')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::post('winners/:id/verify', 'RaffleController/winnerVerify')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+
+    // ---- 抽签独立操作日志（只读，不可删除）----
+    Route::get('logs', 'RaffleController/logs');
+
+    // ---- 活动详情 / 状态流转（含 :id 通配，必须放最后）----
+    Route::get(':id', 'RaffleController/detail');
+    Route::post(':id/start', 'RaffleController/start')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::post(':id/pause', 'RaffleController/pause')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::post(':id/draw', 'RaffleController/draw')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::post(':id/cancel', 'RaffleController/cancel')->middleware(AdminPermission::class, 'marketing:raffle:manage');
+    Route::delete(':id', 'RaffleController/delete')->middleware(AdminPermission::class, 'marketing:raffle:manage');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'marketing:raffle:list');
 
 // ---------------------------------------------------------------------------

@@ -29,7 +29,9 @@ export const menuGroups = [
       { path: '/blindbox', title: '盲盒管理', icon: 'Gift', perm: 'blindbox' },
       { path: '/marketing/priority', title: '优先购管理', icon: 'Timer', perm: 'marketing' },
       { path: '/marketing/qualification', title: '资格购管理', icon: 'Key', perm: 'marketing' },
-      { path: '/marketing/raffle', title: '抽签购管理', icon: 'Tickets', perm: 'marketing' }
+      { path: '/marketing/raffle', title: '抽签活动管理', icon: 'Tickets', perm: 'marketing' },
+      { path: '/marketing/raffle/registrations', title: '报名与中签记录', icon: 'List', perm: 'marketing' },
+      { path: '/marketing/raffle/codes', title: '抽签码管理', icon: 'Ticket', perm: 'marketing' }
     ]
   },
   {

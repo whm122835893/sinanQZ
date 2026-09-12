@@ -38,7 +38,7 @@ class Raffle extends BaseController
             ->limit($p['offset'], $p['pageSize'])
             ->field([
                 'r.id', 'r.name', 'r.description', 'r.collectible_id',
-                'r.ticket_price', 'r.limit_per_user', 'r.winner_count', 'r.sale_quantity', 'r.sale_price',
+                'r.ticket_price', 'r.winner_count', 'r.sale_quantity', 'r.sale_price',
                 'r.registration_start', 'r.registration_end', 'r.draw_time',
                 'r.purchase_start', 'r.purchase_end', 'r.status',
                 'c.name as collectible_name', 'c.image as collectible_image',
@@ -57,8 +57,8 @@ class Raffle extends BaseController
                     'image' => $r['collectible_image'] ?? '',
                 ],
                 'ticketPrice'       => (float) $r['ticket_price'],
-                'limitPerUser'      => (int) $r['limit_per_user'],
                 'winnerCount'       => (int) $r['winner_count'],
+                'drawWinCount'      => (int) ($r['draw_win_count'] ?? 0) ?: (int) $r['winner_count'],
                 'saleQuantity'      => (int) $r['sale_quantity'],
                 'salePrice'         => (float) $r['sale_price'],
                 'registrationStart' => $r['registration_start'],
@@ -116,7 +116,6 @@ class Raffle extends BaseController
             'description'        => $r['description'] ?? '',
             'collectible'        => $collectible,
             'ticketPrice'       => (float) $r['ticket_price'],
-            'limitPerUser'      => (int) $r['limit_per_user'],
             'winnerCount'       => (int) $r['winner_count'],
             'saleQuantity'      => (int) $r['sale_quantity'],
             'salePrice'         => (float) $r['sale_price'],
@@ -127,15 +126,27 @@ class Raffle extends BaseController
             'purchaseEnd'       => $r['purchase_end'],
             'status'            => (int) $r['status'],
             'phase'             => $this->phase($r, $now),
+            // 购买抽签码：开关 / 单价 / 购买上限
             'drawCodeEnabled'   => (int) ($r['draw_code_enabled'] ?? 0) === 1,
             'drawCodePrice'     => (float) ($r['draw_code_price'] ?? 0),
-            'maxDrawCodes'      => (int) ($r['max_draw_codes'] ?? 0),
+            'buyCodeLimit'      => (int) ($r['buy_code_limit'] ?? 0),
+            // 邀请好友参与得码：开关 / 上限 / 每邀请 N 人参与得 1 码
+            'inviteEnabled'     => (int) ($r['invite_enabled'] ?? 0) === 1,
+            'inviteCodeLimit'   => (int) ($r['invite_code_limit'] ?? 0),
+            'inviteUserNeeded'  => max(1, (int) ($r['invite_user_needed'] ?? 1)),
+            'totalSupply'       => (int) ($r['total_supply'] ?? 0),
+            'drawWinCount'      => (int) ($r['draw_win_count'] ?? 0) ?: (int) $r['winner_count'],
             'drawCodeCount'     => $userId ? DrawCodeService::count($userId) : 0,
-            'drawCodes'         => $userId ? DrawCodeService::codes($userId) : [],
-            'drawCodeCapped'    => $userId
-                && (int) ($r['max_draw_codes'] ?? 0) > 0
-                && count(DrawCodeService::activityCodes($userId, $id)) >= (int) ($r['max_draw_codes'] ?? 0),
+            'drawCodes'         => $userId ? DrawCodeService::activityCodeList($userId, $id) : [],
         ];
+
+        // 我的购买/邀请进度（购买与邀请按钮展示用）
+        $canBuy = false;
+        if ($userId) {
+            $bought = DrawCodeService::countActivityCodesBySource($userId, $id, DrawCodeService::SOURCE_PURCHASE);
+            $canBuy = $data['drawCodeEnabled'] && $bought < $data['buyCodeLimit'];
+        }
+        $data['canBuyDrawCode'] = $canBuy;
 
         // 我的报名状态（draw_status 不暴露他人信息）
         if ($userId) {
@@ -144,14 +155,27 @@ class Raffle extends BaseController
                 ->where('user_id', $userId)
                 ->find();
             if ($reg) {
+                // 邀请进度（活动维度：已邀请参与人数 / 已得邀请码 / 上限 / 门槛）
+                $inviteProgress = DrawCodeService::inviteProgress($userId, $r);
                 $data['myRegistration'] = [
                     'ticketCount'       => (int) $reg['ticket_count'],
                     'payAmount'          => (float) $reg['pay_amount'],
                     'payStatus'          => (int) $reg['pay_status'],
-                    'drawCodes'          => DrawCodeService::activityCodes($userId, $id),
                     'drawStatus'         => (int) $reg['draw_status'],
+                    'winCount'           => (int) $reg['draw_status'] === 1 ? max(1, (int) ($reg['win_count'] ?? 0)) : 0,
+                    'purchaseQuota'      => (int) $reg['draw_status'] === 1
+                        ? max(1, (int) ($reg['win_count'] ?? 0)) * (int) $r['sale_quantity']
+                        : 0,
                     'purchasedQuantity'  => (int) ($reg['purchased_quantity'] ?? 0),
                     'purchasable'        => $this->purchasable($r, $reg, $now),
+                    // 持有码数（基础 + 邀请 + 购买，含通用码加成）
+                    'codeCount'          => count($data['drawCodes']),
+                    // 邀请进度
+                    'inviteInvited'      => $inviteProgress['invited'],
+                    'inviteRewarded'     => $inviteProgress['rewarded'],
+                    'inviteLimit'        => $inviteProgress['limit'],
+                    'inviteNeeded'       => $inviteProgress['needed'],
+                    'inviteCapped'       => $inviteProgress['rewarded'] >= $inviteProgress['limit'],
                 ];
             }
         }
@@ -160,40 +184,40 @@ class Raffle extends BaseController
     }
 
     /**
-     * POST /api/raffle/activities/:id/register { ticketCount }
-     * 用户报名（免费直接成功；收费从余额扣报名费）
+     * POST /api/raffle/activities/:id/register
+     * 用户报名（参与抽签：基础 1 票 1 码，每人每活动 1 次；免费直接成功）
      */
     public function register()
     {
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
-        $id          = $this->intParam('id');
-        $ticketCount = max(1, $this->intParam('ticketCount', 1));
+        $id = $this->intParam('id');
         if ($id <= 0) return $this->fail(1001, '活动不存在');
 
         $activity = Db::name('raffle_activities')->where('id', $id)->whereNull('deleted_at')->find();
         if (!$activity) return $this->fail(1002, '活动不存在');
         if ((int) $activity['status'] !== 1) return $this->fail(1001, '活动当前不在报名中');
 
-        // 免费报名：报名成功即发放抽签码凭证（每 1 次报名发 1 码）
         try {
-            $reg = RaffleService::register($id, $userId, $ticketCount);
+            $reg = RaffleService::register($id, $userId, 1);
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
             return $this->fail(1001, $msg ?: '报名失败');
         }
 
         return $this->success([
-            'activityId'  => (int) $id,
-            'ticketCount' => $reg['ticketCount'] ?? $ticketCount,
-            'drawCodes'   => $reg['drawCodes'] ?? [],
+            'activityId'    => (int) $id,
+            'ticketCount'   => $reg['ticketCount'] ?? 1,
+            'drawCodes'     => $reg['drawCodes'] ?? [],
+            'inviteRewarded' => (int) ($reg['inviteRewarded'] ?? 0),
         ]);
     }
 
     /**
      * POST /api/raffle/activities/:id/purchase-draw-code { quantity }
-     * 购买抽签码：每活动开关（draw_code_enabled），单价 draw_code_price 与藏品 sale_price 分离，余额扣款
+     * 购买抽签码：开关（draw_code_enabled）+ 单价（draw_code_price）+ 购买上限（buy_code_limit），余额扣款
+     * 前提：用户已参与本场抽签（购码仅增加抽签球，不构成参与资格）
      */
     public function purchaseDrawCode()
     {
@@ -208,9 +232,26 @@ class Raffle extends BaseController
         try {
             $act = Db::name('raffle_activities')->where('id', $id)->whereNull('deleted_at')->lock(true)->find();
             if (!$act) { Db::rollback(); return $this->fail(1002, '活动不存在'); }
-            if ((int) $act['draw_code_enabled'] !== 1) {
+            // 仅抽签进行阶段可购码（开奖后买到的码永远无法参与开奖）
+            if ((int) $act['status'] !== 1) {
                 Db::rollback();
-                return $this->fail(1001, '当前活动未开放购买抽签码');
+                return $this->fail(1001, '活动当前不在抽签进行中，无法购买抽签码');
+            }
+            $now = date('Y-m-d H:i:s');
+            if ($now < $act['registration_start'] || $now > $act['registration_end']) {
+                Db::rollback();
+                return $this->fail(1001, '不在抽签时间内');
+            }
+
+            // 购码前提：已参与本场抽签（报名记录存在）
+            $reg = Db::name('raffle_registrations')
+                ->where('activity_id', $id)
+                ->where('user_id', $userId)
+                ->lock(true)
+                ->find();
+            if (!$reg) {
+                Db::rollback();
+                return $this->fail(1001, '请先参与本场抽签，再购买抽签码');
             }
 
             $unitPrice  = (float) $act['draw_code_price'];
@@ -219,14 +260,12 @@ class Raffle extends BaseController
                 return $this->fail(1001, '抽签码价格未配置');
             }
 
-            // 最大抽签码校验（0 = 不限）
-            $maxCodes = (int) ($act['max_draw_codes'] ?? 0);
-            if ($maxCodes > 0) {
-                $current = count(DrawCodeService::activityCodes($userId, $id));
-                if ($current + $qty > $maxCodes) {
-                    Db::rollback();
-                    return $this->fail(1001, "每人最多持有 {$maxCodes} 个抽签码");
-                }
+            // 购买上限校验（开关 + buy_code_limit）
+            try {
+                DrawCodeService::assertCanBuy($userId, $act, $qty);
+            } catch (\Throwable $e) {
+                Db::rollback();
+                return $this->fail(1001, $e->getMessage());
             }
             $totalPrice = round($unitPrice * $qty, 2);
 
@@ -257,6 +296,9 @@ class Raffle extends BaseController
             for ($i = 0; $i < $qty; $i++) {
                 $codes[] = DrawCodeService::grant($userId, DrawCodeService::SOURCE_PURCHASE, $id);
             }
+
+            // 购买的码标记为已报名（开奖池 = 参与用户的有效抽签码）
+            DrawCodeService::markRegistered($userId, $id);
 
             Db::commit();
         } catch (\Throwable $e) {
@@ -294,7 +336,7 @@ class Raffle extends BaseController
             ->limit($p['offset'], $p['pageSize'])
             ->field([
                 'reg.id', 'reg.activity_id', 'reg.ticket_count', 'reg.pay_amount',
-                'reg.pay_status', 'reg.draw_status', 'reg.purchased_quantity', 'reg.created_at',
+                'reg.pay_status', 'reg.draw_status', 'reg.win_count', 'reg.purchased_quantity', 'reg.created_at',
                 'r.name as activity_name', 'r.status as activity_status',
                 'r.sale_price', 'r.sale_quantity', 'r.purchase_start', 'r.purchase_end',
                 'c.name as collectible_name', 'c.image as collectible_image',
@@ -315,14 +357,15 @@ class Raffle extends BaseController
                 'payAmount'         => (float) $r['pay_amount'],
                 'payStatus'         => (int) $r['pay_status'],
                 'drawStatus'        => (int) $r['draw_status'],
+                'winCount'          => (int) $r['draw_status'] === 1 ? max(1, (int) ($r['win_count'] ?? 0)) : 0,
                 'purchasedQuantity' => (int) ($r['purchased_quantity'] ?? 0),
                 'salePrice'         => (float) $r['sale_price'],
                 'saleQuantity'      => (int) $r['sale_quantity'],
                 'purchaseStart'     => $r['purchase_start'],
                 'purchaseEnd'       => $r['purchase_end'],
-                // 中签且未购满且在购买窗口内 → 可购买
+                // 中签且未购满（中签次数 × 每次限购）且在购买窗口内 → 可购买
                 'purchasable'       => (int) $r['draw_status'] === 1
-                    && (int) ($r['purchased_quantity'] ?? 0) < (int) $r['sale_quantity']
+                    && (int) ($r['purchased_quantity'] ?? 0) < max(1, (int) ($r['win_count'] ?? 0)) * (int) $r['sale_quantity']
                     && $this->inWindow($r['purchase_start'], $r['purchase_end'], $now),
                 'createdAt'         => $r['created_at'],
             ];
@@ -373,17 +416,19 @@ class Raffle extends BaseController
             if ((int) $reg['draw_status'] !== 1) { Db::rollback(); return $this->fail(3004, '很遗憾未中签'); }
             if ((int) $reg['pay_status'] !== 1) { Db::rollback(); return $this->fail(1001, '报名费未支付，无法购买'); }
 
-            // 限购校验（原子条件更新防并发超购）
+            // 限购校验（中签次数 × 每次限购；原子条件更新防并发超购）
+            $winCount     = (int) $reg['draw_status'] === 1 ? max(1, (int) ($reg['win_count'] ?? 0)) : 0;
             $saleQuantity = (int) $act['sale_quantity'];
+            $quota        = $winCount * $saleQuantity;
             $bumped = Db::name('raffle_registrations')
                 ->where('id', $reg['id'])
-                ->whereRaw('purchased_quantity + ' . $qty . ' <= ' . $saleQuantity)
+                ->whereRaw('purchased_quantity + ' . $qty . ' <= ' . $quota)
                 ->update([
                     'purchased_quantity' => Db::raw('purchased_quantity + ' . $qty),
                 ]);
             if (!$bumped) {
                 Db::rollback();
-                return $this->fail(3003, "中签限购 {$saleQuantity} 件");
+                return $this->fail(3003, "中签可购 {$quota} 件（中签 {$winCount} 签 × 每签限购 {$saleQuantity} 件）");
             }
 
             // 库存锁定（原子操作，受 CHECK sold+locked<=edition 兜底；即时成交直接占 sold）
@@ -506,11 +551,12 @@ class Raffle extends BaseController
         return true;
     }
 
-    /** 我是否可购买（中签 + 未购满 + 窗口内） */
+    /** 我是否可购买（中签 + 未购满（中签次数 × 每次限购）+ 窗口内） */
     private function purchasable(array $activity, array $reg, string $now): bool
     {
         if ((int) $activity['status'] !== 3 || (int) $reg['draw_status'] !== 1) return false;
-        if ((int) ($reg['purchased_quantity'] ?? 0) >= (int) $activity['sale_quantity']) return false;
+        $quota = max(1, (int) ($reg['win_count'] ?? 0)) * (int) $activity['sale_quantity'];
+        if ((int) ($reg['purchased_quantity'] ?? 0) >= $quota) return false;
         return $this->inWindow($activity['purchase_start'], $activity['purchase_end'], $now);
     }
 }

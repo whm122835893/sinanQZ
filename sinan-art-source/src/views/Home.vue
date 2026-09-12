@@ -59,10 +59,10 @@ const featuredWithStatus = computed(() => {
 // 抽签发售（混入藏品发售区：卡片大小与正常藏品一致，左上角角标"抽签购"，点击进抽签详情）
 const raffleSales = ref([])
 const RAFFLE_PHASE_TEXT = {
-  upcoming: '报名未开始',
-  registering: '报名中',
-  drawing: '抽签中',
-  drawn: '已抽签',
+  upcoming: '抽签未开始',
+  registering: '抽签进行中',
+  drawing: '开签中',
+  drawn: '已开奖',
   finished: '已结束'
 }
 async function fetchRaffleSales() {
@@ -350,7 +350,7 @@ function onSign() {
             <span v-if="item.type !== 'raffle'" class="release-card__fav" :class="{ active: store.isFavorite(item.id) }" @click.stop="onFav(item.id)">
               <AppIcon :name="store.isFavorite(item.id) ? 'heartFill' : 'heart'" :size="14" />
             </span>
-            <!-- 液态玻璃：发售时间/状态（抽签发售显示报名阶段） -->
+            <!-- 液态玻璃：发售时间/状态（抽签发售显示抽签阶段） -->
             <div class="release-card__glass">
               <span v-if="item.type === 'raffle'" class="release-card__status">{{ RAFFLE_PHASE_TEXT[item.phase] || '抽签购' }}</span>
               <template v-else>

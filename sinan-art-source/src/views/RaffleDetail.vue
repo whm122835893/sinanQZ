@@ -23,7 +23,7 @@ const intro = computed(() => {
   return '《' + collectible.value.name + '》为平台精选数字藏品，已完成链上确权，支持自由寄售与流转，该藏品具体信息以下方为准。'
 })
 
-// 报名截止倒计时（每秒刷新）
+// 抽签截止倒计时（每秒刷新）
 const nowTs = ref(Date.now())
 let tickTimer = null
 const countdownText = computed(() => {
@@ -57,19 +57,29 @@ const phase = computed(() => detail.value?.phase || '')
 const canRegister = computed(() => phase.value === 'registering')
 const canPurchase = computed(() => myReg.value?.purchasable === true)
 
-// 开奖后中签：本活动获得的抽签码进入选中态（红框包裹 + 已中签小字）
-const wonCodes = computed(() => {
-  if (phase.value !== 'drawn' || myReg.value?.drawStatus !== 1) return []
-  return myReg.value.drawCodes || []
-})
+// 我的总可购额度 = 中签次数 × 每签限购（未中签为 0）
+const myQuota = computed(() => myReg.value?.purchaseQuota || 0)
 
-// 时间线（按时间先后：报名开始 → 报名截止 → 开奖 → 购买开始 → 购买结束）
+// 邀请得码是否已达上限（已得邀请码 ≥ 邀请可得码上限）
+const inviteCapped = computed(() =>
+  !!myReg.value && (myReg.value.inviteRewarded || 0) >= (detail.value?.inviteCodeLimit || 0)
+)
+
+// 购买码是否已达上限（已参与且后端判定不可再买）
+const buyCapped = computed(() =>
+  !!myReg.value && detail.value?.drawCodeEnabled === true && detail.value?.canBuyDrawCode === false
+)
+
+// 我的码号列表（状态栏码片展示：中签的码红色边框 + 已中签）
+const myCodes = computed(() => detail.value?.drawCodes || [])
+
+// 时间线（按时间先后：抽签开始 → 抽签截止 → 开奖 → 购买开始 → 购买结束）
 const timeline = computed(() => {
   const d = detail.value
   if (!d) return []
   const items = [
-    { label: '报名开始', value: d.registrationStart },
-    { label: '报名截止', value: d.registrationEnd },
+    { label: '抽签开始', value: d.registrationStart },
+    { label: '抽签截止', value: d.registrationEnd },
     { label: '开奖时间', value: d.drawTime }
   ]
   if (d.purchaseStart) items.push({ label: '购买开始', value: d.purchaseStart })
@@ -102,17 +112,17 @@ function formatTime(v) {
   return m ? `${m[2]}-${m[3]} ${m[4]}:${m[5]}` : s
 }
 
-// 报名（免费，报名成功发放抽签码）
+// 参与抽签（免费，成功后发放抽签码）
 async function onRegister() {
   if (!requireLogin(route.fullPath)) return
   if (!canRegister.value || submitting.value) return
   submitting.value = true
   try {
     await request.post(`/raffle/activities/${activityId}/register`, { ticketCount: 1 })
-    showToast('报名成功，已发放抽签码')
+    showToast('参与抽签成功，已发放抽签码')
     await fetchDetail()
   } catch (e) {
-    showToast(e.message || '报名失败')
+    showToast(e.message || '抽签失败')
   } finally {
     submitting.value = false
   }
@@ -238,40 +248,68 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
             <div class="raffle-box__code-list">
               <template v-if="(detail.drawCodes || []).length">
                 <div
-                  v-for="code in detail.drawCodes"
-                  :key="code"
+                  v-for="c in detail.drawCodes"
+                  :key="c.code"
                   class="raffle-box__code-chip"
-                  :class="{ 'is-won': wonCodes.includes(code) }"
+                  :class="{ 'is-won': c.won }"
                 >
-                  <span class="raffle-box__code-no">{{ code }}</span>
-                  <span v-if="wonCodes.includes(code)" class="raffle-box__code-win">已中签</span>
+                  <span class="raffle-box__code-no">{{ c.code }}</span>
+                  <span v-if="c.won" class="raffle-box__code-win">已中签</span>
                 </div>
               </template>
-              <span v-else class="raffle-box__code-empty">暂无抽签码，报名后获得</span>
+              <span v-else class="raffle-box__code-empty">暂无抽签码，参与抽签后获得</span>
             </div>
           </div>
 
-          <!-- 获取更多抽签码 -->
-          <div class="raffle-box__actions">
-            <button class="raffle-box__action" @click="goInvite">邀请好友获取抽签码</button>
-            <button
-              v-if="detail.drawCodeEnabled && !detail.drawCodeCapped"
-              class="raffle-box__action raffle-box__action--gold"
-              :disabled="submitting"
-              @click="onBuyDrawCode"
-            >¥{{ detail.drawCodePrice }} 购买 1 码</button>
+          <!-- 获取更多抽签码：邀请好友（后台开关）/ 购买（后台开关，位于邀请下方，样式一致） -->
+          <div v-if="detail.inviteEnabled || detail.drawCodeEnabled" class="raffle-box__actions">
+            <template v-if="detail.inviteEnabled">
+              <button
+                class="raffle-box__action"
+                :disabled="inviteCapped"
+                @click="goInvite"
+              >{{ inviteCapped ? `邀请码已得满（${myReg.inviteRewarded}/${detail.inviteCodeLimit}）` : '邀请好友获取抽签码' }}</button>
+              <p v-if="myReg && !inviteCapped" class="raffle-box__hint">
+                每邀请 {{ detail.inviteUserNeeded }} 名好友参与得 1 码，已得 {{ myReg.inviteRewarded }}/{{ detail.inviteCodeLimit }} 码
+              </p>
+            </template>
+            <template v-if="detail.drawCodeEnabled">
+              <button
+                class="raffle-box__action"
+                :disabled="buyCapped || submitting"
+                @click="onBuyDrawCode"
+              >{{ buyCapped ? `购买码已达上限（${detail.buyCodeLimit}）` : '购买抽签码' }}</button>
+              <p class="raffle-box__hint">¥{{ detail.drawCodePrice }}/码，每人最多可购 {{ detail.buyCodeLimit }} 码</p>
+            </template>
           </div>
 
-          <!-- 我的报名信息（中签状态由底部按钮与抽签码选中态展示） -->
+          <!-- 我的抽签信息（中签状态由底部按钮与抽签码选中态展示） -->
           <div v-if="myReg" class="raffle-box__status">
-            <span class="raffle-box__status-item">已报名 {{ myReg.ticketCount }} 票</span>
-            <span v-if="myReg.drawStatus === 1" class="raffle-box__status-item">已购 {{ myReg.purchasedQuantity }} / {{ detail.saleQuantity }}</span>
+            <span class="raffle-box__status-item">已参与抽签</span>
+            <span class="raffle-box__status-item">持有 {{ myReg.codeCount }} 码</span>
+            <template v-if="myReg.drawStatus === 1">
+              <span class="raffle-box__status-item">中签 {{ myReg.winCount || 1 }} 签</span>
+              <span class="raffle-box__status-item">已购 {{ myReg.purchasedQuantity }} / {{ myQuota }}</span>
+            </template>
           </div>
 
-          <!-- 报名中：倒计时 -->
+          <!-- 状态栏码号：中签的码号红色带边框，码号下方显示已中签 -->
+          <div v-if="myReg && myCodes.length" class="raffle-box__status-codes">
+            <span
+              v-for="c in myCodes"
+              :key="c.code"
+              class="raffle-box__code-chip"
+              :class="{ 'is-won': c.won }"
+            >
+              <span class="raffle-box__code-no">{{ c.code }}</span>
+              <span v-if="c.won" class="raffle-box__code-win">已中签</span>
+            </span>
+          </div>
+
+          <!-- 抽签进行中：倒计时 -->
           <div v-if="canRegister" class="raffle-box__countdown">
-            <template v-if="countdownText">距报名截止 <b>{{ countdownText }}</b></template>
-            <template v-else>报名即将截止</template>
+            <template v-if="countdownText">距抽签截止 <b>{{ countdownText }}</b></template>
+            <template v-else>抽签即将截止</template>
           </div>
         </div>
       </section>
@@ -299,7 +337,7 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
         <div class="detail-card"><p class="detail-block__body">{{ detail.description }}</p></div>
       </section>
 
-      <!-- 底部操作条：报名 → 开奖后按中签结果展示（已中签/未中签/立即购买） -->
+      <!-- 底部操作条：抽签 → 开奖后按中签结果展示（已中签/未中签/立即购买） -->
       <div class="detail-buy safe-bottom">
         <div class="detail-buy__price" v-if="canPurchase">
           <b>¥{{ detail.salePrice }}</b>
@@ -307,9 +345,10 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
         <button
           v-if="canRegister"
           class="detail-buy__btn"
-          :disabled="submitting"
+          :class="{ 'detail-buy__btn--win': myReg }"
+          :disabled="submitting || !!myReg"
           @click="onRegister"
-        >{{ myReg ? '追加报名（+1票）' : '立即报名' }}</button>
+        >{{ myReg ? '已参与抽签' : '立即抽签' }}</button>
         <!-- 中签且到购买时间：立即购买 -->
         <button
           v-else-if="canPurchase"
@@ -322,7 +361,7 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
           v-else-if="phase === 'drawn' && myReg && myReg.drawStatus === 1"
           class="detail-buy__btn detail-buy__btn--win"
           disabled
-        >{{ myReg.purchasedQuantity >= detail.saleQuantity ? '已购满' : '已中签' }}</button>
+        >{{ myReg.purchasedQuantity >= myQuota ? '已购满' : '已中签' }}</button>
         <!-- 未中签 -->
         <button
           v-else-if="phase === 'drawn' && myReg && myReg.drawStatus === 2"
@@ -330,9 +369,9 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
           disabled
         >未中签</button>
         <p v-else class="detail-buy__tip">
-          {{ phase === 'upcoming' ? '报名尚未开始' :
+          {{ phase === 'upcoming' ? '抽签尚未开始' :
              phase === 'drawn' ? (myReg ? '等待开奖结果' : '您未参与本场抽签') :
-             phase === 'drawing' ? '等待开奖' :
+             phase === 'drawing' ? '开签中' :
              phase === 'finished' ? '活动已结束' : '暂不可操作' }}
         </p>
       </div>
@@ -442,17 +481,16 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
 .raffle-box__code-empty { font-size: 12px; color: $color-text-tertiary; }
 
 .raffle-box__actions {
-  display: flex; gap: 10px; padding: 12px 0;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 0;
   border-bottom: 1px solid $color-border;
 }
 .raffle-box__action {
-  flex: 1; height: 40px; border: 1px solid $color-primary; border-radius: $radius-md;
+  width: 100%; height: 40px; border: 1px solid $color-primary; border-radius: $radius-md;
   background: transparent; cursor: pointer; font-size: 14px; color: $color-primary;
   &:disabled { opacity: 0.6; }
-  &--gold {
-    border-color: #E8B873; color: #D4A574;
-    background: rgba(232, 184, 115, 0.08);
-  }
+}
+.raffle-box__hint {
+  margin: 0; font-size: 11px; line-height: 1.4; color: $color-text-tertiary; text-align: center;
 }
 
 /* 时间线卡片（置于「抽签活动」标题上方，与 raffle-box 同款卡片） */
@@ -522,12 +560,19 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
   padding: 3px 8px; border-radius: $radius-sm; background: $color-bg;
 }
 
+/* 状态栏码号行：复用上方码片样式，中签的码红色边框 + 已中签 */
+.raffle-box__status-codes {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-top: 8px; padding-top: 10px;
+  border-top: 1px dashed $color-border;
+}
+
 .raffle-box__countdown {
   margin-top: 10px; text-align: center; font-size: 13px; color: $color-text-tertiary;
   b { color: $color-primary; font-size: 15px; }
 }
 
-/* ---------- 底部操作条：报名 / 已中签 / 未中签 / 立即购买 ---------- */
+/* ---------- 底部操作条：抽签 / 已中签 / 未中签 / 立即购买 ---------- */
 .detail-buy {
   position: fixed; left: 0; right: 0; bottom: 0; background: $color-card;
   padding: 12px $page-padding; border-top: 1px solid $color-border; z-index: 50;

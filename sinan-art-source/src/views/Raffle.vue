@@ -17,10 +17,10 @@ const tab = ref('list') // list 活动 / mine 我的抽签
 
 // 活动阶段文案
 const PHASE_TEXT = {
-  upcoming: '报名未开始',
-  registering: '报名中',
-  drawing: '抽签中',
-  drawn: '已抽签',
+  upcoming: '抽签未开始',
+  registering: '抽签进行中',
+  drawing: '开签中',
+  drawn: '已开奖',
   finished: '已结束'
 }
 
@@ -36,7 +36,7 @@ async function fetchActivities() {
   }
 }
 
-// 我的抽签报名记录（含中签状态与购买入口）
+// 我的抽签记录（含中签状态与购买入口）
 async function fetchMine() {
   if (!user.isLoggedIn) return
   try {
@@ -80,9 +80,9 @@ onMounted(() => {
             <p class="raffle-card__collectible">{{ a.collectible?.name }}</p>
             <div class="raffle-card__meta">
               <span class="raffle-card__price">¥{{ a.salePrice }}</span>
-              <span class="raffle-card__count">{{ a.winnerCount }} 个名额</span>
+              <span class="raffle-card__count">{{ a.drawWinCount || a.winnerCount }} 个名额</span>
             </div>
-            <p class="raffle-card__time">报名：{{ a.registrationStart?.slice(5, 16) }} ~ {{ a.registrationEnd?.slice(5, 16) }}</p>
+            <p class="raffle-card__time">抽签：{{ a.registrationStart?.slice(5, 16) }} ~ {{ a.registrationEnd?.slice(5, 16) }}</p>
             <p class="raffle-card__time">开奖：{{ a.drawTime?.slice(5, 16) }}</p>
           </div>
         </div>
@@ -91,13 +91,13 @@ onMounted(() => {
 
     <!-- 我的抽签 -->
     <template v-else>
-      <AppEmpty v-if="!mine.length" text="暂无报名记录" />
+      <AppEmpty v-if="!mine.length" text="暂无抽签记录" />
       <div v-else class="raffle__list">
         <div v-for="m in mine" :key="m.id" class="raffle-card" @click="goDetail(m.activityId)">
           <div class="raffle-card__img-wrap">
             <img class="raffle-card__img" :src="m.collectible?.image || '/images/platform-logo.png'" alt="" />
             <span class="raffle-card__phase" :class="m.drawStatus === 1 ? 'drawn' : m.drawStatus === 2 ? 'finished' : 'registering'">
-              {{ m.drawStatus === 1 ? '已中签' : m.drawStatus === 2 ? '未中签' : '待开奖' }}
+              {{ m.drawStatus === 1 ? (m.winCount > 1 ? `已中签×${m.winCount}` : '已中签') : m.drawStatus === 2 ? '未中签' : '待开奖' }}
             </span>
           </div>
           <div class="raffle-card__body">
@@ -106,13 +106,13 @@ onMounted(() => {
             <div class="raffle-card__meta">
               <span class="raffle-card__price" v-if="m.drawStatus === 1">¥{{ m.salePrice }}</span>
               <span v-if="m.drawStatus === 1" class="raffle-card__count">
-                已购 {{ m.purchasedQuantity }}/{{ m.saleQuantity }}
+                已购 {{ m.purchasedQuantity }}/{{ (m.winCount || 1) * m.saleQuantity }}
               </span>
             </div>
             <button v-if="m.purchasable" class="raffle-card__buy" @click.stop="goDetail(m.activityId)">
               中签购买
             </button>
-            <p v-else-if="m.drawStatus === 1 && m.purchasedQuantity >= m.saleQuantity" class="raffle-card__time">
+            <p v-else-if="m.drawStatus === 1 && m.purchasedQuantity >= (m.winCount || 1) * m.saleQuantity" class="raffle-card__time">
               已购满
             </p>
           </div>
@@ -120,7 +120,7 @@ onMounted(() => {
       </div>
     </template>
 
-    <p class="raffle__rule">活动规则：报名截止后系统随机抽签，中签用户可在有效期内按中签价购买，逾期视为放弃。</p>
+    <p class="raffle__rule">活动规则：抽签截止后系统开奖，中签用户可在有效期内按中签价购买，逾期视为放弃。</p>
   </div>
 </template>
 

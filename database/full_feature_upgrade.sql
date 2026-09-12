@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS `nft_raffle_activities` (
   `name`          VARCHAR(120) NOT NULL COMMENT '活动名称',
   `description`   TEXT NULL COMMENT '活动规则说明',
   `ticket_price`  DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '抽签报名费（0=免费）',
-  `limit_per_user` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '每人限报次数',
   `winner_count`  INT UNSIGNED NOT NULL COMMENT '中签名额数',
   `sale_quantity`  INT UNSIGNED NOT NULL COMMENT '中签用户每人可购买数量',
   `sale_price`    DECIMAL(10,2) NOT NULL COMMENT '中签后购买价',
