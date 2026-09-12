@@ -196,9 +196,10 @@ class Collections extends BaseController
             ->whereNull('c.deleted_at');
 
         if ($category && $category !== 'all') {
-            $query->where('c.category_id', function ($sub) use ($category) {
-                $sub->name('categories')->where('code', $category)->value('id');
-            });
+            // code → id 标量过滤（闭包误用会生成 `category_id = (SELECT ...)` 行比较，
+            // MySQL 8 严格类型下报 4078；无效分类返回空列表）
+            $catId = Db::name('categories')->where('code', $category)->value('id');
+            $query->where('c.category_id', $catId ?: -1);
         }
         if ($keyword) {
             $query->where('c.name', 'like', "%{$keyword}%");
