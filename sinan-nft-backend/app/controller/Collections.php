@@ -13,19 +13,22 @@ use think\facade\Db;
 class Collections extends BaseController
 {
     /**
-     * GET /api/collections/categories
-     * 藏品分类列表
+     * GET /api/collections/categories?scene=market|artifact
+     * 分类列表（scene：market 市场二级分类 / artifact 文物展览分类，默认 market）
      */
     public function categories()
     {
+        $scene = $this->enumParam('scene', ['market', 'artifact']) ?? 'market';
+
         $list = Db::name('categories')
             ->whereNull('deleted_at')
+            ->where('scene', $scene)
             ->order('sort_order', 'asc')
             ->select()
             ->toArray();
 
         // 前端约定追加一个"全部"选项
-        $all = ['id' => 0, 'name' => '全部', 'code' => 'all'];
+        $all = ['id' => 0, 'name' => '全部', 'code' => 'all', 'scene' => $scene];
         return $this->success([$all, ...array_map('camelize_keys', $list)]);
     }
 

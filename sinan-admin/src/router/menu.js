@@ -81,6 +81,7 @@ export const menuGroups = [
     items: [
       { path: '/content/announcements', title: '公告管理', icon: 'Bell', perm: 'content' },
       { path: '/content/banners', title: '轮播管理', icon: 'PictureFilled', perm: 'content' },
+      { path: '/content/categories', title: '分类管理', icon: 'Menu', perm: 'content' },
       { path: '/content/community', title: '社区管理', icon: 'ChatDotRound', perm: 'content' },
       { path: '/content/artifacts', title: '文物展馆', icon: 'OfficeBuilding', perm: 'content' },
       { path: '/content/decoration', title: '站点装修', icon: 'Brush', perm: 'content' }

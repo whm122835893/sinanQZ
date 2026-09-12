@@ -64,6 +64,7 @@ const routes = [
       // ---- 内容 ----
       { path: 'content/announcements', name: 'announcements', component: () => import('@/views/content/Announcements.vue'), meta: { title: '公告管理', perm: 'content' } },
       { path: 'content/banners', name: 'banners', component: () => import('@/views/content/Banners.vue'), meta: { title: '轮播管理', perm: 'content' } },
+      { path: 'content/categories', name: 'categories', component: () => import('@/views/content/Categories.vue'), meta: { title: '分类管理', perm: 'content' } },
       { path: 'content/community', name: 'community', component: () => import('@/views/content/Community.vue'), meta: { title: '社区管理', perm: 'content' } },
       { path: 'content/artifacts', name: 'artifacts', component: () => import('@/views/content/Artifacts.vue'), meta: { title: '文物展馆', perm: 'content' } },
       { path: 'content/decoration', name: 'decoration', component: () => import('@/views/content/Decoration.vue'), meta: { title: '站点装修', perm: 'content' } },

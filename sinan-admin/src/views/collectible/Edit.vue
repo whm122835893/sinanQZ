@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-import { getCollectibleDetail, saveCollectible, getChainNetworks, uploadImage } from '@/api'
+import { getCollectibleDetail, saveCollectible, getChainNetworks, uploadImage, getCategories } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,7 +15,7 @@ const uploading = ref(false)
 const form = ref({
   name: '',
   subtitle: '',
-  category: '青铜',
+  categoryId: null,
   price: null,
   edition: null,
   saleTime: '',
@@ -36,13 +36,21 @@ const rules = {
   cover: [{ required: true, message: '请上传藏品图', trigger: 'change' }]
 }
 
-const categories = ['青铜', '水墨', '国潮', '限定']
+// 分类选项（动态：内容管理 → 分类管理，market 场景）
+const categories = ref([])
 
 // 上链链选择（三链）：显示后台启用的链，未配置时可留空（不上链）
 const CHAIN_LABELS = { wenchang: '文昌链', consortium: '联盟链', antchain: '蚂蚁链' }
 const chains = ref([])   // [{ code, name, status, isDefault, configured }]
 
 onMounted(async () => {
+  // 加载分类选项（失败不阻塞表单）
+  const cat = await getCategories('market')
+  if (cat.code === 0) {
+    categories.value = cat.data
+    if (!id && cat.data.length) form.value.categoryId = cat.data[0].id
+  }
+
   // 加载链网络（展示启用状态；默认链用于新建时的初始选择）
   const net = await getChainNetworks()
   if (net.code === 0) {
@@ -66,7 +74,7 @@ onMounted(async () => {
     const res = await getCollectibleDetail(id)
     const c = res.data
     form.value = {
-      name: c.name, subtitle: c.subtitle, category: c.category,
+      name: c.name, subtitle: c.subtitle, categoryId: c.categoryId || null,
       price: c.price, edition: c.edition, saleTime: c.saleTime,
       tag: c.tag, issuer: c.issuer, creator: c.creator || '',
       royaltyRate: c.royaltyRate ?? null,
@@ -111,7 +119,7 @@ async function onSubmit() {
     id,
     name: f.name.trim(),
     subtitle: f.subtitle.trim(),
-    category: f.category,
+    categoryId: f.categoryId,
     price: Number(f.price) || 0,
     edition: Number(f.edition) || 0,
     saleTime: f.saleTime,
@@ -147,9 +155,12 @@ async function onSubmit() {
         </el-form-item>
 
         <el-form-item label="分类">
-          <el-radio-group v-model="form.category">
-            <el-radio v-for="c in categories" :key="c" :value="c">{{ c }}</el-radio>
+          <el-radio-group v-model="form.categoryId">
+            <el-radio v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</el-radio>
           </el-radio-group>
+          <div v-if="!categories.length" class="t-tertiary" style="font-size: 12px; width: 100%">
+            暂无分类，请先到「内容 → 分类管理」新增市场分类
+          </div>
         </el-form-item>
 
         <el-form-item label="售价（元）" prop="price">

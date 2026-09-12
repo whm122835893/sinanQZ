@@ -12,20 +12,29 @@ const user = useUserStore()
 
 const realNameText = computed(() => (user.userInfo.isRealName ? '已认证' : '未认证'))
 
-// 昵称行内编辑
+// 昵称行内编辑（真实接口：PUT /api/user/profile）
 const editingNick = ref(false)
 const nickTemp = ref(user.userInfo.nickname)
+const nickSaving = ref(false)
 
 function startEdit() {
   nickTemp.value = user.userInfo.nickname
   editingNick.value = true
 }
-function saveNick() {
+async function saveNick() {
   const v = nickTemp.value.trim()
   if (v.length < 2) { showToast('昵称至少 2 个字符'); return }
-  user.setUserInfo({ nickname: v })
-  editingNick.value = false
-  showToast('昵称已更新')
+  if (v.length > 20) { showToast('昵称最多 20 个字符'); return }
+  nickSaving.value = true
+  try {
+    await user.updateNickname(v)
+    editingNick.value = false
+    showToast('昵称已更新')
+  } catch (e) {
+    showToast(e?.message || '保存失败，请重试')
+  } finally {
+    nickSaving.value = false
+  }
 }
 </script>
 
@@ -50,7 +59,7 @@ function saveNick() {
         <AppInput v-model="nickTemp" placeholder="请输入昵称" maxlength="20" />
         <div class="profile-nick-edit__btns">
           <button class="ghost" @click="editingNick = false">取消</button>
-          <button class="solid" @click="saveNick">保存</button>
+          <button class="solid" :disabled="nickSaving" @click="saveNick">{{ nickSaving ? '保存中…' : '保存' }}</button>
         </div>
       </div>
 

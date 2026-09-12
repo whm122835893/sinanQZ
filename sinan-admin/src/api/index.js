@@ -1942,6 +1942,45 @@ export function saveBanner(payload) {
   return post('/cms/banners', body)
 }
 
+// ============================================================
+// 分类管理（scene=market 市场二级分类 / artifact 文物展览分类）
+// ============================================================
+
+export async function getCategories(scene = 'market') {
+  const res = await get('/cms/categories', { scene })
+  if (res.code !== 0) return res
+  return {
+    code: 0,
+    message: res.message,
+    data: (res.data || []).map((c) => ({
+      id: n(c.id),
+      name: s(c.name),
+      code: s(c.code),
+      scene: s(c.scene),
+      sortOrder: n(c.sortOrder),
+      collectibleCount: n(c.collectibleCount)
+    }))
+  }
+}
+
+export function saveCategory(payload) {
+  const body = {
+    name: payload.name,
+    code: payload.code,
+    scene: payload.scene,
+    sort_order: n(payload.sortOrder),
+    icon: payload.icon || ''
+  }
+  if (payload.id) {
+    return put(`/cms/categories/${payload.id}`, body)
+  }
+  return post('/cms/categories', body)
+}
+
+export function removeCategory(id) {
+  return del(`/cms/categories/${id}`)
+}
+
 export async function getCommunityGroups() {
   const res = await get('/cms/community')
   if (res.code !== 0) return res

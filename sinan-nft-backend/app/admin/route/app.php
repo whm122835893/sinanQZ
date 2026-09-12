@@ -220,6 +220,11 @@ Route::group('cms', function () {
     Route::put('banners/:id', 'CmsController/bannerUpdate');
     Route::delete('banners/:id', 'CmsController/bannerDelete');
     Route::post('banners/:id/toggle', 'CmsController/bannerToggle');
+    // 分类（market 市场二级分类 / artifact 文物展览分类）
+    Route::get('categories', 'CmsController/categoryList');
+    Route::post('categories', 'CmsController/categoryCreate');
+    Route::put('categories/:id', 'CmsController/categoryUpdate');
+    Route::delete('categories/:id', 'CmsController/categoryDelete');
     // 公告
     Route::get('announcements', 'CmsController/announcementList');
     Route::post('announcements', 'CmsController/announcementCreate');

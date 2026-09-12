@@ -92,13 +92,17 @@ function formatSaleTime(ts) {
   return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}  ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-// 背景轮播：横向无缝滚动 + 手势拖动
-const slides = ['slide-1.jpg', 'slide-2.jpg', 'slide-3.jpg']
-const n = slides.length
-const renderSlides = [...slides, slides[0]] // 末尾追加首图副本，向左无缝循环
+// 背景轮播：横向无缝滚动 + 手势拖动（真实接口：GET /api/banners，失败兜底本地图）
+const slides = ref([
+  '/images/hero/slide-1.jpg',
+  '/images/hero/slide-2.jpg',
+  '/images/hero/slide-3.jpg'
+])
+const n = computed(() => slides.value.length)
+const renderSlides = computed(() => [...slides.value, slides.value[0]]) // 末尾追加首图副本，向左无缝循环
 const pos = ref(0)              // 连续位移（单位：张），0..n
 const transitionOn = ref(true)  // 是否启用过渡动画
-const activeIndex = computed(() => Math.round(pos.value) % n)
+const activeIndex = computed(() => n.value ? Math.round(pos.value) % n.value : 0)
 const bgRef = ref(null)
 let timer = null
 
@@ -113,7 +117,7 @@ function stopAuto() { if (timer) { clearInterval(timer); timer = null } }
 function autoNext() {
   pos.value = Math.round(pos.value) + 1
   // 滚到末尾副本（=首图视觉）后，在过渡结束瞬间无感复位到 0，向左无限循环、不跳变
-  if (pos.value >= n) {
+  if (pos.value >= n.value) {
     setTimeout(() => {
       transitionOn.value = false
       pos.value = 0
@@ -153,7 +157,7 @@ function onTouchMove(e) {
   let p = startPos - dx / w // 向左拖(dx<0) → 看下一张 → 向左轮播
   // 软边界：首图与副本之间可临时越界，随后吸附回环
   if (p < -0.5) p = -0.5 + (p + 0.5) * 0.3
-  if (p > n + 0.5) p = n + 0.5 + (p - (n + 0.5)) * 0.3
+  if (p > n.value + 0.5) p = n.value + 0.5 + (p - (n.value + 0.5)) * 0.3
   pos.value = p
 }
 function onTouchEnd(e) {
@@ -168,10 +172,10 @@ function onTouchEnd(e) {
   } else if (dx >= thr) {
     if (Math.round(pos.value) <= 0) {                  // 右滑到首图 → 跳副本再回环
       transitionOn.value = false
-      pos.value = n
+      pos.value = n.value
       requestAnimationFrame(() => requestAnimationFrame(() => {
         transitionOn.value = true
-        pos.value = n - 1
+        pos.value = n.value - 1
       }))
     } else {
       pos.value = Math.round(startPos - dx / w)
@@ -183,15 +187,33 @@ function onTouchEnd(e) {
 }
 
 onMounted(() => {
-  if (Math.round(pos.value) >= n) pos.value = 0
+  if (Math.round(pos.value) >= n.value) pos.value = 0
   startAuto()
   saleTimer = setInterval(() => { now.value = Date.now() }, 1000)
   scheduleMidnightUpdate()
   store.fetchFeatured().catch(() => {})
   fetchRaffleSales()
   fetchNotices()
+  fetchBanners()
 })
 onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer); if (midnightTimer) clearTimeout(midnightTimer) })
+
+// 首页轮播图（真实接口：GET /api/banners，管理端「内容→轮播管理」维护；失败保留本地兜底图）
+async function fetchBanners() {
+  try {
+    const res = await request.get('/banners')
+    const list = (Array.isArray(res) ? res : res.list || [])
+      .map((b) => b.image)
+      .filter(Boolean)
+    if (list.length) {
+      slides.value = list
+      // 图片源切换后无感复位到第一张
+      transitionOn.value = false
+      pos.value = 0
+      requestAnimationFrame(() => { transitionOn.value = true })
+    }
+  } catch { /* 拉取失败时保留本地兜底图 */ }
+}
 
 // 公告轮播（真实接口：GET /api/announcements，仅已发布且到生效时间的公告，置顶优先）
 const notices = ref(['欢迎来到司南艺术·数字藏品平台'])
@@ -236,7 +258,7 @@ function onSign() {
             v-for="(s, i) in renderSlides"
             :key="i"
             class="home-hero__slide"
-            :src="'/images/hero/' + s"
+            :src="s"
             alt=""
             draggable="false"
             @contextmenu.prevent

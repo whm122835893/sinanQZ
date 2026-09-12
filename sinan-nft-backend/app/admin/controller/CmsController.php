@@ -9,6 +9,7 @@ use think\facade\Db;
  * 内容管理控制器（CMS）
  *
  * - 轮播图管理：nft_banners 增删改查 + 启停
+ * - 分类管理：nft_categories（scene=market 市场二级分类 / artifact 文物展览分类）增删改
  * - 公告管理：nft_announcements（notice公告/news新闻）增删改查 + 置顶
  * - 协议管理：nft_site_settings 键值存储（用户协议/隐私政策富文本）
  * - 文物展馆：nft_artifacts 增删改查
@@ -161,6 +162,203 @@ class CmsController extends BaseController
 
         $this->audit('cms', 'banner_toggle', ($newStatus === 1 ? '启用' : '停用') . '轮播图（ID ' . $id . '）', [], 'banner', $id);
         return $this->success(['is_active' => $newStatus], $newStatus === 1 ? '已启用' : '已停用');
+    }
+
+    // ============================================================
+    // 一b、分类管理（cms:category）
+    // 场景：market 市场二级分类（水墨/国潮…）/ artifact 文物展览分类（青铜/陶瓷…）
+    // ============================================================
+
+    /**
+     * GET /admin/cms/categories?scene=market|artifact
+     */
+    public function categoryList()
+    {
+        $scene = $this->enumParam('scene', ['market', 'artifact']);
+
+        $query = Db::name('categories')->whereNull('deleted_at');
+        if ($scene !== null) {
+            $query->where('scene', $scene);
+        }
+
+        $items = $query->order('sort_order', 'asc')->order('id', 'asc')->select()->toArray();
+
+        // 分类下藏品数（market 场景关联 nft_collectibles.category_id）
+        $countRows = Db::name('collectibles')
+            ->whereNull('deleted_at')
+            ->field('category_id, COUNT(*) as cnt')
+            ->group('category_id')
+            ->select()->toArray();
+        $countMap = array_column($countRows, 'cnt', 'category_id');
+
+        $list = array_map(function ($c) use ($countMap) {
+            return [
+                'id'         => (int) $c['id'],
+                'name'       => $c['name'],
+                'code'       => $c['code'],
+                'scene'      => $c['scene'],
+                'sortOrder'  => (int) $c['sort_order'],
+                'icon'       => $c['icon'] ?? '',
+                'collectibleCount' => (int) ($countMap[$c['id']] ?? 0),
+            ];
+        }, $items);
+
+        return $this->success($list);
+    }
+
+    /**
+     * POST /admin/cms/categories { name, code, scene, sort_order?, icon? }
+     */
+    public function categoryCreate()
+    {
+        $missing = $this->missingParams(['name', 'code', 'scene']);
+        if ($missing) {
+            return $this->failMissing($missing);
+        }
+
+        $scene = $this->enumParam('scene', ['market', 'artifact']);
+        if ($scene === null) {
+            return $this->fail(4220, 'scene 仅支持 market / artifact');
+        }
+
+        $name = trim((string) $this->request->param('name'));
+        if ($name === '' || mb_strlen($name) > 20) {
+            return $this->fail(4220, '分类名需为 1~20 字符');
+        }
+
+        $code = strtolower(trim((string) $this->request->param('code')));
+        if (!preg_match('/^[a-z0-9_-]{1,20}$/', $code)) {
+            return $this->fail(4220, '分类编码仅支持小写字母/数字/中划线/下划线（1~20位）');
+        }
+
+        if (Db::name('categories')->where('code', $code)->whereNull('deleted_at')->count()) {
+            return $this->fail(4220, '分类编码已存在：' . $code);
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $id = Db::name('categories')->insertGetId([
+            'name'       => $name,
+            'code'       => $code,
+            'scene'      => $scene,
+            'sort_order' => max(0, (int) $this->request->param('sort_order', 0)),
+            'icon'       => $this->optStr('icon', 50),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $this->audit('cms', 'category_create', '新增分类「' . $name . '」（' . $scene . '）', compact('name', 'code', 'scene'), 'category', $id);
+        return $this->success(['id' => $id], '分类已创建');
+    }
+
+    /**
+     * PUT /admin/cms/categories/:id
+     */
+    public function categoryUpdate()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+
+        $cat = Db::name('categories')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$cat) {
+            return $this->fail(4040, '分类不存在');
+        }
+
+        $update = ['updated_at' => date('Y-m-d H:i:s')];
+
+        if ($this->request->has('name')) {
+            $name = trim((string) $this->request->param('name'));
+            if ($name === '' || mb_strlen($name) > 20) {
+                return $this->fail(4220, '分类名需为 1~20 字符');
+            }
+            $update['name'] = $name;
+        }
+        if ($this->request->has('code')) {
+            $code = strtolower(trim((string) $this->request->param('code')));
+            if (!preg_match('/^[a-z0-9_-]{1,20}$/', $code)) {
+                return $this->fail(4220, '分类编码仅支持小写字母/数字/中划线/下划线（1~20位）');
+            }
+            if ($code !== $cat['code']
+                && Db::name('categories')->where('code', $code)->whereNull('deleted_at')->count()) {
+                return $this->fail(4220, '分类编码已存在：' . $code);
+            }
+            $update['code'] = $code;
+        }
+        if ($this->request->has('scene')) {
+            $scene = $this->enumParam('scene', ['market', 'artifact']);
+            if ($scene === null) {
+                return $this->fail(4220, 'scene 仅支持 market / artifact');
+            }
+            $update['scene'] = $scene;
+        }
+        if ($this->request->has('sort_order')) {
+            $update['sort_order'] = max(0, (int) $this->request->param('sort_order'));
+        }
+        if ($this->request->has('icon')) {
+            $update['icon'] = $this->optStr('icon', 50);
+        }
+
+        Db::name('categories')->where('id', $id)->update($update);
+
+        // artifact 分类改名 → 同步文物 tags 首标签（C 端文物展览区按 tags[0] 与分类名匹配）
+        if (($update['name'] ?? null) !== null
+            && ($cat['scene'] === 'artifact' || ($update['scene'] ?? '') === 'artifact')
+            && $update['name'] !== $cat['name']) {
+            $oldName = $cat['name'];
+            $newName = $update['name'];
+            $rows = Db::name('artifacts')
+                ->whereNull('deleted_at')
+                ->whereLike('tags', '%' . $oldName . '%')
+                ->field('id, tags')
+                ->select()->toArray();
+            foreach ($rows as $row) {
+                $tags = json_decode((string) $row['tags'], true);
+                if (!is_array($tags)) continue;
+                $changed = false;
+                foreach ($tags as $i => $t) {
+                    if ($t === $oldName) { $tags[$i] = $newName; $changed = true; }
+                }
+                if ($changed) {
+                    Db::name('artifacts')->where('id', $row['id'])->update([
+                        'tags'       => json_encode($tags, JSON_UNESCAPED_UNICODE),
+                        'updated_at' => date('Y-m-d H:i:s'),
+                    ]);
+                }
+            }
+        }
+
+        $this->audit('cms', 'category_update', '编辑分类「' . ($update['name'] ?? $cat['name']) . '」',
+            array_intersect_key($update, array_flip(['name', 'code', 'scene', 'sort_order'])), 'category', $id);
+        return $this->success(null, '分类已更新');
+    }
+
+    /**
+     * DELETE /admin/cms/categories/:id（软删除；被藏品引用的分类不可删）
+     */
+    public function categoryDelete()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+
+        $cat = Db::name('categories')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$cat) {
+            return $this->fail(4040, '分类不存在');
+        }
+
+        $used = Db::name('collectibles')->where('category_id', $id)->whereNull('deleted_at')->count();
+        if ($used > 0) {
+            return $this->fail(4220, '该分类下还有 ' . $used . ' 个藏品，请先调整藏品分类后再删除');
+        }
+
+        Db::name('categories')->where('id', $id)->update([
+            'deleted_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->audit('cms', 'category_delete', '删除分类「' . $cat['name'] . '」', [], 'category', $id);
+        return $this->success(null, '分类已删除');
     }
 
     // ============================================================

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import AppIcon from '@/components/AppIcon.vue'
@@ -15,8 +15,16 @@ const tabs = [
   { name: 'market-free', label: '自由市场', to: '/market/free' }
 ]
 
-const categories = ['全部', '水墨', '国潮', '盲盒', '实物', '联名']
-const activeCat = ref('全部')
+// 二级分类（真实接口：GET /api/collections/categories?scene=market，
+// 管理端「内容 → 分类管理」维护；失败兜底静态默认）
+const FALLBACK_CATS = [
+  { id: 0, name: '全部', code: 'all' },
+  { id: 1, name: '水墨', code: 'ink' },
+  { id: 2, name: '国潮', code: 'guochao' }
+]
+const categories = computed(() =>
+  store.marketCategories.length ? store.marketCategories : FALLBACK_CATS
+)
 
 const viewOptions = [
   { value: 'grid', label: '网格视图' },
@@ -31,10 +39,29 @@ function isActive(name) {
   return route.name === name
 }
 
+// 分类切换：写回 filters.category（code），拉取市场列表（后端按 category_id 过滤）
+function selectCategory(cat) {
+  if (store.filters.category === cat.code) return
+  store.filters.category = cat.code
+  store.fetchMarket().catch(() => {})
+}
+
 function selectView(value) {
   store.marketViewMode = value
   showViewMenu.value = false
 }
+
+// 搜索：回车/按钮触发后端关键词检索（输入过程中仍有本地即时过滤）
+function onSearch(e) {
+  if (e?.target?.blur) e.target.blur()
+  store.fetchMarket().catch(() => {})
+}
+
+onMounted(() => {
+  // 分类动态化 + 首次进入市场页拉取列表（此前无入口触发，列表恒为空）
+  store.fetchCategories('market').catch(() => {})
+  store.fetchMarket().catch(() => {})
+})
 </script>
 
 <template>
@@ -58,11 +85,11 @@ function selectView(value) {
       <div class="market-sub__cats no-scrollbar">
         <span
           v-for="cat in categories"
-          :key="cat"
+          :key="cat.code"
           class="market-sub__cat"
-          :class="{ active: activeCat === cat }"
-          @click="activeCat = cat"
-        >{{ cat }}</span>
+          :class="{ active: store.filters.category === cat.code }"
+          @click="selectCategory(cat)"
+        >{{ cat.name }}</span>
       </div>
       <div class="market-sub__view">
         <button class="market-sub__view-btn" @click="showViewMenu = !showViewMenu">
@@ -98,9 +125,9 @@ function selectView(value) {
           class="market-search__input"
           type="text"
           placeholder="搜索藏品"
-          @keyup.enter="$event.target.blur()"
+          @keyup.enter="onSearch($event)"
         />
-        <button class="market-search__btn" @click="$event.target.blur()">搜索</button>
+        <button class="market-search__btn" @click="onSearch">搜索</button>
       </div>
     </div>
     <RouterView v-slot="{ Component }">

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import AppEmpty from '@/components/AppEmpty.vue'
@@ -7,7 +7,18 @@ import AppEmpty from '@/components/AppEmpty.vue'
 const router = useRouter()
 const store = useCollectionStore()
 
-const categories = ['全部', '青铜', '陶瓷', '书画', '玉器']
+// 文物展览分类（真实接口：GET /api/collections/categories?scene=artifact，
+// 管理端「内容 → 分类管理」维护；失败兜底静态默认）
+const FALLBACK_CATS = [
+  { id: 0, name: '全部', code: 'all' },
+  { id: 1, name: '青铜', code: 'bronze' },
+  { id: 2, name: '陶瓷', code: 'ceramics' },
+  { id: 3, name: '书画', code: 'calligraphy' },
+  { id: 4, name: '玉器', code: 'jade' }
+]
+const categories = computed(() =>
+  store.artifactCategories.length ? store.artifactCategories : FALLBACK_CATS
+)
 const activeCategory = ref('全部')
 
 const filtered = computed(() => {
@@ -20,6 +31,12 @@ const filtered = computed(() => {
 function openDetail(item) {
   router.push('/mall/' + item.id)
 }
+
+onMounted(() => {
+  // 分类动态化 + 首次进入展览区拉取展品（此前无入口触发，列表恒为空）
+  store.fetchCategories('artifact').catch(() => {})
+  store.fetchExhibits().catch(() => {})
+})
 </script>
 
 <template>
@@ -34,12 +51,12 @@ function openDetail(item) {
     <div class="exhibit-cats">
       <div
         v-for="cat in categories"
-        :key="cat"
+        :key="cat.code"
         class="exhibit-cats__item"
-        :class="{ active: activeCategory === cat }"
-        @click="activeCategory = cat"
+        :class="{ active: activeCategory === cat.name }"
+        @click="activeCategory = cat.name"
       >
-        <span class="exhibit-cats__label">{{ cat }}</span>
+        <span class="exhibit-cats__label">{{ cat.name }}</span>
         <span class="exhibit-cats__bar"></span>
       </div>
     </div>

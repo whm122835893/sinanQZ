@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getBlindBoxDetail, saveBlindBox, CATEGORY_ID_TO_NAME } from '@/api'
+import { getBlindBoxDetail, saveBlindBox, getCategories } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -12,7 +12,7 @@ const formRef = ref(null)
 
 const form = ref({
   name: '',
-  category: '国潮',
+  categoryId: null,
   description: '',
   edition: null,
   price: null,
@@ -20,7 +20,8 @@ const form = ref({
   cover: '/images/collections/cover-collection-bb1.jpg'
 })
 
-const categories = ['青铜', '水墨', '国潮', '限定']
+// 分类选项（动态：内容管理 → 分类管理，market 场景）
+const categories = ref([])
 
 const rules = {
   name: [{ required: true, message: '请输入盲盒名称', trigger: 'blur' }],
@@ -37,12 +38,19 @@ const coverOptions = [
 ]
 
 onMounted(async () => {
+  // 加载分类选项（失败不阻塞表单）
+  const cat = await getCategories('market')
+  if (cat.code === 0) {
+    categories.value = cat.data
+    if (!id && cat.data.length) form.value.categoryId = cat.data[0].id
+  }
+
   if (id) {
     const res = await getBlindBoxDetail(id)
     const b = res.data
     form.value = {
       name: b.name,
-      category: b.categoryName || CATEGORY_ID_TO_NAME[b.categoryId] || '国潮',
+      categoryId: b.categoryId || null,
       description: b.description || '',
       edition: b.edition, // 发行总量不可变更
       price: b.price,
@@ -59,7 +67,7 @@ async function onSubmit() {
   const res = await saveBlindBox({
     id,
     name: f.name.trim(),
-    category: f.category,
+    categoryId: f.categoryId,
     description: f.description,
     price: Number(f.price) || 0,
     edition: Number(f.edition) || 0,
@@ -85,9 +93,12 @@ async function onSubmit() {
         </el-form-item>
 
         <el-form-item label="分类">
-          <el-radio-group v-model="form.category">
-            <el-radio v-for="c in categories" :key="c" :value="c">{{ c }}</el-radio>
+          <el-radio-group v-model="form.categoryId">
+            <el-radio v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</el-radio>
           </el-radio-group>
+          <div v-if="!categories.length" class="t-tertiary" style="font-size: 12px; width: 100%">
+            暂无分类，请先到「内容 → 分类管理」新增市场分类
+          </div>
         </el-form-item>
 
         <el-form-item label="发行总量" prop="edition">

@@ -72,7 +72,11 @@ export const useUserStore = defineStore('user', () => {
     return res
   }
 
-  function logout() {
+  // ---- 退出登录（真实接口：POST /api/auth/logout，后端注销令牌；失败不阻断本地清理）----
+  async function logout() {
+    try {
+      if (token.value) await request.post('/auth/logout')
+    } catch { /* 后端注销失败仍继续本地清理 */ }
     setToken('')
   }
 
@@ -92,6 +96,13 @@ export const useUserStore = defineStore('user', () => {
       wallet: u.wallet
     })
     return userInfo.value
+  }
+
+  // ---- 更新昵称（真实接口：PUT /api/user/profile，昵称 2~20 字）----
+  async function updateNickname(nickname) {
+    const res = await request.put('/user/profile', { nickname })
+    setUserInfo({ nickname: res.nickname || nickname })
+    return res
   }
 
   // ---- 交易密码（真实接口：POST /api/user/verify-trade-password）----
@@ -248,7 +259,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     token, userInfo, isLoggedIn, inventory, consignments,
     signState, todaySigned,
-    setUserInfo, login, sendCode, register, logout, fetchUserInfo,
+    setUserInfo, login, sendCode, register, logout, fetchUserInfo, updateNickname,
     verifyPaymentPassword, ownedCount, fetchInventory, findUserCollectibleId,
     fetchConsignments, consign, cancelConsign, isNoLocked, consignCooldownRemain,
     openBlindbox, fetchSignCalendar, doSign

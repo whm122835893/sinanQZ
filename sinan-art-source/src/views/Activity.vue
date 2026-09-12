@@ -1,9 +1,8 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AppNavBar from '@/components/AppNavBar.vue'
-import AppEmpty from '@/components/AppEmpty.vue'
 import AppModal from '@/components/AppModal.vue'
 import { useActivityStore } from '@/stores/activity'
 import { useUserStore } from '@/stores/user'
@@ -16,95 +15,156 @@ const userStore = useUserStore()
 const { synthesisActivities } = storeToRefs(activityStore)
 const { requireLogin } = useLoginGate()
 
-const tabs = ['活动', '置换']
+const tabs = ['活动', '分解']
 const active = ref('活动')
 
-const swapOffers = ref([])
-const swapLoading = ref(false)
+// ---- 分解（真实接口：GET /api/decompose/rules、POST /api/decompose/execute、GET /api/decompose/records）----
+const decomposeRules = ref([])
+const rulesLoading = ref(false)
+const records = ref([])
+const recordsLoading = ref(false)
+const subView = ref('rules') // rules 分解规则 | records 我的记录
 
-// 发布置换弹窗
-const showSwapModal = ref(false)
-const swapForm = ref({ offerCollectibleId: '', targetCollectibleId: '', cashDiff: 0, remark: '' })
-const swapPosting = ref(false)
+// 确认分解弹窗
+const showConfirmModal = ref(false)
+const pendingRule = ref(null)
+const executing = ref(false)
+// 分解成功弹窗
+const showResultModal = ref(false)
+const lastResult = ref(null)
+
+const hasRecords = computed(() => records.value.length > 0)
 
 watch(active, (t) => {
-  if (t === '置换' && swapOffers.value.length === 0) loadSwaps()
+  if (t === '分解') loadDecompose()
+})
+watch(subView, (v) => {
+  if (v === 'records') loadRecords()
 })
 
 onMounted(() => {
   activityStore.fetchSynthesisActivities().catch(() => {})
 })
 
-async function loadSwaps() {
-  swapLoading.value = true
+async function loadDecompose() {
+  rulesLoading.value = true
   try {
-    const res = await request.get('/swap-offers', { params: { status: 1, page: 1, pageSize: 30 } })
-    swapOffers.value = (res.list || []).map((s) => ({
-      id: s.id,
-      offerUserName: s.offerUserName || '置换方',
-      offerCollectibleName: s.offerCollectibleName || '藏品',
-      offerCollectibleImage: s.offerCollectibleImage || '',
-      offerSerial: s.offerSerial || '',
-      targetCollectibleName: s.targetCollectibleName || '期望藏品',
-      targetCollectibleImage: s.targetCollectibleImage || '',
-      cashDiff: Number(s.cashDiff || 0).toFixed(2),
-      remark: s.remark || '',
-      createdAt: (s.createdAt || '').slice(0, 16).replace('T', ' '),
+    const res = await request.get('/decompose/rules')
+    decomposeRules.value = (res.list || []).map((r) => ({
+      ruleId: r.ruleId,
+      name: r.name || '',
+      source: {
+        collectibleId: r.source?.collectibleId,
+        name: r.source?.name || '',
+        image: r.source?.image || ''
+      },
+      results: (r.results || []).map((it) => ({
+        collectibleId: it.collectibleId,
+        name: it.name || '',
+        image: it.image || '',
+        quantityPer: Number(it.quantityPer || 1)
+      })),
+      myHeldCount: Number(r.myHeldCount || 0),
+      myUsedCount: Number(r.myUsedCount || 0),
+      perUserLimit: Number(r.perUserLimit || 0),
+      startTime: r.startTime || '',
+      endTime: r.endTime || ''
     }))
   } catch (e) {
-    swapOffers.value = []
+    decomposeRules.value = []
   } finally {
-    swapLoading.value = false
+    rulesLoading.value = false
   }
 }
 
-function acceptSwap(s) {
-  if (!requireLogin('/activity')) return
-  request.post('/swap-offers/' + s.id + '/accept').then(() => {
-    loadSwaps()
-  }).catch(() => {})
+async function loadRecords() {
+  if (!userStore.token) {
+    records.value = []
+    return
+  }
+  recordsLoading.value = true
+  try {
+    const res = await request.get('/decompose/records', { params: { page: 1, pageSize: 20 } })
+    records.value = (res.list || []).map((r) => ({
+      recordId: r.recordId,
+      ruleName: r.ruleName || '',
+      sourceName: r.source?.name || '',
+      sourceImage: r.source?.image || '',
+      sourceSerial: r.sourceSerial || '',
+      results: (r.results || []).map((it) => ({
+        name: it.name || '',
+        image: it.image || '',
+        quantityPer: Number(it.quantityPer || 1)
+      })),
+      createdAt: (r.createdAt || '').slice(0, 16).replace('T', ' ')
+    }))
+  } catch (e) {
+    records.value = []
+  } finally {
+    recordsLoading.value = false
+  }
 }
 
-// 打开发布置换弹窗
-async function openPostSwap() {
+// 可分解：持有源藏品 + 未达限次（0 = 不限）
+function canDecompose(rule) {
+  if (!rule.myHeldCount) return false
+  if (rule.perUserLimit > 0 && rule.myUsedCount >= rule.perUserLimit) return false
+  return true
+}
+
+// 弹出确认：校验登录与持有，取一个可分解资产实例
+async function openConfirm(rule) {
   if (!requireLogin('/activity')) return
-  // 加载我的藏品供选择
+  // 拉取我的持有（取源藏品下第一个未寄售锁定的实例）
   if (!userStore.inventory.length) {
     await userStore.fetchInventory().catch(() => {})
   }
-  swapForm.value = { offerCollectibleId: '', targetCollectibleId: '', cashDiff: 0, remark: '' }
-  showSwapModal.value = true
+  const inv = userStore.inventory.find((i) => String(i.id) === String(rule.source.collectibleId))
+  const asset = inv?.items?.find((x) => !x.isConsigned)
+  if (!asset) {
+    alert('暂无可分解的持有资产（可能均已寄售锁定）')
+    return
+  }
+  pendingRule.value = rule
+  pendingRule.value.assetSerial = asset.serial
+  pendingRule.value.assetId = asset.userCollectibleId
+  showConfirmModal.value = true
 }
 
-// 提交置换挂单
-async function submitSwap() {
-  const offerId = parseInt(swapForm.value.offerCollectibleId)
-  const targetId = parseInt(swapForm.value.targetCollectibleId)
-  if (!offerId) {
-    alert('请选择要置换出去的藏品')
-    return
-  }
-  if (!targetId) {
-    alert('请选择期望换得的藏品')
-    return
-  }
-  swapPosting.value = true
+// 确认分解：POST /api/decompose/execute
+async function confirmDecompose() {
+  const rule = pendingRule.value
+  if (!rule?.assetId) return
+  executing.value = true
   try {
-    const inv = userStore.inventory.find((i) => String(i.id) === String(offerId))
-    await request.post('/swap-offers', {
-      offerCollectibleId: offerId,
-      offerSerial: inv?.nos?.[0] || '',
-      targetCollectibleId: targetId,
-      cashDiff: Number(swapForm.value.cashDiff) || 0,
-      remark: swapForm.value.remark || '',
+    const res = await request.post('/decompose/execute', {
+      ruleId: rule.ruleId,
+      userCollectibleId: rule.assetId
     })
-    showSwapModal.value = false
-    await loadSwaps()
+    showConfirmModal.value = false
+    lastResult.value = {
+      consumedSerial: res.consumedSerial || '',
+      results: (res.results || []).map((r) => {
+        const meta = rule.results.find((x) => String(x.collectibleId) === String(r.collectibleId))
+        return { name: meta?.name || '藏品', serial: r.serial || '' }
+      })
+    }
+    showResultModal.value = true
+    // 刷新规则（持有/已用次数）与持有资产
+    await Promise.all([
+      loadDecompose(),
+      userStore.fetchInventory().catch(() => {})
+    ])
+    if (subView.value === 'records') loadRecords()
   } catch (e) {
-    alert(e?.message || '发布置换失败')
+    alert(e?.message || '分解失败，请重试')
   } finally {
-    swapPosting.value = false
+    executing.value = false
   }
+}
+
+function goRecords() {
+  subView.value = 'records'
 }
 
 function goSynthesis(id) {
@@ -163,77 +223,113 @@ function statusOf(a) {
       <p v-if="!synthesisActivities.length" class="act-empty">暂无活动</p>
     </div>
 
-    <!-- 置换：公开置换挂单池 -->
-    <div v-else-if="active === '置换'" class="act-swap">
-      <div
-        v-for="s in swapOffers"
-        :key="s.id"
-        class="swap-card"
-      >
-        <div class="swap-card__side">
-          <img class="swap-card__img" :src="s.offerCollectibleImage" alt="" />
-          <div class="swap-card__body">
-            <span class="swap-card__label">我出</span>
-            <span class="swap-card__name">{{ s.offerCollectibleName }}</span>
-            <span class="swap-card__serial" v-if="s.offerSerial">#{{ s.offerSerial }}</span>
-          </div>
-        </div>
-        <div class="swap-card__arrow">
-          <span class="swap-card__user">{{ s.offerUserName }}</span>
-          <span class="swap-card__diff" v-if="Number(s.cashDiff) > 0">+¥{{ s.cashDiff }}</span>
-          <span class="swap-card__diff swap-card__diff--neg" v-else-if="Number(s.cashDiff) < 0">需补¥{{ Math.abs(Number(s.cashDiff)).toFixed(2) }}</span>
-          <span class="swap-card__vs">⇄</span>
-        </div>
-        <div class="swap-card__side swap-card__side--target">
-          <img class="swap-card__img" :src="s.targetCollectibleImage" alt="" />
-          <div class="swap-card__body">
-            <span class="swap-card__label">换得</span>
-            <span class="swap-card__name">{{ s.targetCollectibleName }}</span>
-          </div>
-        </div>
-        <div class="swap-card__action">
-          <button class="swap-card__btn" @click="acceptSwap(s)">接受置换</button>
+    <!-- 分解 -->
+    <template v-else>
+      <div class="dc-sub">
+        <div class="dc-sub__inner">
+          <span class="dc-sub__item" :class="{ active: subView === 'rules' }" @click="subView = 'rules'">分解规则</span>
+          <span class="dc-sub__item" :class="{ active: subView === 'records' }" @click="subView = 'records'">
+            我的记录
+          </span>
         </div>
       </div>
 
-      <div v-if="!swapOffers.length && !swapLoading" class="act-empty">
-        <p>暂无置换挂单</p>
-        <button class="swap-post-btn" @click="openPostSwap">+ 发布我的置换</button>
+      <!-- 分解规则列表 -->
+      <div v-if="subView === 'rules'" class="dc-list">
+        <div v-for="r in decomposeRules" :key="r.ruleId" class="dc-card">
+          <div class="dc-card__title">
+            <span class="dc-card__name">{{ r.name || '分解' }}</span>
+            <span class="dc-card__limit">
+              {{ r.perUserLimit > 0 ? `每人限 ${r.perUserLimit} 次` : '不限次数' }}
+            </span>
+          </div>
+          <div class="dc-card__flow">
+            <div class="dc-card__src">
+              <img class="dc-card__img" :src="r.source.image" alt="" />
+              <span class="dc-card__label">分解</span>
+              <span class="dc-card__cname">{{ r.source.name }}</span>
+            </div>
+            <span class="dc-card__arrow">➜</span>
+            <div class="dc-card__outs">
+              <div v-for="(it, idx) in r.results" :key="idx" class="dc-card__out">
+                <img class="dc-card__img dc-card__img--sm" :src="it.image" alt="" />
+                <span class="dc-card__cname">{{ it.name }}<em v-if="it.quantityPer > 1"> ×{{ it.quantityPer }}</em></span>
+              </div>
+            </div>
+          </div>
+          <div class="dc-card__foot">
+            <span class="dc-card__held">
+              持有 {{ r.myHeldCount }} 件<template v-if="r.perUserLimit > 0"> · 已分解 {{ r.myUsedCount }}/{{ r.perUserLimit }} 次</template>
+            </span>
+            <button class="dc-card__btn" :disabled="!canDecompose(r)" @click="openConfirm(r)">
+              {{ !r.myHeldCount ? '未持有' : (r.perUserLimit > 0 && r.myUsedCount >= r.perUserLimit) ? '已达上限' : '立即分解' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="!decomposeRules.length && !rulesLoading" class="act-empty">
+          <p>暂无进行中的分解活动</p>
+          <button v-if="hasRecords" class="dc-record-link" @click="goRecords">查看我的分解记录 ›</button>
+        </div>
+        <p v-if="rulesLoading" class="act-empty">加载中…</p>
       </div>
-    </div>
 
-    <div class="act-float safe-bottom" v-if="active === '置换'">
-      <button class="act-float__btn" @click="openPostSwap">+ 发布置换</button>
-    </div>
+      <!-- 我的分解记录 -->
+      <div v-else class="dc-list">
+        <div v-for="rec in records" :key="rec.recordId" class="dc-rec">
+          <img class="dc-rec__img" :src="rec.sourceImage" alt="" />
+          <div class="dc-rec__body">
+            <div class="dc-rec__top">
+              <span class="dc-rec__rule">{{ rec.ruleName || '分解' }}</span>
+              <span class="dc-rec__time">{{ rec.createdAt }}</span>
+            </div>
+            <p class="dc-rec__src">消耗：{{ rec.sourceName }} #{{ rec.sourceSerial }}</p>
+            <p class="dc-rec__outs">
+              产出：<span v-for="(it, idx) in rec.results" :key="idx">{{ it.name }}<em v-if="it.quantityPer > 1">×{{ it.quantityPer }}</em>{{ idx < rec.results.length - 1 ? '、' : '' }}</span>
+            </p>
+          </div>
+        </div>
+        <div v-if="!records.length && !recordsLoading" class="act-empty">
+          <p>{{ userStore.token ? '暂无分解记录' : '登录后可查看分解记录' }}</p>
+        </div>
+        <p v-if="recordsLoading" class="act-empty">加载中…</p>
+      </div>
+    </template>
 
-    <!-- 发布置换弹窗 -->
-    <AppModal v-model:show="showSwapModal" title="发布置换挂单">
-      <div class="swap-form">
-        <div class="swap-form-row">
-          <label>我出（我的藏品）</label>
-          <select v-model="swapForm.offerCollectibleId">
-            <option value="">请选择藏品</option>
-            <option v-for="i in userStore.inventory" :key="i.id" :value="i.id">{{ i.name }} (×{{ i.qty }})</option>
-          </select>
+    <!-- 确认分解弹窗 -->
+    <AppModal v-model:show="showConfirmModal" title="确认分解">
+      <div v-if="pendingRule" class="dc-confirm">
+        <p class="dc-confirm__tip">分解操作不可撤销，确认后立即执行</p>
+        <div class="dc-confirm__row">
+          <span class="dc-confirm__k">分解藏品</span>
+          <span class="dc-confirm__v">{{ pendingRule.source.name }} #{{ pendingRule.assetSerial }}</span>
         </div>
-        <div class="swap-form-row">
-          <label>换得（目标藏品ID）</label>
-          <input v-model="swapForm.targetCollectibleId" type="number" placeholder="输入目标藏品ID" />
+        <div class="dc-confirm__row">
+          <span class="dc-confirm__k">获得产物</span>
+          <span class="dc-confirm__v">
+            <template v-for="(it, idx) in pendingRule.results" :key="idx">
+              {{ it.name }}<em v-if="it.quantityPer > 1"> ×{{ it.quantityPer }}</em>{{ idx < pendingRule.results.length - 1 ? '、' : '' }}
+            </template>
+          </span>
         </div>
-        <div class="swap-form-row">
-          <label>差价（¥，正=对方补我，负=我补对方）</label>
-          <input v-model="swapForm.cashDiff" type="number" step="0.01" value="0" />
-        </div>
-        <div class="swap-form-row">
-          <label>备注</label>
-          <input v-model="swapForm.remark" type="text" placeholder="选填" />
-        </div>
-        <div class="swap-form-actions">
-          <button class="swap-form-cancel" @click="showSwapModal = false">取消</button>
-          <button class="swap-form-submit" :disabled="swapPosting" @click="submitSwap">
-            {{ swapPosting ? '提交中...' : '确认发布' }}
+        <div class="dc-confirm__actions">
+          <button class="dc-confirm__cancel" @click="showConfirmModal = false">取消</button>
+          <button class="dc-confirm__ok" :disabled="executing" @click="confirmDecompose">
+            {{ executing ? '分解中…' : '确认分解' }}
           </button>
         </div>
+      </div>
+    </AppModal>
+
+    <!-- 分解结果弹窗 -->
+    <AppModal v-model:show="showResultModal" title="分解成功">
+      <div v-if="lastResult" class="dc-result">
+        <p class="dc-result__tip">已消耗 #{{ lastResult.consumedSerial }}，获得以下藏品</p>
+        <div v-for="(r, idx) in lastResult.results" :key="idx" class="dc-result__item">
+          <span class="dc-result__name">{{ r.name }}</span>
+          <span class="dc-result__serial">#{{ r.serial }}</span>
+        </div>
+        <button class="dc-result__ok" @click="showResultModal = false">好的</button>
       </div>
     </AppModal>
   </div>
@@ -276,97 +372,115 @@ function statusOf(a) {
 .act-card__arrow { color: $color-text-tertiary; font-size: 22px; flex-shrink: 0; }
 .act-empty { text-align: center; color: $color-text-tertiary; font-size: 14px; margin-top: 40px; }
 
-/* ========== 置换卡 ========== */
-.act-swap { padding: 12px $page-padding 80px; }
-.swap-card {
-  display: flex; flex-direction: column; gap: 10px;
+/* ========== 分解 ========== */
+.dc-sub { padding: 2px $page-padding 0; }
+.dc-sub__inner {
+  display: inline-flex; background: $color-surface; border-radius: $radius-pill; padding: 3px;
+}
+.dc-sub__item {
+  padding: 6px 18px; border-radius: $radius-pill; font-size: 13px; color: $color-text-tertiary;
+  cursor: pointer; font-weight: 500;
+  &.active { background: $color-card; color: $color-primary; font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+}
+
+.dc-list { padding: 12px $page-padding 24px; }
+.dc-card {
   background: $color-card; border-radius: $radius-lg; padding: 14px; margin-bottom: 12px;
 }
-.swap-card__side {
-  display: flex; align-items: center; gap: 10px;
-  &--target {
-    .swap-card__label { color: $color-primary; }
-  }
-}
-.swap-card__img {
-  width: 52px; height: 52px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
-  background: $color-surface;
-  -webkit-user-drag: none; user-select: none; pointer-events: none;
-}
-.swap-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.swap-card__label { font-size: 11px; color: $color-text-tertiary; }
-.swap-card__name {
-  font-size: 14px; font-weight: 600; color: $color-text-primary;
+.dc-card__title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dc-card__name {
+  font-size: 15px; font-weight: 700; color: $color-text-primary;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.swap-card__serial { font-size: 11px; color: $color-text-tertiary; font-family: $font-price; }
-.swap-card__arrow {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 14px; height: 32px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.04), rgba(208,0,0,0.08), rgba(255,255,255,0.04));
-  border-radius: 16px;
+.dc-card__limit { flex-shrink: 0; font-size: 11px; color: $color-text-tertiary; }
+.dc-card__flow {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  background: $color-surface; border-radius: $radius-md; padding: 10px;
 }
-.swap-card__user { font-size: 11px; color: $color-text-tertiary; }
-.swap-card__diff { font-size: 11px; color: #22c55e; font-weight: 600; }
-.swap-card__diff--neg { color: $color-primary; }
-.swap-card__vs { font-size: 16px; color: $color-primary; font-weight: 700; }
-.swap-card__action { display: flex; justify-content: flex-end; }
-.swap-card__btn {
+.dc-card__src { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; width: 84px; }
+.dc-card__img {
+  width: 52px; height: 52px; border-radius: 10px; object-fit: cover;
+  background: $color-card; -webkit-user-drag: none; user-select: none; pointer-events: none;
+  &--sm { width: 40px; height: 40px; }
+}
+.dc-card__label { font-size: 10px; color: $color-primary; }
+.dc-card__cname {
+  font-size: 12px; color: $color-text-primary; font-weight: 600; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  em { font-style: normal; color: $color-primary; }
+}
+.dc-card__arrow { color: $color-primary; font-size: 16px; flex-shrink: 0; }
+.dc-card__outs {
+  flex: 1; min-width: 0; display: flex; gap: 10px; overflow-x: auto;
+  &::-webkit-scrollbar { display: none; }
+}
+.dc-card__out {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; width: 68px;
+}
+.dc-card__foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px;
+}
+.dc-card__held { font-size: 12px; color: $color-text-tertiary; }
+.dc-card__btn {
   border: none; cursor: pointer; color: #fff; font-size: 12px; font-weight: 600;
-  padding: 6px 18px; border-radius: $radius-pill;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  padding: 7px 18px; border-radius: $radius-pill;
+  background: linear-gradient(135deg, $color-primary, #B00000);
+  &:disabled { background: $color-surface; color: $color-text-tertiary; cursor: not-allowed; }
 }
-.swap-post-btn {
-  border: none; cursor: pointer;
-  background: linear-gradient(135deg, $color-primary, #B00000); color: #fff;
-  padding: 10px 24px; border-radius: $radius-pill;
-  font-size: 13px; font-weight: 600; margin-top: 16px;
-}
-
-.act-float {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
-  display: flex; justify-content: center;
-  padding: 12px $page-padding calc(12px + env(safe-area-inset-bottom));
-  background: transparent;
-}
-.act-float__btn {
-  width: 100%; height: 44px; border: none; border-radius: $radius-pill;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
-  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.28);
+.dc-record-link {
+  border: none; background: none; cursor: pointer;
+  color: $color-primary; font-size: 13px; margin-top: 8px;
 }
 
-.swap-form { padding: 8px 0; }
-.swap-form-row {
-  display: flex; flex-direction: column; gap: 6px;
-  margin-bottom: 14px;
+.dc-rec {
+  display: flex; gap: 10px; background: $color-card; border-radius: $radius-lg;
+  padding: 12px 14px; margin-bottom: 12px;
 }
-.swap-form-row label {
-  font-size: 13px; color: $color-text-secondary; font-weight: 500;
+.dc-rec__img {
+  width: 48px; height: 48px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+  background: $color-surface;
 }
-.swap-form-row input, .swap-form-row select {
-  padding: 10px 12px; border-radius: $radius-md;
-  border: 1px solid rgba(0,0,0,0.1);
-  font-size: 14px; color: $color-text-primary;
-  background: $color-bg; outline: none;
+.dc-rec__body { flex: 1; min-width: 0; }
+.dc-rec__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dc-rec__rule { font-size: 14px; font-weight: 700; color: $color-text-primary; }
+.dc-rec__time { font-size: 11px; color: $color-text-tertiary; }
+.dc-rec__src, .dc-rec__outs {
+  margin: 4px 0 0; font-size: 12px; color: $color-text-secondary; line-height: 1.6;
+  word-break: break-all;
+  em { font-style: normal; color: $color-primary; }
 }
-.swap-form-row input:focus, .swap-form-row select:focus {
-  border-color: $color-primary;
+
+/* 确认分解弹窗 */
+.dc-confirm { padding: 8px 0; }
+.dc-confirm__tip {
+  font-size: 12px; color: $color-primary; background: $color-primary-light;
+  border-radius: $radius-md; padding: 8px 12px; margin-bottom: 14px;
 }
-.swap-form-actions {
-  display: flex; gap: 12px; margin-top: 8px;
+.dc-confirm__row {
+  display: flex; gap: 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.6;
 }
-.swap-form-cancel, .swap-form-submit {
+.dc-confirm__k { flex-shrink: 0; color: $color-text-tertiary; width: 64px; }
+.dc-confirm__v { color: $color-text-primary; font-weight: 500; word-break: break-all; }
+.dc-confirm__actions { display: flex; gap: 12px; margin-top: 16px; }
+.dc-confirm__cancel, .dc-confirm__ok {
   flex: 1; padding: 10px 0; border: none; border-radius: $radius-md;
   font-size: 14px; font-weight: 600; cursor: pointer;
 }
-.swap-form-cancel {
-  background: rgba(0,0,0,0.06); color: $color-text-secondary;
+.dc-confirm__cancel { background: rgba(0,0,0,0.06); color: $color-text-secondary; }
+.dc-confirm__ok { background: $color-primary; color: #fff; }
+.dc-confirm__ok:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* 分解结果弹窗 */
+.dc-result { padding: 8px 0; }
+.dc-result__tip { font-size: 12px; color: $color-text-tertiary; margin-bottom: 12px; }
+.dc-result__item {
+  display: flex; align-items: center; justify-content: space-between;
+  background: $color-surface; border-radius: $radius-md; padding: 10px 12px; margin-bottom: 8px;
 }
-.swap-form-submit {
-  background: $color-primary; color: #fff;
-}
-.swap-form-submit:disabled {
-  opacity: 0.6; cursor: not-allowed;
+.dc-result__name { font-size: 14px; font-weight: 600; color: $color-text-primary; }
+.dc-result__serial { font-size: 12px; color: $color-primary; font-family: $font-price; }
+.dc-result__ok {
+  width: 100%; padding: 10px 0; margin-top: 8px; border: none; border-radius: $radius-md;
+  background: $color-primary; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
 }
 </style>

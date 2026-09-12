@@ -68,6 +68,18 @@ abstract class BaseController
     }
 
     /**
+     * 枚举参数：值必须在 $allowed 白名单内，否则回退 $default（null 表示缺省）
+     */
+    protected function enumParam(string $key, array $allowed, $default = null)
+    {
+        $value = $this->request->param($key, $default);
+        if ($value === null) {
+            return $default;
+        }
+        return in_array((string) $value, array_map('strval', $allowed), true) ? $value : $default;
+    }
+
+    /**
      * 当前登录用户ID（JwtAuth 中间件解析后注入）
      */
     protected function userId(): ?int

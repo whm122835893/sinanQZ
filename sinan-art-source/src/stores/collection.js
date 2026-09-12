@@ -58,6 +58,23 @@ export const useCollectionStore = defineStore('collection', () => {
   const filters = ref({ category: 'all', keyword: '' })
   const detail = ref(null)
 
+  // ---- 分类（真实接口：GET /api/collections/categories?scene=market|artifact）----
+  // scene=market 市场二级分类（水墨/国潮…）/ artifact 文物展览分类（青铜/陶瓷/书画/玉器…）
+  // 管理端「内容 → 分类管理」维护；后端返回首项固定为「全部」(id 0 / code all)
+  const marketCategories = ref([{ id: 0, name: '全部', code: 'all' }])
+  const artifactCategories = ref([{ id: 0, name: '全部', code: 'all' }])
+  async function fetchCategories(scene = 'market') {
+    const list = await request.get('/collections/categories', { params: { scene } })
+    const mapped = (list || []).map((c) => ({
+      id: Number(c.id),
+      name: c.name,
+      code: c.code
+    }))
+    if (scene === 'artifact') artifactCategories.value = mapped
+    else marketCategories.value = mapped
+    return mapped
+  }
+
   // 市场视图模式：'list' 横条 | 'grid' 卡片（一行两个）
   const marketViewMode = ref('grid')
 
@@ -279,6 +296,9 @@ export const useCollectionStore = defineStore('collection', () => {
     marketSort,
     sortedMarketCollections,
     toggleMarketSort,
+    marketCategories,
+    artifactCategories,
+    fetchCategories,
     favorites,
     isFavorite,
     toggleFavorite,
