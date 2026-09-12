@@ -360,7 +360,7 @@ export function saveCollectible(payload) {
   const body = {
     name: payload.name,
     subtitle: payload.subtitle || '',
-    category_id: CATEGORY_NAME_TO_ID[payload.category] || 2,
+    category_id: n(payload.categoryId) || CATEGORY_NAME_TO_ID[payload.category] || 2,
     image: payload.cover,
     price: n(payload.price),
     edition: n(payload.edition),
