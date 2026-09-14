@@ -124,42 +124,6 @@ class User extends BaseController
     }
 
     /**
-     * POST /api/user/password/trade
-     * 设置/修改交易密码
-     */
-    public function setTradePassword()
-    {
-        $userId = $this->userId();
-        if (!$userId) return $this->fail(2001, '未登录');
-
-        $oldPassword = $this->request->post('oldPassword');
-        $newPassword = $this->request->post('newPassword', '');
-
-        if (strlen($newPassword) < 6 || strlen($newPassword) > 20) {
-            return $this->fail(1001, '新密码长度需在 6-20 位之间');
-        }
-
-        $user = Db::name('users')->where('id', $userId)->find();
-
-        // 修改模式：旧密码必须正确
-        if (!empty($user['transaction_password'])) {
-            if (!$oldPassword) {
-                return $this->fail(1001, '请输入原交易密码');
-            }
-            if (!verify_password($oldPassword, $user['transaction_password'])) {
-                return $this->fail(2003, '原交易密码错误');
-            }
-        }
-
-        Db::name('users')->where('id', $userId)->update([
-            'transaction_password' => hash_password($newPassword),
-            'updated_at'            => date('Y-m-d H:i:s.v'),
-        ]);
-
-        return $this->success();
-    }
-
-    /**
      * POST /api/user/verify-trade-password
      * 校验交易密码（供前端预校验）
      */

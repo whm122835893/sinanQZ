@@ -67,7 +67,6 @@ Route::group('/api', function () {
         Route::get('user/profile',            'User/profile');
         Route::put('user/profile',            'User/updateProfile');
         Route::post('user/realname',          'User/realname');
-        Route::post('user/password/trade',    'User/setTradePassword');
         Route::post('user/verify-trade-password', 'User/verifyTradePassword');
         Route::post('user/send-code',              'User/sendCode');
         Route::post('user/password/reset',          'User/resetPassword');

@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getUserList, getUserDetail, getUserAssets, recoverUserCollectible, freezeUser, resetTradePwd } from '@/api'
+import { getUserList, getUserDetail, getUserAssets, recoverUserCollectible, freezeUser, resetTradePwd, toggleBlacklist, removeBlacklist, forceLogoutUser } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { USER_STATUS, REALNAME_STATUS } from '@/utils/maps'
@@ -147,6 +147,56 @@ async function onResetPwd() {
   )
   const res = await resetTradePwd(detail.value.id)
   if (res.code === 0) ElMessage.success('已重置')
+}
+
+async function onBlacklist() {
+  const u = detail.value
+  const adding = !u.isBlacklisted
+  if (adding) {
+    const { value } = await ElMessageBox.prompt(
+      `确认将「${u.nickname}」加入黑名单？加入后该用户即刻被禁止访问 C 端。`,
+      '加入黑名单',
+      {
+        type: 'error',
+        confirmButtonText: '确认加入',
+        inputPlaceholder: '拉黑原因（必填，写入审计日志）',
+        inputValidator: (v) => (v && v.trim() ? true : '拉黑原因必填')
+      }
+    )
+    const res = await toggleBlacklist(u.id, value.trim())
+    if (res.code === 0) {
+      u.isBlacklisted = 1
+      u.blacklistReason = value.trim()
+      ElMessage.success('已加入黑名单并强制下线')
+    }
+  } else {
+    const { value } = await ElMessageBox.prompt(
+      `确认将「${u.nickname}」移出黑名单？移出后用户可正常访问。`,
+      '移出黑名单',
+      {
+        type: 'warning',
+        confirmButtonText: '确认移出',
+        inputPlaceholder: '移出原因（可空，写入审计日志）',
+        inputValue: ''
+      }
+    )
+    const res = await removeBlacklist(u.id, (value || '').trim())
+    if (res.code === 0) {
+      u.isBlacklisted = 0
+      u.blacklistReason = null
+      ElMessage.success('已移出黑名单')
+    }
+  }
+}
+
+async function onForceLogout() {
+  await ElMessageBox.confirm(
+    `确认强制登出「${detail.value.nickname}」？该用户全部登录态将失效，需重新登录。`,
+    '强制登出',
+    { type: 'warning', confirmButtonText: '确认登出' }
+  )
+  const res = await forceLogoutUser(detail.value.id, '管理后台手动强制下线')
+  if (res.code === 0) ElMessage.success(res.message || '已强制登出')
 }
 </script>
 
@@ -317,6 +367,19 @@ async function onResetPwd() {
           <el-button :type="detail.status === 'normal' ? 'danger' : 'primary'" @click="onFreeze">
             {{ detail.status === 'normal' ? '冻结账号' : '解冻账号' }}
           </el-button>
+          <el-button
+            v-if="!detail.isBlacklisted"
+            type="danger"
+            plain
+            @click="onBlacklist"
+          >加入黑名单</el-button>
+          <el-button
+            v-else
+            type="success"
+            plain
+            @click="onBlacklist"
+          >移出黑名单</el-button>
+          <el-button plain @click="onForceLogout">强制下线</el-button>
         </div>
       </template>
     </el-drawer>

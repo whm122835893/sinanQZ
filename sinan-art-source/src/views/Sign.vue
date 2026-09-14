@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useLoginGate } from '@/utils/loginGate'
@@ -13,6 +13,11 @@ const { requireLogin } = useLoginGate()
 const signed = computed(() => store.todaySigned)
 const records = computed(() => store.signState.records)
 const signedSet = computed(() => new Set(store.signState.records.map(r => r.date)))
+
+// 页面进入时拉取签到日历（后端返回当月已签到日期列表 + 连续天数）
+onMounted(() => {
+  store.fetchSignCalendar().catch(() => {})
+})
 
 const weekMap = ['日', '一', '二', '三', '四', '五', '六']
 function fmtDateCN(dateStr) {

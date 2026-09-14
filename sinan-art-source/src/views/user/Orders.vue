@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
-import { showToast } from 'vant'
+import { showToast, showConfirmDialog } from 'vant'
 import { useUserStore } from '@/stores/user'
 import { useOrderStore } from '@/stores/order'
 import { useLoginGate } from '@/utils/loginGate'
@@ -70,6 +70,28 @@ function action(o) {
 function goDetail(o) {
   router.push({ name: 'collection-detail', params: { id: o.itemId || o.id } })
 }
+
+let cancellingId = null
+async function onCancel(o) {
+  if (cancellingId || o.status !== 'pending') return
+  try {
+    await showConfirmDialog({
+      title: '取消订单',
+      message: '确定取消此待支付订单？库存将被释放。',
+      confirmButtonText: '确定取消',
+      confirmButtonColor: '#D00000'
+    })
+  } catch { return }
+  cancellingId = o.id
+  try {
+    await orderStore.cancelOrder(o.id)
+    showToast('订单已取消')
+  } catch (e) {
+    showToast(e.message || '取消失败，请稍后再试')
+  } finally {
+    cancellingId = null
+  }
+}
 </script>
 
 <template>
@@ -107,6 +129,9 @@ function goDetail(o) {
           </div>
         </div>
         <div class="order-card__foot">
+          <button v-if="o.status === 'pending'" class="order-card__btn order-card__btn--ghost" :disabled="cancellingId === o.id" @click="onCancel(o)">
+            {{ cancellingId === o.id ? '取消中...' : '取消订单' }}
+          </button>
           <button class="order-card__btn" @click="action(o)">查看藏品</button>
         </div>
       </div>
@@ -153,10 +178,14 @@ function goDetail(o) {
   &__price { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
   &__price span { font-size: 11px; color: $color-text-tertiary; }
   &__price b { font-size: 16px; font-weight: 700; color: $color-primary; font-family: $font-price; }
-  &__foot { display: flex; justify-content: flex-end; }
+  &__foot { display: flex; justify-content: flex-end; gap: 10px; }
   &__btn {
     border: 1px solid $color-primary; color: $color-primary; background: #fff;
     font-size: 13px; height: 32px; padding: 0 18px; border-radius: $radius-pill; cursor: pointer;
+  }
+  &__btn--ghost {
+    border-color: $color-border; color: $color-text-secondary;
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
   }
 }
 </style>

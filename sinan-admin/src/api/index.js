@@ -22,7 +22,7 @@ const TX_TYPE_MAP = { recharge: 'recharge', reward: 'reward', buy: 'consume', wi
 
 // 类目名 → ID（后端按 category_id 存储；种子数据约定 1水墨 2国潮 3限定）
 const CATEGORY_NAME_TO_ID = { 水墨: 1, 国潮: 2, 限定: 3, 青铜: 2 }
-export const CATEGORY_ID_TO_NAME = { 1: '水墨', 2: '国潮', 3: '限定' }
+const CATEGORY_ID_TO_NAME = { 1: '水墨', 2: '国潮', 3: '限定' }  // 内部使用（不 export）
 
 const n = (v) => (v === null || v === undefined ? 0 : Number(v))
 const s = (v) => (v === null || v === undefined ? '' : String(v))
@@ -2318,47 +2318,6 @@ function reportParams({ range } = {}) {
   }
 }
 
-/** 旧视图兼容入口（看板页仍引用：聚合销售+用户两表） */
-export async function getStatistics() {
-  const [sales, users] = await Promise.all([
-    getSilentSafe('/reports/sales', {}),
-    getSilentSafe('/reports/users', {})
-  ])
-  if (sales.code !== 0) return sales
-  const sd = sales.data || {}
-  const ud = users.data || {}
-  const trend = camelizeList(sd.trend).slice(-7)
-  const tops = camelizeList(sd.topCollectibles).slice(0, 5)
-  return {
-    code: 0,
-    message: 'ok',
-    data: {
-      dau: n(ud.summary?.holdingUsers),
-      dauTrend: trend.map((t) => n(t.orderCount)),
-      retention: [
-        { label: '实名率', value: n(ud.summary?.realnameRate) },
-        { label: '持仓用户', value: n(ud.summary?.holdingUsers) },
-        { label: '冻结用户', value: n(ud.summary?.frozen) }
-      ],
-      finance: {
-        monthIncome: n(sd.summary?.gmvTotal),
-        monthFee: 0,
-        monthRecharge: 0,
-        monthWithdraw: 0,
-        incomeTrend: trend.map((t) => ({ date: (t.statDate || '').slice(5), value: n(t.gmv) })),
-        feeShare: [{ label: '销售 GMV', value: n(sd.summary?.gmvTotal) }]
-      },
-      salesRank: tops.map((c) => ({
-        name: c.name,
-        sold: n(c.quantity),
-        amount: n(c.gmv),
-        cover: c.coverImage
-      })),
-      userTrend: trend.map((t) => ({ date: (t.statDate || '').slice(5), value: n(t.orderCount) }))
-    }
-  }
-}
-
 // ============================================================
 // 数据审计（恒等式校验：库存 / 订单 / 资金）
 // ============================================================
@@ -2546,29 +2505,6 @@ export async function getOperationLogs(params) {
     }
   }
 }
-
-/** 站点配置（后端 key-value 列表 → 扁平对象） */
-export async function getSiteConfig() {
-  const res = await get('/system/configs')
-  if (res.code !== 0) return res
-  const cfg = {}
-  for (const c of res.data || []) {
-    cfg[c.configKey || c.key] = c.configValue ?? c.value
-  }
-  return { code: 0, message: 'ok', data: cfg }
-}
-
-export function saveSiteConfig(payload) {
-  // 逐 key 保存（后端为单 key 更新接口）
-  return (async () => {
-    for (const [key, value] of Object.entries(payload)) {
-      const r = await put(`/system/configs/${key}`, { config_value: String(value) }, { silent: true })
-      if (r.code !== 0) return r
-    }
-    return { code: 0, message: '保存成功', data: null }
-  })()
-}
-
 // ---- 平台清库（四步流：预览 → 输入确认文本 → 密码 → 短信验证码执行） ----
 
 export function getCleanupPreview() {
@@ -2587,7 +2523,3 @@ export function getCleanupLogs(params) {
   return get('/platform/cleanup-logs', params)
 }
 
-/** 兼容旧视图入口（一步式调用 → 内部走新四步流由页面驱动） */
-export function cleanupPlatform({ confirmText }) {
-  return Promise.resolve({ code: 4220, message: '请通过平台清库标准流程执行', data: null })
-}
