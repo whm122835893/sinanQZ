@@ -609,6 +609,13 @@ SET @s = IF((SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
   'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
+-- 3.3b nft_users 登录密码（密码登录/注册设密依赖）
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_users' AND COLUMN_NAME='password')=0,
+  'ALTER TABLE `nft_users` ADD COLUMN `password` VARCHAR(255) NULL DEFAULT NULL COMMENT ''登录密码，bcrypt/scrypt 哈希'' AFTER `id_card`',
+  'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
 -- 3.4 nft_users 黑名单字段
 SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_users' AND COLUMN_NAME='is_blacklisted')=0,
@@ -699,6 +706,13 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_community_groups' AND COLUMN_NAME='members')=0,
   'ALTER TABLE `nft_community_groups` ADD COLUMN `members` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT ''成员数'' AFTER `qr_code`',
+  'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- 3.12b nft_community_groups QQ群号（客服页「加入社群」跳转QQ入群依赖）
+SET @s = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='nft_community_groups' AND COLUMN_NAME='qq_group')=0,
+  'ALTER TABLE `nft_community_groups` ADD COLUMN `qq_group` VARCHAR(20) NULL DEFAULT NULL COMMENT ''QQ群号'' AFTER `qr_code`',
   'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
@@ -905,7 +919,10 @@ INSERT INTO `nft_system_configs` (`config_key`, `config_value`, `description`) V
 ('admin_lock_minutes',        '15',   '管理后台账号锁定时长（分钟）'),
 ('resale_price_global_max',   '100000', '寄售挂单全局最高价（元，不限价模式仍受此约束）'),
 ('large_recharge_alert',      '10000', '单笔充值风控告警阈值（元）'),
-('cleanup_sms_required',     '1',    '平台清库是否需要短信验证码二次确认（1=是）')
+('cleanup_sms_required',     '1',    '平台清库是否需要短信验证码二次确认（1=是）'),
+('service_hotline',          '400-888-0000', '客服热线电话（C 端客服页展示）'),
+('service_hours',            '9:00 - 22:00', '客服在线时间（C 端客服页展示）'),
+('service_online_url',       '',     '在线客服跳转链接（可空）')
 ON DUPLICATE KEY UPDATE `description` = VALUES(`description`);
 
 SET FOREIGN_KEY_CHECKS = 1;

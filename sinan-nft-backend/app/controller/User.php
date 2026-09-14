@@ -36,6 +36,10 @@ class User extends BaseController
             'realnameStatus' => (int) ($user['realname_status'] ?? 0),
             'realnameRejectReason' => (string) ($user['realname_reject_reason'] ?? ''),
             'inviteCode'   => $user['invite_code'],
+            // 是否已设置登录密码（供 C 端账户安全页展示「登录密码 已设置/未设置」）
+            'hasPassword' => !empty($user['password']),
+            // 是否已设置交易密码（供 C 端账户安全页展示「操作密码 已设置/未设置」）
+            'hasTransactionPassword' => !empty($user['transaction_password']),
             'wallet' => [
                 'balance'   => (float) ($wallet['balance'] ?? 0),
                 'available' => (float) ($wallet['available'] ?? 0),
@@ -169,6 +173,191 @@ class User extends BaseController
 
         if (!$hash) return $this->fail(2003, '未设置交易密码');
         if (!verify_password($password, $hash)) return $this->fail(2003, '交易密码错误');
+
+        return $this->success();
+    }
+
+    /**
+     * POST /api/user/send-code
+     * 已登录用户发送验证码（发送至本人手机号，场景：resert_password 改密/cancel 注销）
+     */
+    public function sendCode()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) return $this->fail(1002, '用户不存在');
+
+        $scene = $this->request->post('scene', 'reset_password');
+        if (!in_array($scene, ['reset_password', 'cancel'], true)) {
+            return $this->fail(1001, '场景参数错误');
+        }
+        $phone = $user['phone'];
+
+        // 60 秒内同手机号+场景禁止重发
+        $recent = Db::name('verification_codes')
+            ->where('phone', $phone)
+            ->where('scene', $scene)
+            ->where('sent_at', '>', date('Y-m-d H:i:s.v', time() - 60))
+            ->find();
+        if ($recent) {
+            return $this->fail(1001, '验证码发送过于频繁，请稍后再试');
+        }
+
+        // Mock：生成 6 位明文验证码，不真发短信（与 Auth::sendCode 同策略）
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $now  = date('Y-m-d H:i:s.v');
+
+        Db::name('verification_codes')->insert([
+            'phone'      => $phone,
+            'scene'      => $scene,
+            'code'       => hash_password($code),
+            'expires_at' => date('Y-m-d H:i:s.v', time() + 300),
+            'sent_at'    => $now,
+            'ip'         => $this->request->ip(),
+            'created_at' => $now,
+        ]);
+
+        return $this->success(['debugCode' => env('APP_DEBUG') ? $code : null]);
+    }
+
+    /**
+     * POST /api/user/password/reset
+     * 已登录用户重置登录密码（SMS 验证码）——账户安全页「登录密码」入口
+     */
+    public function resetPassword()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $code        = $this->request->post('code', '');
+        $newPassword = $this->request->post('newPassword', '');
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) return $this->fail(1002, '用户不存在');
+
+        if (strlen($code) !== 6) {
+            return $this->fail(1001, '验证码格式错误');
+        }
+        if (strlen($newPassword) < 6 || strlen($newPassword) > 20) {
+            return $this->fail(1001, '新密码长度需在 6-20 位之间');
+        }
+
+        $phone = $user['phone'];
+        $vc = Db::name('verification_codes')
+            ->where('phone', $phone)
+            ->where('scene', 'reset_password')
+            ->where('used_at', null)
+            ->order('id', 'desc')
+            ->find();
+        if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            return $this->fail(1001, '验证码错误或已过期');
+        }
+
+        Db::startTrans();
+        Db::name('users')->where('id', $userId)->update([
+            'password'   => hash_password($newPassword),
+            'updated_at' => date('Y-m-d H:i:s.v'),
+        ]);
+        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
+        Db::commit();
+
+        return $this->success();
+    }
+
+    /**
+     * POST /api/user/password/trade/reset
+     * 已登录用户重置交易密码（SMS 验证码）——账户安全页「操作密码」入口
+     */
+    public function resetTradePassword()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $code        = $this->request->post('code', '');
+        $newPassword = $this->request->post('newPassword', '');
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) return $this->fail(1002, '用户不存在');
+
+        if (strlen($code) !== 6) {
+            return $this->fail(1001, '验证码格式错误');
+        }
+        if (strlen($newPassword) < 6 || strlen($newPassword) > 20) {
+            return $this->fail(1001, '新密码长度需在 6-20 位之间');
+        }
+
+        $phone = $user['phone'];
+        $vc = Db::name('verification_codes')
+            ->where('phone', $phone)
+            ->where('scene', 'reset_password')
+            ->where('used_at', null)
+            ->order('id', 'desc')
+            ->find();
+        if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            return $this->fail(1001, '验证码错误或已过期');
+        }
+
+        Db::startTrans();
+        Db::name('users')->where('id', $userId)->update([
+            'transaction_password' => hash_password($newPassword),
+            'updated_at'           => date('Y-m-d H:i:s.v'),
+        ]);
+        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
+        Db::commit();
+
+        return $this->success();
+    }
+
+    /**
+     * POST /api/user/cancel
+     * 注销账号（软删除：deleted_at 置当前时间，JWT 中间件随即拒绝访问）
+     */
+    public function cancelAccount()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $code     = $this->request->post('code', '');
+        $realName = trim((string) $this->request->post('realName', ''));
+        $idCard   = trim((string) $this->request->post('idCard', ''));
+
+        $user = Db::name('users')->where('id', $userId)->whereNull('deleted_at')->find();
+        if (!$user) return $this->fail(1002, '用户不存在');
+
+        if (strlen($code) !== 6) {
+            return $this->fail(1001, '验证码格式错误');
+        }
+
+        $phone = $user['phone'];
+        $vc = Db::name('verification_codes')
+            ->where('phone', $phone)
+            ->where('scene', 'cancel')
+            ->where('used_at', null)
+            ->order('id', 'desc')
+            ->find();
+        if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            return $this->fail(1001, '验证码错误或已过期');
+        }
+
+        // 实名信息校验（已实名时比对，防止盗销；未实名则跳过）
+        $storedName = $user['real_name'] ? (aes_decrypt((string) $user['real_name']) ?? '') : '';
+        $storedId   = $user['id_card'] ? (aes_decrypt((string) $user['id_card']) ?? '') : '';
+        if ($storedName !== '' && $storedName !== $realName) {
+            return $this->fail(1001, '真实姓名与实名信息不一致');
+        }
+        if ($storedId !== '' && $storedId !== $idCard) {
+            return $this->fail(1001, '身份证号与实名信息不一致');
+        }
+
+        Db::startTrans();
+        Db::name('users')->where('id', $userId)->update([
+            'deleted_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s.v'),
+        ]);
+        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
+        Db::commit();
 
         return $this->success();
     }

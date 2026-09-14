@@ -59,9 +59,6 @@ Route::group('/api', function () {
     // 求购挂单（公开列表）
     Route::get('buy-requests', 'BuyRequest/list');
 
-    // 置换挂单（公开列表）
-    Route::get('swap-offers', 'Swap/list');
-
     // ========== 需要 JWT 认证 ==========
 
     Route::group('', function () {
@@ -72,6 +69,10 @@ Route::group('/api', function () {
         Route::post('user/realname',          'User/realname');
         Route::post('user/password/trade',    'User/setTradePassword');
         Route::post('user/verify-trade-password', 'User/verifyTradePassword');
+        Route::post('user/send-code',              'User/sendCode');
+        Route::post('user/password/reset',          'User/resetPassword');
+        Route::post('user/password/trade/reset',    'User/resetTradePassword');
+        Route::post('user/cancel',                 'User/cancelAccount');
 
         // 我的藏品
         Route::get('user/collections',        'Collections/mine');
@@ -93,10 +94,6 @@ Route::group('/api', function () {
         // 求购挂单
         Route::post('buy-requests',                 'BuyRequest/create');
         Route::post('buy-requests/:id/accept',      'BuyRequest/accept');
-
-        // 置换挂单
-        Route::post('swap-offers',                  'Swap/create');
-        Route::post('swap-offers/:id/accept',       'Swap/accept');
 
         // 转赠
         Route::post('transfers',                'Transfers/create');

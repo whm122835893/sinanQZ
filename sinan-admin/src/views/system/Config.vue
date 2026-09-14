@@ -19,6 +19,7 @@ const GROUPS = [
   { key: 'trade', name: '交易参数', icon: 'ShoppingCart', keys: ['purchase_limit_per_user', 'order_pay_timeout_seconds'] },
   { key: 'resale', name: '寄售市场', icon: 'Sell', keys: ['resale_cooldown_seconds', 'resale_fee_rate', 'resale_price_global_max'] },
   { key: 'marketing', name: '营销参数', icon: 'Present', keys: ['checkin_rewards'] },
+  { key: 'service', name: '客服配置', icon: 'Service', keys: ['service_hotline', 'service_hours', 'service_online_url'] },
   { key: 'risk', name: '风控阈值', icon: 'Warning', keys: ['large_recharge_alert', 'large_refund_approval_threshold'] },
   { key: 'platform', name: '平台运维', icon: 'Operation', keys: ['cleanup_sms_required', 'chain_mint_batch_limit'] }
 ]
@@ -31,6 +32,9 @@ const META = {
   resale_fee_rate: { label: '寄售手续费率', unit: '%', hint: '成交时向卖家收取的手续费比例' },
   resale_price_global_max: { label: '寄售全局限价', unit: '元', hint: '不限价模式仍受此上限约束' },
   checkin_rewards: { label: '连续签到奖励', unit: '', hint: 'JSON：天数 → 司南币数量', json: true },
+  service_hotline: { label: '客服热线电话', unit: '', hint: 'C 端客服页展示的热线号码' },
+  service_hours: { label: '客服在线时间', unit: '', hint: 'C 端客服页展示的在线时段' },
+  service_online_url: { label: '在线客服链接', unit: '', hint: 'C 端「在线客服」跳转链接（可空，空则展示提示）' },
   large_recharge_alert: { label: '大额充值告警', unit: '元', hint: '单笔充值超过该金额触发风控告警' },
   large_refund_approval_threshold: { label: '大额退款审批阈值', unit: '元', hint: '退款金额超过后需审批中心复核' },
   cleanup_sms_required: { label: '清库短信确认', unit: '', hint: '平台清库强制短信验证码二次确认', bool: true },
@@ -45,9 +49,9 @@ async function load() {
   if (res.code === 0) {
     configs.value = (res.data || []).map((c) => ({
       ...c,
-      // 后端返回 snake_case：configKey / configValue / description
-      key: c.configKey || c.key,
-      value: c.configValue ?? c.value ?? '',
+      // 后端 nft_system_configs 返回 snake_case：config_key / config_value / description
+      key: c.config_key || c.configKey || c.key,
+      value: c.config_value ?? c.configValue ?? c.value ?? '',
       desc: c.description || ''
     }))
   }

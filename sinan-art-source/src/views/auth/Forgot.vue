@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -8,24 +10,46 @@ import { useCountdown } from '@/utils/useCountdown'
 import { showToast } from 'vant'
 
 const router = useRouter()
+const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
 
 const phone = ref('')
 const code = ref('')
 const password = ref('')
+const submitting = ref(false)
 
 const canSubmit = computed(() => phone.value.length >= 11 && code.value.length >= 4 && password.value.length >= 6)
 
-function sendCode() {
+async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
-  start()
-  showToast('验证码已发送')
+  try {
+    const res = await user.sendCode(phone.value, 'reset_password')
+    start()
+    showToast('验证码已发送')
+    if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+  } catch (e) {
+    showToast(e.message || '验证码发送失败')
+  }
 }
-function onSubmit() {
+
+async function onSubmit() {
   if (!canSubmit.value) return
-  showToast('密码已重置')
-  router.replace('/auth/login')
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await request.post('/auth/reset-password', {
+      phone: phone.value,
+      code: code.value,
+      newPassword: password.value
+    })
+    showToast('密码已重置')
+    router.replace('/auth/login')
+  } catch (e) {
+    showToast(e.message || '密码重置失败')
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 

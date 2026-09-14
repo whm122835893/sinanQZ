@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -9,23 +11,45 @@ import { useCountdown } from '@/utils/useCountdown'
 import { showToast, showConfirmDialog } from 'vant'
 
 const router = useRouter()
+const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
 
 const code = ref('')
 const realName = ref('')
 const idCard = ref('')
+const submitting = ref(false)
 
 const canSubmit = computed(() => code.value.length >= 4 && realName.value.length >= 2 && idCard.value.length >= 15)
 
-function sendCode() {
+async function sendCode() {
   if (counting.value) return
-  start()
-  showToast('验证码已发送')
+  try {
+    const res = await request.post('/user/send-code', { scene: 'cancel' })
+    start()
+    showToast('验证码已发送')
+    if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+  } catch (e) {
+    showToast(e.message || '验证码发送失败')
+  }
 }
+
 function onSubmit() {
   if (!canSubmit.value) return
   showConfirmDialog({ title: '注销账号', message: '注销后数据将无法恢复，确认注销？' })
-    .then(() => { showToast('账号已注销'); router.replace('/auth/login') })
+    .then(async () => {
+      if (submitting.value) return
+      submitting.value = true
+      try {
+        await request.post('/user/cancel', { code: code.value, realName: realName.value, idCard: idCard.value })
+        showToast('账号已注销')
+        user.logout()
+        router.replace('/auth/login')
+      } catch (e) {
+        showToast(e.message || '注销失败')
+      } finally {
+        submitting.value = false
+      }
+    })
     .catch(() => {})
 }
 </script>
@@ -34,7 +58,7 @@ function onSubmit() {
   <div class="auth page--no-tabbar">
     <AppNavBar title="注销账号" @click-left="$router.back()" />
 
-    <p class="cancel-tip">您正在注销您的账号：17587881293</p>
+    <p class="cancel-tip">您正在注销您的账号：{{ user.userInfo.phone }}</p>
 
     <AppCard :padding="16" style="margin:0 16px">
       <AppInput v-model="code" label="验证码" type="tel" maxlength="6" placeholder="请输入验证码">

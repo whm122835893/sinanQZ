@@ -14,6 +14,8 @@ export const useUserStore = defineStore('user', () => {
     phone: '',
     walletAddress: '',
     isRealName: false,
+    hasPassword: false,
+    hasTransactionPassword: false,
     inviteCode: ''
   })
 
@@ -29,11 +31,12 @@ export const useUserStore = defineStore('user', () => {
     userInfo.value = { ...userInfo.value, ...info }
   }
 
-  // ---- 登录/注册（真实接口：POST /api/auth/login，验证码模式）----
+  // ---- 登录/注册（真实接口：POST /api/auth/login，验证码/密码双模式）----
   async function login(payload) {
     const res = await request.post('/auth/login', {
       phone: payload.phone,
-      code: payload.code
+      code: payload.code || '',
+      password: payload.password || ''
     })
     setToken(res.token)
     setUserInfo({
@@ -41,6 +44,7 @@ export const useUserStore = defineStore('user', () => {
       avatar: res.userInfo.avatar || '',
       phone: res.userInfo.phone,
       isRealName: !!res.userInfo.isRealname,
+      hasPassword: !!res.userInfo.hasPassword,
       inviteCode: res.userInfo.inviteCode
     })
     return res
@@ -52,13 +56,14 @@ export const useUserStore = defineStore('user', () => {
     return res // { debugCode?: '123456' }
   }
 
-  // ---- 注册（真实接口：POST /api/auth/register，验证码模式，支持邀请码）----
+  // ---- 注册（真实接口：POST /api/auth/register，验证码模式，支持邀请码 + 登录密码）----
   // 注册成功后端直接返回 token（注册即登录）
   async function register(payload) {
     const res = await request.post('/auth/register', {
       phone: payload.phone,
       code: payload.code,
       nickname: payload.nickname,
+      password: payload.password,
       inviteCode: payload.inviteCode || ''
     })
     setToken(res.token)
@@ -67,6 +72,7 @@ export const useUserStore = defineStore('user', () => {
       avatar: res.userInfo.avatar || '',
       phone: res.userInfo.phone,
       isRealName: !!res.userInfo.isRealname,
+      hasPassword: !!res.userInfo.hasPassword,
       inviteCode: res.userInfo.inviteCode
     })
     return res
@@ -89,9 +95,13 @@ export const useUserStore = defineStore('user', () => {
       avatar: u.avatar || '',
       phone: u.phone,
       isRealName: !!u.isRealName,
+      // 是否已设置登录密码（账户安全页「登录密码 已设置/未设置」）
+      hasPassword: !!u.hasPassword,
       // 实名审核状态：0未提交 1待审核 2已通过 3已驳回（姓名/身份证后端不下发明文）
       realnameStatus: u.realnameStatus ?? 0,
       realnameRejectReason: u.realnameRejectReason || '',
+      // 是否已设置交易密码（账户安全页「操作密码 已设置/未设置」）
+      hasTransactionPassword: !!u.hasTransactionPassword,
       inviteCode: u.inviteCode,
       wallet: u.wallet
     })

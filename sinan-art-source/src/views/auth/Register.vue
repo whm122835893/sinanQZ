@@ -17,14 +17,28 @@ const { counting, remain, start } = useCountdown(60)
 const phone = ref('')
 const nickname = ref('')
 const code = ref('')
+const password = ref('')
+const confirm = ref('')
 // 邀请码：从注册链接 ?code= 自动回填（邀请页复制注册链接的闭环）
 const invite = ref(String(route.query.code || ''))
 const agreed = ref(false)
 const submitting = ref(false)
 
-// 后端注册接口必填昵称（2-20 字），验证码登录模式无密码字段
+const pwdValid = computed(() => password.value.length >= 6 && password.value.length <= 20)
+const confirmError = computed(() => {
+  if (!confirm.value) return ''
+  return password.value === confirm.value ? '' : '两次输入的密码不一致'
+})
+
+// 后端注册接口必填昵称（2-20 字）+ 登录密码（注册时设置）
 const canSubmit = computed(
-  () => phone.value.length >= 11 && code.value.length >= 4 && nickname.value.trim().length >= 2
+  () =>
+    phone.value.length >= 11 &&
+    code.value.length >= 4 &&
+    nickname.value.trim().length >= 2 &&
+    pwdValid.value &&
+    confirm.value.length >= 6 &&
+    !confirmError.value
 )
 
 // MOCK_REPLACED: 原为本地直接弹"验证码已发送"，现走后端 POST /api/auth/send-code
@@ -45,7 +59,11 @@ async function sendCode() {
 // MOCK_REPLACED: 原为本地直接弹"注册成功"，现走后端 POST /api/auth/register
 // （注册即登录返回 token；携带邀请码时后端写入 invite_records 绑定邀请关系）
 async function onSubmit() {
-  if (!canSubmit.value) return
+  if (!canSubmit.value) {
+    if (confirmError.value) showToast(confirmError.value)
+    else if (!pwdValid.value) showToast('登录密码长度需在 6-20 位之间')
+    return
+  }
   if (!agreed.value) { showToast('请先阅读并同意协议'); return }
   if (submitting.value) return
   submitting.value = true
@@ -54,6 +72,7 @@ async function onSubmit() {
       phone: phone.value,
       code: code.value,
       nickname: nickname.value.trim(),
+      password: password.value,
       inviteCode: invite.value.trim()
     })
     showToast('注册成功')
@@ -87,6 +106,8 @@ function goAgreement(name) {
         </template>
       </AppInput>
       <AppInput v-model="nickname" label="昵称" maxlength="20" placeholder="请输入2-20位昵称" />
+      <AppInput v-model="password" label="登录密码" type="password" password-toggle placeholder="设置6-20位登录密码" />
+      <AppInput v-model="confirm" label="确认密码" type="password" password-toggle placeholder="请再次输入登录密码" :error="confirmError" />
       <AppInput v-model="invite" label="邀请码(选填)" placeholder="请输入" />
 
       <div class="auth-agree" @click="agreed = !agreed">

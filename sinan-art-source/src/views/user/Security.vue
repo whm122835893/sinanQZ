@@ -20,8 +20,8 @@ const user = useUserStore()
           </span>
         </template>
       </AppListItem>
-      <AppListItem title="登录密码" value="已设置" icon="shield" arrow border @click="router.push('/auth/change-pwd')" />
-      <AppListItem title="操作密码" value="未设置" icon="lock" arrow border @click="router.push('/auth/op-pwd')" />
+      <AppListItem title="登录密码" :value="user.userInfo.hasPassword ? '已设置' : '未设置'" icon="shield" arrow border @click="router.push('/auth/change-pwd')" />
+      <AppListItem title="操作密码" :value="user.userInfo.hasTransactionPassword ? '已设置' : '未设置'" icon="lock" arrow border @click="router.push('/auth/op-pwd')" />
       <AppListItem title="找回密码" icon="key" arrow border @click="router.push('/auth/forgot')" />
     </div>
 

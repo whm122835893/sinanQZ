@@ -93,6 +93,7 @@ class Auth extends BaseController
     {
         $phone      = $this->request->post('phone', '');
         $code       = $this->request->post('code', '');
+        $password   = $this->request->post('password', '');
         // SEC-X1 修复（安全专项 5.1）：昵称剥离 HTML 标签，防止存储型 XSS 原样入库回显
         $nickname   = strip_tags(trim((string) $this->request->post('nickname', '')));
         $inviteCode = $this->request->post('inviteCode', '');
@@ -105,6 +106,9 @@ class Auth extends BaseController
         }
         if (mb_strlen($nickname) < 2 || mb_strlen($nickname) > 20) {
             return $this->fail(1001, '用户名长度需在 2-20 字之间');
+        }
+        if (strlen($password) < 6 || strlen($password) > 20) {
+            return $this->fail(1001, '登录密码长度需在 6-20 位之间');
         }
 
         // 校验手机号是否已注册
@@ -143,6 +147,7 @@ class Auth extends BaseController
             Db::name('users')->insert([
                 'phone'       => $phone,
                 'username'    => $nickname,
+                'password'    => hash_password($password),
                 'uid'         => '',  // 先占位，下面更新
                 'invite_code' => $newInviteCode,
                 'status'      => 1,
@@ -205,6 +210,7 @@ class Auth extends BaseController
                 'avatar'     => $user['avatar'],
                 'is_realname' => (bool) $user['is_realname'],
                 'invite_code' => $user['invite_code'],
+                'has_password' => !empty($user['password']),
             ]),
         ]);
     }
@@ -215,11 +221,17 @@ class Auth extends BaseController
      */
     public function login()
     {
-        $phone = $this->request->post('phone', '');
-        $code  = $this->request->post('code', '');
+        $phone    = $this->request->post('phone', '');
+        $code     = $this->request->post('code', '');
+        $password = $this->request->post('password', '');
 
         if (!preg_match('/^1\d{10}$/', $phone)) {
             return $this->fail(1001, '手机号格式错误');
+        }
+
+        // 密码登录分支（携带 password 时走密码校验，否则短信验证码）
+        if ($password !== '') {
+            return $this->loginByPassword($phone, $password);
         }
 
         // SEC-R1：失败次数超限拒绝（防爆破）
@@ -272,13 +284,59 @@ class Auth extends BaseController
                 'avatar'     => $user['avatar'],
                 'is_realname' => (bool) $user['is_realname'],
                 'invite_code' => $user['invite_code'],
+                'has_password' => !empty($user['password']),
+            ]),
+        ]);
+    }
+
+    /**
+     * 密码登录内部实现（登录成功后的登录态刷新与返回）
+     */
+    private function loginByPassword(string $phone, string $password)
+    {
+        $user = Db::name('users')->where('phone', $phone)->find();
+        if (!$user) {
+            return $this->fail(1002, '该手机号未注册');
+        }
+        if ((int) $user['status'] !== 1) {
+            return $this->fail(2002, '账户已被禁用');
+        }
+        if (empty($user['password'])) {
+            return $this->fail(2004, '该账号未设置登录密码，请使用验证码登录');
+        }
+        if (!verify_password($password, $user['password'])) {
+            return $this->fail(2003, '登录密码错误');
+        }
+
+        Db::name('users')->where('id', $user['id'])->update([
+            'last_login_at' => date('Y-m-d H:i:s.v'),
+            'login_count'   => $user['login_count'] + 1,
+        ]);
+
+        try {
+            cache('force_logout_' . $user['id'], null);
+        } catch (\Throwable $e) {
+            // 缓存异常不阻断登录
+        }
+
+        $token = JwtService::encode($user['id'], $phone);
+        return $this->success([
+            'token'    => $token,
+            'userInfo' => camelize_keys([
+                'uid'         => $user['uid'],
+                'username'    => $user['username'],
+                'phone'       => mask_phone($user['phone']),
+                'avatar'      => $user['avatar'],
+                'is_realname' => (bool) $user['is_realname'],
+                'invite_code' => $user['invite_code'],
+                'has_password' => !empty($user['password']),
             ]),
         ]);
     }
 
     /**
      * POST /api/auth/reset-password
-     * 忘记密码（设置/重置交易密码）
+     * 忘记登录密码（短信验证码重置登录密码）
      */
     public function resetPassword()
     {
@@ -317,8 +375,8 @@ class Auth extends BaseController
 
         Db::startTrans();
         Db::name('users')->where('id', $user['id'])->update([
-            'transaction_password' => hash_password($newPassword),
-            'updated_at'            => date('Y-m-d H:i:s.v'),
+            'password'   => hash_password($newPassword),
+            'updated_at' => date('Y-m-d H:i:s.v'),
         ]);
         Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
         Db::commit();

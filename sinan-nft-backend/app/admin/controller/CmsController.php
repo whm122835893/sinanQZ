@@ -949,6 +949,7 @@ class CmsController extends BaseController
                 'description' => (string) ($row['description'] ?? ''),
                 'icon'        => (string) $row['icon'],
                 'qrCode'      => (string) ($row['qr_code'] ?? ''),
+                'qqGroup'     => (string) ($row['qq_group'] ?? ''),
                 'members'     => (int) $row['members'],
                 'sort'        => (int) $row['sort_order'],
                 'isActive'    => (int) $row['is_active'],
@@ -979,6 +980,7 @@ class CmsController extends BaseController
             'description' => $this->optStr('description', 60),
             'icon'        => mb_substr(trim((string) $this->request->param('icon')), 0, 255),
             'qr_code'     => $this->optStr('qr_code', 255),
+            'qq_group'    => $this->optStr('qq_group', 20),
             'members'     => max(0, (int) $this->request->param('members', 0)),
             'sort_order'  => max(0, (int) $this->request->param('sort', 1)),
             'is_active'   => (int) $this->request->param('is_active', 1) === 1 ? 1 : 0,
@@ -1008,7 +1010,7 @@ class CmsController extends BaseController
             }
             $update['name'] = $name;
         }
-        foreach (['description' => 60, 'qr_code' => 255] as $key => $limit) {
+        foreach (['description' => 60, 'qr_code' => 255, 'qq_group' => 20] as $key => $limit) {
             if ($this->request->has($key)) {
                 $update[$key] = $this->optStr($key, $limit);
             }

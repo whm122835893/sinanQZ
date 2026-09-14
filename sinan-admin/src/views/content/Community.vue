@@ -10,7 +10,7 @@ const groups = ref([])
 
 const editShow = ref(false)
 const editing = ref(null)
-const form = ref({ name: '', description: '', icon: '', qrCode: '', members: 0, isActive: 1, sort: 1 })
+const form = ref({ name: '', description: '', icon: '', qrCode: '', qqGroup: '', members: 0, isActive: 1, sort: 1 })
 
 const iconOptions = ['/images/tab/tab-bell.png', '/images/tab/tab-person.png']
 
@@ -25,7 +25,7 @@ async function load() {
 
 function openCreate() {
   editing.value = null
-  form.value = { name: '', description: '', icon: iconOptions[0], qrCode: '', members: 0, isActive: 1, sort: groups.value.length + 1 }
+  form.value = { name: '', description: '', icon: iconOptions[0], qrCode: '', qqGroup: '', members: 0, isActive: 1, sort: groups.value.length + 1 }
   editShow.value = true
 }
 
@@ -128,6 +128,9 @@ async function onToggle(g) {
         <el-form-item label="群二维码">
           <el-input v-model="form.qrCode" placeholder="二维码图片地址（可留空）" />
           <img v-if="form.qrCode" class="cm__qr-preview" :src="form.qrCode" alt="群二维码" />
+        </el-form-item>
+        <el-form-item label="QQ群号">
+          <el-input v-model="form.qqGroup" placeholder="如：123456789（配置后「加入社群」跳转QQ入群）" maxlength="20" />
         </el-form-item>
         <el-form-item label="成员数">
           <el-input-number v-model="form.members" :min="0" />

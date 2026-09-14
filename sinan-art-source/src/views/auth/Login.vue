@@ -13,7 +13,7 @@ const router = useRouter()
 const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
 
-const loginMode = ref('code') // 'password' | 'code'（后端仅支持验证码登录）
+const loginMode = ref('code') // 'password' | 'code'
 const phone = ref('')
 const password = ref('')
 const code = ref('')
@@ -41,18 +41,18 @@ async function sendCode() {
   }
 }
 
-// MOCK_REPLACED: 原为本地直接置登录态，现走后端 POST /api/auth/login（验证码模式）
+// MOCK_REPLACED: 原为本地直接置登录态，现走后端 POST /api/auth/login（密码/验证码双模式）
 async function onLogin() {
   if (!canSubmit.value) return
   if (!agreed.value) { showToast('请先阅读并同意协议'); return }
-  if (loginMode.value === 'password') {
-    showToast('暂不支持密码登录，请使用验证码方式')
-    return
-  }
   if (submitting.value) return
   submitting.value = true
   try {
-    await user.login({ phone: phone.value, code: code.value })
+    if (loginMode.value === 'password') {
+      await user.login({ phone: phone.value, password: password.value })
+    } else {
+      await user.login({ phone: phone.value, code: code.value })
+    }
     showToast('登录成功')
     // 登录后回跳来源页面（从全局登录弹窗进入时携带 redirect 参数）
     const redirect = route.query.redirect

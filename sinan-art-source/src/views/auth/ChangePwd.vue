@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -15,6 +16,7 @@ const { counting, remain, start } = useCountdown(60)
 const code = ref('')
 const password = ref('')
 const confirm = ref('')
+const submitting = ref(false)
 
 const pwdValid = computed(() => password.value.length >= 6)
 const confirmError = computed(() => {
@@ -26,20 +28,36 @@ const canSubmit = computed(
   () => code.value.length >= 4 && pwdValid.value && confirm.value.length >= 6 && !confirmError.value
 )
 
-function sendCode() {
+async function sendCode() {
   if (counting.value) return
-  start()
-  showToast('验证码已发送至 ' + user.userInfo.phone)
+  try {
+    const res = await request.post('/user/send-code', { scene: 'reset_password' })
+    start()
+    showToast('验证码已发送至 ' + user.userInfo.phone)
+    if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+  } catch (e) {
+    showToast(e.message || '验证码发送失败')
+  }
 }
-function onSubmit() {
+
+async function onSubmit() {
   if (!canSubmit.value) {
     if (code.value.length < 4) showToast('请输入验证码')
     else if (!pwdValid.value) showToast('密码至少 6 位')
     else if (confirmError.value) showToast(confirmError.value)
     return
   }
-  showToast('密码修改成功')
-  router.back()
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await request.post('/user/password/reset', { code: code.value, newPassword: password.value })
+    showToast('密码修改成功')
+    router.back()
+  } catch (e) {
+    showToast(e.message || '密码修改失败')
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 

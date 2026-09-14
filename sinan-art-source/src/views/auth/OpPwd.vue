@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -9,25 +11,43 @@ import { useCountdown } from '@/utils/useCountdown'
 import { showToast } from 'vant'
 
 const router = useRouter()
+const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
 
-const phone = ref('175****1293')
+const phone = ref(user.userInfo.phone || '')
 const code = ref('')
 const opPwd = ref('')
 const confirm = ref('')
+const submitting = ref(false)
 
 const canSubmit = computed(() => code.value.length >= 4 && opPwd.value.length === 6 && confirm.value.length === 6)
 
-function sendCode() {
+async function sendCode() {
   if (counting.value) return
-  start()
-  showToast('验证码已发送')
+  try {
+    const res = await request.post('/user/send-code', { scene: 'reset_password' })
+    start()
+    showToast('验证码已发送')
+    if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+  } catch (e) {
+    showToast(e.message || '验证码发送失败')
+  }
 }
-function onSubmit() {
+
+async function onSubmit() {
   if (!canSubmit.value) return
   if (opPwd.value !== confirm.value) { showToast('两次密码不一致'); return }
-  showToast('操作密码设置成功')
-  router.back()
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await request.post('/user/password/trade/reset', { code: code.value, newPassword: opPwd.value })
+    showToast('操作密码设置成功')
+    router.back()
+  } catch (e) {
+    showToast(e.message || '操作密码设置失败')
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 

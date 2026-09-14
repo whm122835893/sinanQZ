@@ -1993,6 +1993,7 @@ export async function getCommunityGroups() {
       name: s(g.name),
       description: s(g.description),
       qrCode: s(g.qrCode),
+      qqGroup: s(g.qqGroup),
       members: n(g.members),
       isActive: n(g.isActive),
       sort: n(g.sort)
@@ -2006,6 +2007,7 @@ export function saveCommunityGroup(payload) {
     description: payload.description || '',
     icon: payload.icon || '/images/tab/tab-bell.png',
     qr_code: payload.qrCode || '',
+    qq_group: payload.qqGroup || '',
     members: n(payload.members),
     sort: n(payload.sort),
     is_active: payload.isActive

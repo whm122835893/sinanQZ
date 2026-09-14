@@ -110,6 +110,7 @@ class Content extends BaseController
             'name'        => $g['name'],
             'description' => $g['description'],
             'qrCode'      => $g['qr_code'],
+            'qqGroup'     => $g['qq_group'] ?? '',
         ], $list));
     }
 
@@ -119,7 +120,7 @@ class Content extends BaseController
      */
     public function siteConfig()
     {
-        $keys = ['purchase_limit_per_user', 'order_pay_timeout_seconds', 'resale_cooldown_seconds', 'resale_fee_rate'];
+        $keys = ['purchase_limit_per_user', 'order_pay_timeout_seconds', 'resale_cooldown_seconds', 'resale_fee_rate', 'service_hotline', 'service_hours', 'service_online_url'];
         $list = Db::name('system_configs')->whereIn('config_key', $keys)->column('config_value', 'config_key');
 
         // 站点装修（B 端配置的全局风格：名称/头像/主题色等）
@@ -131,6 +132,11 @@ class Content extends BaseController
             'orderPayTimeoutSeconds'  => (int) ($list['order_pay_timeout_seconds'] ?? 300),
             'resaleCooldownSeconds'   => (int) ($list['resale_cooldown_seconds'] ?? 180),
             'resaleFeeRate'           => (float) ($list['resale_fee_rate'] ?? 1.0),
+            'service' => [
+                'hotline'   => $list['service_hotline'] ?? '400-888-0000',
+                'hours'     => $list['service_hours'] ?? '9:00 - 22:00',
+                'onlineUrl' => $list['service_online_url'] ?? '',
+            ],
             'site' => [
                 'siteName'       => $site['site_name'] ?? '司南艺术',
                 'siteLogo'       => $site['site_logo'] ?? '',

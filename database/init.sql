@@ -94,6 +94,7 @@ CREATE TABLE `nft_users` (
   `is_realname`          TINYINT(1)      NOT NULL DEFAULT 0      COMMENT '实名标志：1已实名 0未实名（购买/寄售/转赠前置校验）',
   `real_name`            VARCHAR(255)    NULL DEFAULT NULL       COMMENT '真实姓名，AES-256/SM4 加密存储',
   `id_card`              VARCHAR(255)    NULL DEFAULT NULL       COMMENT '身份证号，加密存储',
+  `password`             VARCHAR(255)    NULL DEFAULT NULL       COMMENT '登录密码，bcrypt/scrypt 哈希（注册时设置，可密码登录）',
   `transaction_password` VARCHAR(255)    NULL DEFAULT NULL       COMMENT '交易密码，bcrypt/scrypt 哈希（禁止明文）',
   `status`               TINYINT         NOT NULL DEFAULT 1      COMMENT '账户状态：1正常 0禁用',
   `last_login_at`        DATETIME(3)     NULL DEFAULT NULL       COMMENT '最后登录时间（登录空投依赖）',
@@ -865,6 +866,7 @@ CREATE TABLE `nft_community_groups` (
   `name`        VARCHAR(50)   NOT NULL                COMMENT '群名称',
   `description` VARCHAR(255)  NULL DEFAULT NULL       COMMENT '群简介',
   `qr_code`     VARCHAR(255)  NULL DEFAULT NULL       COMMENT '二维码图URL',
+  `qq_group`    VARCHAR(20)   NULL DEFAULT NULL       COMMENT 'QQ群号（配置后「加入社群」跳转QQ入群）',
   `sort_order`  INT           NOT NULL DEFAULT 0      COMMENT '排序（升序）',
   `is_active`   TINYINT(1)    NOT NULL DEFAULT 1      COMMENT '是否启用：1是 0否',
   `deleted_at`  DATETIME      NULL DEFAULT NULL       COMMENT '软删除时间，NULL未删除',
@@ -937,7 +939,10 @@ INSERT INTO `nft_system_configs` (`config_key`, `config_value`, `description`) V
   ('order_pay_timeout_seconds', '300',  '订单待支付超时秒数（超时自动取消并释放库存）'),
   ('resale_cooldown_seconds',   '180',  '取消寄售后重新挂单冷却秒数'),
   ('resale_fee_rate',           '1.00', '寄售手续费率（百分比，如 1.00 表示 1%）'),
-  ('checkin_rewards',           '{"1":5,"2":5,"3":10,"4":10,"5":15,"6":15,"7":30}', '连续签到奖励配置（JSON：天数→司南币数量）')
+  ('checkin_rewards',           '{"1":5,"2":5,"3":10,"4":10,"5":15,"6":15,"7":30}', '连续签到奖励配置（JSON：天数→司南币数量）'),
+  ('service_hotline',           '400-888-0000', '客服热线电话（C 端客服页展示）'),
+  ('service_hours',             '9:00 - 22:00', '客服在线时间（C 端客服页展示）'),
+  ('service_online_url',        '',             '在线客服跳转链接（可空，空则展示提示）')
 ON DUPLICATE KEY UPDATE `config_value` = VALUES(`config_value`), `updated_at` = CURRENT_TIMESTAMP(3);
 
 INSERT INTO `nft_site_settings` (`setting_key`, `setting_value`, `setting_group`, `description`) VALUES
