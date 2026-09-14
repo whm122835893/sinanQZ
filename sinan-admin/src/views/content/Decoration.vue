@@ -25,13 +25,50 @@ const form = reactive({
   button_radius: 8,
   seo_title: '',
   seo_description: '',
-  seo_keywords: ''
+  seo_keywords: '',
+  feature_icon_theme: 'classic',
+  tab_icon_theme: 'classic',
+  custom_icon_calendar: '',
+  custom_icon_activity: '',
+  custom_icon_lottery: '',
+  custom_icon_inventory: '',
+  custom_icon_wallet: '',
+  custom_icon_invite: ''
 })
 
 const DEFAULTS = { theme_color: '#C00000', bg_color: '#F7F8FA' }
 const themeColor = computed(() => form.theme_color || DEFAULTS.theme_color)
 const bgColor = computed(() => form.bg_color || DEFAULTS.bg_color)
 const buttonColor = computed(() => form.button_color || themeColor.value)
+
+// 图标主题可选包（与后端白名单 / C 端 iconTheme.js 一致）
+const FEATURE_ICON_THEME_OPTIONS = [
+  { value: 'classic', label: '经典矢量' },
+  { value: 'gem', label: '3D宝石质感' },
+  { value: 'ink', label: '新中式水墨' },
+  { value: 'shanse', label: '青绿山水' },
+  { value: 'glass', label: '玻璃拟态' },
+  { value: 'custom', label: '自定义图标' }
+]
+
+// 底部导航图标主题（导航图标无自定义上传，仅标准矢量/位图包）
+const TAB_ICON_THEME_OPTIONS = [
+  { value: 'classic', label: '经典矢量' },
+  { value: 'gem', label: '3D宝石质感' },
+  { value: 'ink', label: '新中式水墨' },
+  { value: 'shanse', label: '青绿山水' },
+  { value: 'glass', label: '玻璃拟态' }
+]
+
+// 自定义图标（管理员上传位图）字段映射
+const CUSTOM_ICON_FIELDS = [
+  { key: 'custom_icon_calendar', label: '日历' },
+  { key: 'custom_icon_activity', label: '活动' },
+  { key: 'custom_icon_lottery', label: '抽奖' },
+  { key: 'custom_icon_inventory', label: '库存' },
+  { key: 'custom_icon_wallet', label: '钱包' },
+  { key: 'custom_icon_invite', label: '邀请好友' }
+]
 
 onMounted(load)
 
@@ -41,17 +78,19 @@ async function load() {
   if (res.code === 0 && res.data) {
     Object.assign(form, res.data)
     form.button_radius = Number(form.button_radius) || 0
+    if (!form.feature_icon_theme) form.feature_icon_theme = 'classic'
+    if (!form.tab_icon_theme) form.tab_icon_theme = 'classic'
   }
   loading.value = false
 }
 
 // ---- 图片上传（site_logo / site_avatar）----
 const uploadingKey = ref('')
-async function onUpload(field, { file }) {
+async function onUpload(field, { file }, biz = 'content') {
   if (!file) return
   if (file.size > 5 * 1024 * 1024) return ElMessage.warning('图片大小不能超过 5MB')
   uploadingKey.value = field
-  const res = await uploadImage(file, 'content')
+  const res = await uploadImage(file, biz)
   uploadingKey.value = ''
   if (res.code === 0 && res.data?.url) {
     form[field] = res.data.url
@@ -189,6 +228,59 @@ async function onSave() {
             </el-form>
           </div>
 
+          <!-- 图标主题 -->
+          <div class="adm-card">
+            <div class="adm-card__title">图标主题</div>
+            <el-form label-width="90px" class="deco__form">
+              <el-form-item label="功能图标">
+                <el-select v-model="form.feature_icon_theme" class="deco__theme-select">
+                  <el-option v-for="t in FEATURE_ICON_THEME_OPTIONS" :key="t.value" :label="t.label" :value="t.value" />
+                </el-select>
+                <div class="t-tertiary deco__tip">切换功能入口图标（日历 / 活动 / 抽奖 / 库存 / 钱包 / 邀请好友）风格</div>
+              </el-form-item>
+
+              <el-form-item label="底部导航">
+                <el-select v-model="form.tab_icon_theme" class="deco__theme-select">
+                  <el-option v-for="t in TAB_ICON_THEME_OPTIONS" :key="t.value" :label="t.label" :value="t.value" />
+                </el-select>
+                <div class="t-tertiary deco__tip">切换底部导航栏图标（首页 / 市场 / 公告 / 我的）风格，可与功能图标分开选择</div>
+              </el-form-item>
+
+              <!-- 自定义图标上传（仅「自定义图标」功能主题显示） -->
+              <template v-if="form.feature_icon_theme === 'custom'">
+                <el-form-item v-for="f in CUSTOM_ICON_FIELDS" :key="f.key" :label="f.label + '图标'">
+                  <div class="deco__upload-row">
+                    <div v-if="form[f.key]" class="deco__thumb deco__thumb--icon">
+                      <img :src="form[f.key]" alt="" />
+                      <div class="deco__thumb-ops">
+                        <el-upload
+                          :show-file-list="false"
+                          :http-request="(o) => onUpload(f.key, o, 'custom')"
+                          accept="image/png,image/webp,image/jpeg,image/gif"
+                        >
+                          <el-button link type="primary" size="small" :loading="uploadingKey === f.key">重新上传</el-button>
+                        </el-upload>
+                        <el-button link type="danger" size="small" @click="form[f.key] = ''">删除</el-button>
+                      </div>
+                    </div>
+                    <el-upload
+                      v-else
+                      class="deco__uploader deco__uploader--icon"
+                      :show-file-list="false"
+                      :http-request="(o) => onUpload(f.key, o, 'custom')"
+                      accept="image/png,image/webp,image/jpeg,image/gif"
+                    >
+                      <div class="deco__uploader-box">
+                        <el-icon :size="20"><Plus /></el-icon>
+                        <div class="t-tertiary">上传</div>
+                      </div>
+                    </el-upload>
+                  </div>
+                </el-form-item>
+              </template>
+            </el-form>
+          </div>
+
           <!-- SEO 设置 -->
           <div class="adm-card">
             <div class="adm-card__title">SEO 设置</div>
@@ -296,6 +388,10 @@ async function onSave() {
   margin-top: 4px;
 }
 
+.deco__theme-select {
+  width: 220px;
+}
+
 // ---- 上传 ----
 .deco__upload-row {
   display: flex;
@@ -321,6 +417,12 @@ async function onSave() {
 
   &--round img {
     border-radius: 50%;
+  }
+
+  &--icon img {
+    object-fit: contain;
+    padding: 4px;
+    background: #fff;
   }
 }
 

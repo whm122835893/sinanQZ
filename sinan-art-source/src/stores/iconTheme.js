@@ -45,7 +45,8 @@ const ICON_THEMES = {
       activity:   { type: 'image', image: '/images/tab/modern-activity.png' },
       lottery:    { type: 'image', image: '/images/tab/modern-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/modern-inventory.png' },
-      wallet:     { type: 'image', image: '/images/tab/modern-wallet.png' }
+      wallet:     { type: 'image', image: '/images/tab/modern-wallet.png' },
+      invite:     { type: 'svg',   icon: 'invite' }
     }
   },
 
@@ -131,44 +132,101 @@ const ICON_THEMES = {
       inventory:  { type: 'image', image: '/images/tab/lg-cube.png' },
       wallet:     { type: 'image', image: '/images/tab/lg-wallet.png' }
     }
+  },
+
+  // ---- 自定义图标（管理员后台上传位图，运行时由 setCustomIcons 动态填充）----
+  custom: {
+    id: 'custom',
+    name: '自定义图标',
+    type: 'image',
+    tabs: {},
+    features: {}
   }
 }
 
-const STORAGE_KEY = 'jc_icon_theme'
+const STORAGE_KEY_FEATURE = 'jc_icon_theme_feature'
+const STORAGE_KEY_TAB = 'jc_icon_theme_tab'
 
 export const useIconThemeStore = defineStore('iconTheme', () => {
-  // 默认使用经典矢量风（SVG）
-  const currentId = ref(localStorage.getItem(STORAGE_KEY) || 'classic')
+  // 功能图标主题与底部导航主题相互独立，可分别切换（如：功能水墨 + 导航 SVG）
+  const featureThemeId = ref(localStorage.getItem(STORAGE_KEY_FEATURE) || 'classic')
+  const tabThemeId = ref(localStorage.getItem(STORAGE_KEY_TAB) || 'classic')
 
-  const current = computed(() => ICON_THEMES[currentId.value] || ICON_THEMES.classic)
+  // 自定义图标（管理员上传的功能入口位图），由 site.js init 从后端配置注入
+  const customIcons = ref({
+    calendar: '',
+    activity: '',
+    lottery: '',
+    inventory: '',
+    wallet: '',
+    invite: ''
+  })
+
+  const featureTheme = computed(() => ICON_THEMES[featureThemeId.value] || ICON_THEMES.classic)
+  const tabTheme = computed(() => ICON_THEMES[tabThemeId.value] || ICON_THEMES.classic)
 
   // 供后台展示的所有可选主题
   const themes = Object.values(ICON_THEMES)
 
   /**
-   * 切换图标主题（后期管理后台调用）
+   * 切换功能图标主题（日历/活动/抽奖/库存/钱包/邀请好友）
    * @param {string} id - 主题 id，需在 ICON_THEMES 中存在
    */
-  function setTheme(id) {
+  function setFeatureTheme(id) {
     if (!ICON_THEMES[id]) return false
-    currentId.value = id
-    localStorage.setItem(STORAGE_KEY, id)
+    featureThemeId.value = id
+    localStorage.setItem(STORAGE_KEY_FEATURE, id)
     return true
   }
 
-  /** 获取指定 Tab 在当前主题下的图标配置 */
-  function getTabIcon(tabName) {
-    return current.value.tabs[tabName] || null
+  /**
+   * 切换底部导航栏图标主题
+   * @param {string} id - 主题 id，需在 ICON_THEMES 中存在
+   */
+  function setTabTheme(id) {
+    if (!ICON_THEMES[id]) return false
+    tabThemeId.value = id
+    localStorage.setItem(STORAGE_KEY_TAB, id)
+    return true
   }
 
   /**
-   * 获取指定功能入口在当前主题下的图标配置
+   * 一键同时切换功能与导航图标（向后兼容旧调用）
+   * @param {string} id - 主题 id
+   */
+  function setTheme(id) {
+    const ok = setFeatureTheme(id)
+    return setTabTheme(id) && ok
+  }
+
+  /**
+   * 注入管理员上传的自定义图标（URL 映射）
+   * @param {Object} map - { calendar, activity, lottery, inventory, wallet, invite }
+   */
+  function setCustomIcons(map) {
+    if (!map || typeof map !== 'object') return
+    customIcons.value = { ...customIcons.value, ...map }
+  }
+
+  /** 获取指定 Tab 在底部导航主题下的图标配置 */
+  function getTabIcon(tabName) {
+    return tabTheme.value.tabs[tabName] || null
+  }
+
+  /**
+   * 获取指定功能入口在功能图标主题下的图标配置
    * 若当前主题未定义 features，自动回退到 classic SVG
-   * @param {string} featureName - calendar | activity | lottery | inventory | wallet
+   * @param {string} featureName - calendar | activity | lottery | inventory | wallet | invite
    * @returns {{ type: 'svg', icon: string } | { type: 'image', image: string } | null}
    */
   function getFeatureIcon(featureName) {
-    const features = current.value.features
+    // 自定义主题：优先使用管理员上传的位图，缺省回退经典 SVG
+    if (featureThemeId.value === 'custom') {
+      const url = customIcons.value?.[featureName]
+      if (url) return { type: 'image', image: url }
+      return ICON_THEMES.classic.features[featureName] || null
+    }
+    const features = featureTheme.value.features
     if (features && features[featureName]) {
       return features[featureName]
     }
@@ -177,10 +235,15 @@ export const useIconThemeStore = defineStore('iconTheme', () => {
   }
 
   return {
-    currentId,
-    current,
+    featureThemeId,
+    tabThemeId,
+    featureTheme,
+    tabTheme,
     themes,
+    setFeatureTheme,
+    setTabTheme,
     setTheme,
+    setCustomIcons,
     getTabIcon,
     getFeatureIcon
   }

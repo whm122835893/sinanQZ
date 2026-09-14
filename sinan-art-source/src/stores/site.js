@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import request from '@/utils/request'
+import { useIconThemeStore } from './iconTheme'
 
 // ============================================================
 // 站点装修（B 端配置的全局风格）→ C 端运行时应用
@@ -67,6 +68,11 @@ export const useSiteStore = defineStore('site', {
         if (cfg?.site) this.set(cfg.site)
         // 全局限购数（与后端 perUserLimit 兜底同源：purchase_limit_per_user）
         if (cfg?.purchaseLimitPerUser) this.purchaseLimitPerUser = Number(cfg.purchaseLimitPerUser) || 5
+        // 图标主题：后台配置的图标风格包（功能图标与底部导航可独立切换）+ 自定义图标
+        const iconTheme = useIconThemeStore()
+        if (cfg?.site?.featureIconTheme) iconTheme.setFeatureTheme(cfg.site.featureIconTheme)
+        if (cfg?.site?.tabIconTheme) iconTheme.setTabTheme(cfg.site.tabIconTheme)
+        if (cfg?.site?.customIcons) iconTheme.setCustomIcons(cfg.site.customIcons)
       } catch { /* 网络异常时沿用缓存 */ }
       this.loaded = true
     },

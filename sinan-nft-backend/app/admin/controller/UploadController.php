@@ -23,7 +23,7 @@ class UploadController extends BaseController
     ];
 
     /** 业务子目录白名单（biz 参数） */
-    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc'];
+    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom'];
 
     private const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 

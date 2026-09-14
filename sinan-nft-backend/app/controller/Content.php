@@ -123,8 +123,8 @@ class Content extends BaseController
         $keys = ['purchase_limit_per_user', 'order_pay_timeout_seconds', 'resale_cooldown_seconds', 'resale_fee_rate', 'service_hotline', 'service_hours', 'service_online_url'];
         $list = Db::name('system_configs')->whereIn('config_key', $keys)->column('config_value', 'config_key');
 
-        // 站点装修（B 端配置的全局风格：名称/头像/主题色等）
-        $siteKeys = ['site_name', 'site_logo', 'site_avatar', 'theme_color', 'bg_color', 'button_color', 'button_radius', 'seo_title', 'seo_description', 'seo_keywords'];
+        // 站点装修（B 端配置的全局风格：名称/头像/主题色/图标主题等）
+        $siteKeys = ['site_name', 'site_logo', 'site_avatar', 'theme_color', 'bg_color', 'button_color', 'button_radius', 'seo_title', 'seo_description', 'seo_keywords', 'feature_icon_theme', 'tab_icon_theme', 'custom_icon_calendar', 'custom_icon_activity', 'custom_icon_lottery', 'custom_icon_inventory', 'custom_icon_wallet', 'custom_icon_invite'];
         $site = Db::name('site_settings')->whereIn('setting_key', $siteKeys)->column('setting_value', 'setting_key');
 
         return $this->success([
@@ -148,6 +148,18 @@ class Content extends BaseController
                 'seoTitle'       => $site['seo_title'] ?? '',
                 'seoDescription' => $site['seo_description'] ?? '',
                 'seoKeywords'    => $site['seo_keywords'] ?? '',
+                // 图标主题：功能入口与底部导航可独立切换；非法值回退 classic
+                'featureIconTheme' => $this->validFeatureIconTheme($site['feature_icon_theme'] ?? ''),
+                'tabIconTheme'     => $this->validTabIconTheme($site['tab_icon_theme'] ?? ''),
+                // 自定义图标：管理员上传的功能入口位图（日历/活动/抽奖/库存/钱包/邀请好友）
+                'customIcons'    => [
+                    'calendar'  => $site['custom_icon_calendar'] ?? '',
+                    'activity'  => $site['custom_icon_activity'] ?? '',
+                    'lottery'   => $site['custom_icon_lottery'] ?? '',
+                    'inventory' => $site['custom_icon_inventory'] ?? '',
+                    'wallet'    => $site['custom_icon_wallet'] ?? '',
+                    'invite'    => $site['custom_icon_invite'] ?? '',
+                ],
             ],
         ]);
     }
@@ -156,5 +168,19 @@ class Content extends BaseController
     private function hexOrDefault(string $value, string $default): string
     {
         return preg_match('/^#[0-9A-Fa-f]{6}$/', $value) ? $value : $default;
+    }
+
+    /** 功能图标主题白名单兜底：非法/为空回退 classic（允许自定义图标） */
+    private function validFeatureIconTheme(string $value): string
+    {
+        $allowed = ['classic', 'gem', 'ink', 'shanse', 'glass', 'custom'];
+        return in_array($value, $allowed, true) ? $value : 'classic';
+    }
+
+    /** 底部导航图标主题白名单兜底：非法/为空回退 classic（导航无自定义上传，排除 custom） */
+    private function validTabIconTheme(string $value): string
+    {
+        $allowed = ['classic', 'gem', 'ink', 'shanse', 'glass'];
+        return in_array($value, $allowed, true) ? $value : 'classic';
     }
 }

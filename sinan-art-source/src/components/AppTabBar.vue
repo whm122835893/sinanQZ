@@ -1,5 +1,6 @@
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
+import { useIconThemeStore } from '@/stores/iconTheme'
 import AppIcon from './AppIcon.vue'
 
 // 全局底部导航：首页 / 市场 / 商城 / 公告 / 我的
@@ -10,14 +11,20 @@ const props = defineProps({
 
 const route = useRoute()
 const router = useRouter()
+const iconTheme = useIconThemeStore()
 
 const tabs = [
   { index: 0, name: 'home',   label: '首页', to: '/',                icon: 'home' },
-  { index: 1, name: 'market', label: '市场', to: '/market/activity', icon: 'grid' },
+  { index: 1, name: 'market', label: '市场', to: '/market/activity', icon: 'bag' },
   { index: 2, name: 'mall',   label: '商城', to: '/mall',            round: true, hideLabel: true },
   { index: 3, name: 'notice', label: '公告', to: '/notice',          icon: 'bell' },
   { index: 4, name: 'user',   label: '我的', to: '/user',            icon: 'person' }
 ]
+
+// 当前图标主题下该 Tab 的图标配置（位图 image / 矢量 icon / null 回退默认）
+function tabIconOf(tab) {
+  return iconTheme.getTabIcon(tab.name) || null
+}
 
 function isActive(tab) {
   if (props.active === tab.index) return true
@@ -54,10 +61,18 @@ function go(tab) {
         @click.prevent
         @contextmenu.prevent
       />
+      <img
+        v-else-if="tabIconOf(tab)?.image"
+        class="app-tabbar__icon"
+        :src="isActive(tab) ? (tabIconOf(tab).imageActive || tabIconOf(tab).image) : tabIconOf(tab).image"
+        alt=""
+        draggable="false"
+        @contextmenu.prevent
+      />
       <AppIcon
         v-else
         class="app-tabbar__icon"
-        :name="tab.icon"
+        :name="tabIconOf(tab)?.icon || tab.icon"
         :size="30"
       />
       <span v-if="!tab.hideLabel" class="app-tabbar__label">{{ tab.label }}</span>

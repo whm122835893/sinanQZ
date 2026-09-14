@@ -17,6 +17,7 @@ const { requireLogin } = useLoginGate()
 // 功能入口图标（跟随当前主题动态切换）
 const inventoryIcon = computed(() => iconTheme.getFeatureIcon('inventory'))
 const walletIcon    = computed(() => iconTheme.getFeatureIcon('wallet'))
+const inviteIcon    = computed(() => iconTheme.getFeatureIcon('invite'))
 
 // 需登录才能访问的私有入口（未登录时统一弹全局登录提示）
 const needAuth = ['/user/invite', '/user/collections', '/user/wallet', '/user/orders', '/user/purchase', '/user/profile', '/user/security', '/user/realname']
@@ -49,7 +50,10 @@ function logout() {
 
     <!-- 邀请横幅 -->
     <div class="invite-banner" @click="go('/user/invite')">
-      <div class="invite-banner__icon"><AppIcon name="invite" :size="28" color="#C00000" /></div>
+      <div class="invite-banner__icon">
+        <img v-if="inviteIcon?.type === 'image'" :src="inviteIcon.image" class="invite-banner__img" alt="" draggable="false" @contextmenu.prevent />
+        <AppIcon v-else :name="inviteIcon?.icon || 'invite'" :size="28" color="#C00000" />
+      </div>
       <div class="invite-banner__text">
         <span class="invite-banner__title">司南·邀新玩法</span>
         <span class="invite-banner__sub">同游作伴，潮流好礼不设限</span>
@@ -138,6 +142,7 @@ function logout() {
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     backdrop-filter: blur(2px);
   }
+  &__img { width: 28px; height: 28px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
   &__text { flex: 1; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
   &__title { font-size: 15px; font-weight: 700; color: #9A1A1A; letter-spacing: 0.5px; }
   &__sub { font-size: 12px; color: rgba(80,50,20,0.6); }

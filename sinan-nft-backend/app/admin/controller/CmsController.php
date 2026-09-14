@@ -826,6 +826,16 @@ class CmsController extends BaseController
         'seo_title'       => ['seo', 'SEO 标题'],
         'seo_description' => ['seo', 'SEO 描述'],
         'seo_keywords'    => ['seo', 'SEO 关键词'],
+        // 图标主题（功能入口与底部导航可独立切换）+ 自定义图标（管理员上传位图）
+        // 注意：分组必须是 setting_group 枚举值（basic/theme/button/seo），图标相关统一归 theme
+        'feature_icon_theme'    => ['theme', '功能图标主题'],
+        'tab_icon_theme'        => ['theme', '底部导航图标主题'],
+        'custom_icon_calendar'  => ['theme', '日历自定义图标'],
+        'custom_icon_activity'  => ['theme', '活动自定义图标'],
+        'custom_icon_lottery'   => ['theme', '抽奖自定义图标'],
+        'custom_icon_inventory' => ['theme', '库存自定义图标'],
+        'custom_icon_wallet'    => ['theme', '钱包自定义图标'],
+        'custom_icon_invite'    => ['theme', '邀请好友自定义图标'],
     ];
 
     /** 颜色类配置键（HEX 校验） */
@@ -899,6 +909,16 @@ class CmsController extends BaseController
             // 按钮圆角：0~24px
             if ($key === 'button_radius' && $value !== '' && (!ctype_digit($value) || (int) $value > 24)) {
                 return $this->fail(4220, '按钮圆角需为 0~24 的整数');
+            }
+            // 功能图标主题：白名单校验（允许自定义图标）
+            if ($key === 'feature_icon_theme' && $value !== ''
+                && !in_array($value, ['classic', 'gem', 'ink', 'shanse', 'glass', 'custom'], true)) {
+                return $this->fail(4220, '功能图标主题仅允许 classic / gem / ink / shanse / glass / custom');
+            }
+            // 底部导航图标主题：白名单校验（导航无自定义上传，排除 custom）
+            if ($key === 'tab_icon_theme' && $value !== ''
+                && !in_array($value, ['classic', 'gem', 'ink', 'shanse', 'glass'], true)) {
+                return $this->fail(4220, '底部导航图标主题仅允许 classic / gem / ink / shanse / glass');
             }
 
             $exists = Db::name('site_settings')->where('setting_key', $key)->find();
