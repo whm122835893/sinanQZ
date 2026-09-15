@@ -215,12 +215,6 @@ export const useCollectionStore = defineStore('collection', () => {
     return 'selling'
   }
 
-  // 发售库存由后端锁定/释放（locked_quantity），前端不再本地维护
-  function changeStock() { /* 已由后端管理：GET featured 即最新库存 */ }
-
-  // 流通量同理由后端维护（circulate 字段）
-  function changeCirculation() { /* 已由后端管理 */ }
-
   // 倒计时文案
   function getCountdownText(item) {
     if (!item || !item.saleTime) return ''
@@ -311,8 +305,6 @@ export const useCollectionStore = defineStore('collection', () => {
     getSaleStatus,
     getCountdownText,
     getFeaturedById,
-    changeStock,
-    changeCirculation,
     exhibits,
     fetchExhibits,
     fetchExhibit

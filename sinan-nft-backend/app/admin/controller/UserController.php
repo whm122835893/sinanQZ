@@ -504,7 +504,7 @@ class UserController extends BaseController
 
         $total = (clone $query)->count();
         $rows = $query->field('uc.id, uc.serial, uc.status, uc.source, uc.acquired_price, uc.acquired_at,
-                               uc.order_id, uc.airdrop_record_id,
+                               uc.order_id, uc.airdrop_record_id, uc.token_id, uc.tx_hash, uc.block_number,
                                c.id AS collectible_id, c.name AS collectible_name, c.image AS collectible_image')
             ->order('uc.id', 'desc')
             ->page($page, $pageSize)

@@ -330,6 +330,7 @@ CREATE TABLE `nft_orders` (
   `cancel_reason`     VARCHAR(100)    NULL DEFAULT NULL       COMMENT '取消原因（超时/手动）',
   `expires_at`        DATETIME(3)     NOT NULL                COMMENT '待支付截止时间（下单+超时秒数，超时自动取消并释放库存）',
   `updated_at`        DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  `deleted_at`        DATETIME        NULL DEFAULT NULL       COMMENT '删除时间（软删除回收站，null=未删除）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_order_no` (`order_no`),
   KEY `idx_user_status` (`user_id`, `status`),

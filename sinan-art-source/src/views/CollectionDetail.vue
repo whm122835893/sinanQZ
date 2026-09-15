@@ -23,7 +23,21 @@ const isBlindbox = computed(() => route.query.type === 'blindbox')
 
 onMounted(async () => {
   detail.value = await store.fetchDetail(route.params.id)
+  // 带编号进入（仓库视角）时确保库存已拉取，链上凭证才有数据源
+  if (serialNo.value && userStore.isLoggedIn && !userStore.inventory.length) {
+    userStore.fetchInventory()
+  }
 })
+
+// 当前编号的链上凭证（上链铸造后后端回填 tokenId/txHash/blockNumber；未上链返回 null 不展示）
+const chainProof = computed(() => {
+  if (!serialNo.value) return null
+  const item = userStore.inventory.find((i) => String(i.id) === String(route.params.id))
+  const hit = item?.items?.find((x) => x.serial === serialNo.value)
+  return hit && hit.tokenId ? hit : null
+})
+// 交易哈希截断展示（完整 66 位过长）
+const shortHash = (h) => (h && h.length > 14 ? h.slice(0, 12) + '…' : h)
 
 // ---- 发售状态：倒计时 / 发售中 / 已售罄 ----
 const now = ref(Date.now())
@@ -342,6 +356,15 @@ async function drawPosterFallback() {
         <div class="detail-meta__row" v-if="serialNo">
           <span class="detail-meta__label">藏品编号</span>
           <span class="detail-meta__value">#{{ serialNo }}</span>
+        </div>
+        <!-- 链上凭证（该编号上链铸造后展示交易哈希与 Token ID；未上链为空不占位） -->
+        <div class="detail-meta__row" v-if="chainProof">
+          <span class="detail-meta__label">链上凭证</span>
+          <span class="detail-meta__value">{{ shortHash(chainProof.txHash) }}</span>
+        </div>
+        <div class="detail-meta__row" v-if="chainProof">
+          <span class="detail-meta__label">Token ID</span>
+          <span class="detail-meta__value">{{ chainProof.tokenId }}</span>
         </div>
         <div class="detail-meta__row">
           <span class="detail-meta__label">发行方</span>

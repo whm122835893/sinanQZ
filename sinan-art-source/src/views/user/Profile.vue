@@ -69,7 +69,8 @@ async function saveNick() {
         </template>
       </AppListItem>
       <AppListItem title="手机号" :value="user.userInfo.phone" border />
-      <AppListItem title="钱包地址" :value="user.userInfo.walletAddress" :arrow="true" border />
+      <!-- 链上地址：接真实链后由平台托管生成回填，当前留空占位（不造假数据） -->
+      <AppListItem title="链上地址" value="—" :arrow="true" border />
       <AppListItem title="社交信息" value="未绑定" :arrow="true" border @click="showToast('社交账号绑定开发中')" />
     </div>
   </div>

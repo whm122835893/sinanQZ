@@ -12,13 +12,31 @@ CREATE TABLE IF NOT EXISTS `nft_user_draw_codes` (
   `id`          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `user_id`     BIGINT UNSIGNED NOT NULL COMMENT '所属用户',
   `code`        VARCHAR(20) NOT NULL COMMENT '抽签码展示串（S+日期6+随机6）',
-  `source`      TINYINT NOT NULL DEFAULT 1 COMMENT '来源：1报名 2邀请 3购买',
-  `activity_id` BIGINT UNSIGNED NULL COMMENT '来源活动 id（报名发放时非空）',
+  `source`      TINYINT NOT NULL DEFAULT 1 COMMENT '来源：1报名 2邀请 3购买 4后台手动',
+  `activity_id` BIGINT UNSIGNED NULL COMMENT '来源活动 id（报名发放时非空；NULL 为通用码）',
+  `status`      TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1未使用 2已报名 3已失效 4已中签',
+  `remark`      VARCHAR(255) NULL COMMENT '备注（作废原因等）',
   `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY `uk_code` (`code`),
   KEY `idx_user` (`user_id`),
   KEY `idx_activity_user` (`activity_id`, `user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户抽签码（报名/邀请/购买发放）';
+
+-- 1.1 旧表补列：status（表已存在时 CREATE IF NOT EXISTS 不生效，靠幂等 ALTER 兜底）
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_user_draw_codes' AND COLUMN_NAME = 'status');
+SET @ddl := IF(@col = 0,
+  'ALTER TABLE `nft_user_draw_codes` ADD COLUMN `status` TINYINT NOT NULL DEFAULT 1 COMMENT ''状态：1未使用 2已报名 3已失效 4已中签'' AFTER `activity_id`',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 1.2 旧表补列：remark
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_user_draw_codes' AND COLUMN_NAME = 'remark');
+SET @ddl := IF(@col = 0,
+  'ALTER TABLE `nft_user_draw_codes` ADD COLUMN `remark` VARCHAR(255) NULL COMMENT ''备注（作废原因等）'' AFTER `status`',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 2. 抽签活动：购买抽签码开关 + 独立单价
 SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS

@@ -9,8 +9,8 @@
  *    7.2.6 授权数据卫生：无指向禁用/不存在权限的授权行
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8301';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+$BASE='http://127.0.0.1:8080';
+$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function http($m,$u,$b=null,$t=null){global $BASE;$ch=curl_init($BASE.$u);$h=['Content-Type: application/json'];if($t)$h[]="Authorization: Bearer $t";

@@ -6,6 +6,7 @@ import {
   saveChainNetwork,
   testChainNetwork,
   getChainContracts,
+  saveChainContract,
   toggleChainContract,
   getChainTransactions
 } from '@/api'
@@ -170,6 +171,63 @@ async function onToggleContract(c) {
   }
 }
 
+// ---- 登记 / 编辑合约 ----
+const CHAIN_NAMES = { wenchang: '文昌链', consortium: '联盟链', antchain: '蚂蚁链' }
+const CONTRACT_TYPES = [
+  { value: 'erc721', label: 'ERC-721（不可拆分）' },
+  { value: 'erc1155', label: 'ERC-1155（可拆分）' },
+  { value: 'ddc721', label: 'DDC-721（文昌链 BSN）' },
+  { value: 'ddc1155', label: 'DDC-1155（文昌链 BSN）' }
+]
+
+const contractShow = ref(false)
+const contractSaving = ref(false)
+const contractForm = ref(null)   // { id?, networkId, contractName, contractAddress, contractType, description }
+
+function openContractCreate() {
+  // 默认预选：默认链 > 首个启用链 > 首个链
+  const preferred = networks.value.find((n) => n.isDefault) || networks.value.find((n) => n.status === 1) || networks.value[0]
+  contractForm.value = {
+    id: null,
+    networkId: preferred?.id ?? null,
+    contractName: '',
+    contractAddress: '',
+    contractType: 'erc721',
+    description: ''
+  }
+  contractShow.value = true
+}
+
+function openContractEdit(c) {
+  contractForm.value = {
+    id: c.id,
+    networkId: c.networkId,
+    contractName: c.contractName,
+    contractAddress: c.contractAddress,   // 仅展示：合约地址登记后不可修改
+    contractType: c.contractType || 'erc721',
+    description: c.description || ''
+  }
+  contractShow.value = true
+}
+
+async function onContractSubmit() {
+  const f = contractForm.value
+  if (!f.networkId) return ElMessage.warning('请选择所属链网络')
+  if (!f.contractName.trim()) return ElMessage.warning('请填写合约名称')
+  if (!f.id && f.contractAddress.trim().length < 10) return ElMessage.warning('合约地址长度需为 10~100 字符')
+  contractSaving.value = true
+  const res = await saveChainContract(f)
+  contractSaving.value = false
+  if (res.code === 0) {
+    ElMessage.success(res.message || (f.id ? '合约已更新' : '合约登记成功'))
+    contractShow.value = false
+    loadContracts()
+    loadNetworks()   // 同步卡片上的「登记合约」计数
+  } else if (res.code !== -1) {
+    ElMessage.error(res.message || '保存失败')
+  }
+}
+
 // ============================================================
 // Tab 3：链上交易
 // ============================================================
@@ -274,15 +332,18 @@ const ENV_LABEL = { main: '主网', test: '测试网' }
       <el-tab-pane label="智能合约" name="contracts" lazy>
         <el-skeleton v-if="contractsLoading" :rows="4" animated />
         <div v-else class="adm-card">
-          <div class="adm-card__title">
-            合约列表（登记藏品铸造合约地址，启用后方可上链铸造）
+          <div class="ch__contract-head">
+            <div class="adm-card__title">
+              合约列表（登记藏品铸造合约地址，启用后方可上链铸造）
+            </div>
+            <el-button type="primary" size="small" @click="openContractCreate">登记合约</el-button>
           </div>
           <el-table :data="contracts">
             <el-table-column label="合约名称" prop="contractName" min-width="150" fixed="left" />
             <el-table-column label="链 / 网络" width="170" align="center">
               <template #default="{ row }">
                 <el-tag effect="plain" size="small" :type="row.chainEnv === 'main' ? 'primary' : 'info'">
-                  {{ row.chainType }} · {{ ENV_LABEL[row.chainEnv] || row.chainEnv }}
+                  {{ CHAIN_NAMES[row.chainType] || row.chainType }} · {{ ENV_LABEL[row.chainEnv] || row.chainEnv }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -290,6 +351,9 @@ const ENV_LABEL = { main: '主网', test: '测试网' }
               <template #default="{ row }">
                 <code class="ch__addr">{{ row.contractAddress }}</code>
               </template>
+            </el-table-column>
+            <el-table-column label="标准" width="110" align="center">
+              <template #default="{ row }">{{ (row.contractType || '').toUpperCase() }}</template>
             </el-table-column>
             <el-table-column label="累计交易" width="110" align="right">
               <template #default="{ row }">{{ fmtNumber(row.txCount) }}</template>
@@ -300,6 +364,11 @@ const ENV_LABEL = { main: '主网', test: '测试网' }
               </template>
             </el-table-column>
             <el-table-column label="部署时间" prop="createTime" width="160" />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openContractEdit(row)">编辑</el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <el-alert
             type="info"
@@ -432,6 +501,67 @@ const ENV_LABEL = { main: '主网', test: '测试网' }
         <el-button type="primary" @click="testResult = null">知道了</el-button>
       </template>
     </el-dialog>
+
+    <!-- ============ 登记 / 编辑合约 ============ -->
+    <el-dialog
+      v-model="contractShow"
+      :title="contractForm?.id ? '编辑合约' : '登记合约'"
+      width="520px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form v-if="contractForm" label-width="100px">
+        <el-form-item label="所属链网络">
+          <el-select v-model="contractForm.networkId" style="width: 100%" :disabled="!!contractForm.id">
+            <el-option
+              v-for="net in networks"
+              :key="net.id"
+              :value="net.id"
+              :label="`${net.chainName}${net.status === 1 ? '' : '（未启用）'}`"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="合约名称">
+          <el-input v-model="contractForm.contractName" maxlength="100" placeholder="如：司南典藏·青铜系列合约" />
+        </el-form-item>
+        <el-form-item label="合约地址">
+          <el-input
+            v-model="contractForm.contractAddress"
+            :disabled="!!contractForm.id"
+            maxlength="100"
+            placeholder="0x… / 链上合约地址（登记后不可修改）"
+          />
+        </el-form-item>
+        <el-form-item label="合约标准">
+          <el-select v-model="contractForm.contractType" style="width: 260px">
+            <el-option v-for="t in CONTRACT_TYPES" :key="t.value" :value="t.value" :label="t.label" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input
+            v-model="contractForm.description"
+            type="textarea"
+            :rows="2"
+            maxlength="255"
+            show-word-limit
+            placeholder="合约用途备注（可选）"
+          />
+        </el-form-item>
+        <el-alert
+          v-if="!contractForm.id"
+          type="info"
+          :closable="false"
+          show-icon
+          title="合约地址需与藏品编辑页「合约地址」一致，藏品上链铸造时按该地址匹配"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="contractShow = false">取消</el-button>
+        <el-button type="primary" :loading="contractSaving" @click="onContractSubmit">
+          {{ contractForm?.id ? '保存修改' : '确认登记' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -447,6 +577,15 @@ const ENV_LABEL = { main: '主网', test: '测试网' }
 }
 
 .ch__tip { margin-top: 12px; }
+
+.ch__contract-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  .adm-card__title { flex: 1; }
+}
 
 // ---- 网络卡片 ----
 .ch__nets {

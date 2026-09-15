@@ -7,7 +7,8 @@ import {
   getCollectibleList,
   toggleCollectibleStatus,
   toggleCollectibleResale,
-  toggleCollectibleTransferable
+  toggleCollectibleTransferable,
+  mintOnChain
 } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
@@ -140,6 +141,30 @@ async function onPriceVerified() {
     priceShow.value = false
   }
 }
+
+// ---- 上链铸造（藏品已配置上链链时可用；为全部未上链持仓生成链上凭证，幂等） ----
+const CHAIN_LABELS = { wenchang: '文昌链', consortium: '联盟链', antchain: '蚂蚁链' }
+const mintingId = ref(0)
+
+async function onMint(c) {
+  try {
+    await ElMessageBox.confirm(
+      `确认为「${c.name}」的全部未上链持仓发起铸造？将按 ${CHAIN_LABELS[c.chainType] || c.chainType} 生成链上凭证（交易哈希 / Token ID）。已上链的持仓自动跳过。`,
+      '上链铸造',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  mintingId.value = c.id
+  const res = await mintOnChain(c.id)
+  mintingId.value = 0
+  if (res.code === 0) {
+    ElMessage.success(res.message || '铸造完成')
+  } else if (res.code !== -1) {
+    ElMessage.error(res.message || '上链铸造失败')
+  }
+}
 </script>
 
 <template>
@@ -245,10 +270,16 @@ async function onPriceVerified() {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="router.push(`/collectible/detail/${row.id}`)">详情</el-button>
             <el-button link type="primary" size="small" @click="router.push(`/collectible/edit/${row.id}`)">编辑</el-button>
+            <el-button
+              v-if="row.chainType"
+              link type="success" size="small"
+              :loading="mintingId === row.id"
+              @click="onMint(row)"
+            >上链</el-button>
             <el-button
               v-if="row.status === 'onsale'"
               link type="warning" size="small"

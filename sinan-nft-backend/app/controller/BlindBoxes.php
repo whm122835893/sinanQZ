@@ -123,6 +123,10 @@ class BlindBoxes extends BaseController
                 'updated_at' => $now,
             ]);
 
+            // BB36 修复：开盒数 opened_count 与奖池发放总数对账口径一致（原实现未自增，
+            // 导致开盒后管理端「开盒对账」恒报 opened_count ≠ quantity_distributed）
+            Db::name('blind_boxes')->where('id', (int) $uc['bb_id'])->inc('opened_count')->update();
+
             // 更新奖品已发放
             Db::name('blind_box_items')->where('id', $winner['id'])->update([
                 'quantity_distributed' => Db::raw('quantity_distributed + 1'),

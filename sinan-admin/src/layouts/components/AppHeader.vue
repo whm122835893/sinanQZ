@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '@/stores/app'
 import { useAdminStore } from '@/stores/admin'
-import { logout } from '@/api'
+import { logout, changeAdminPassword } from '@/api'
 import { menuGroups } from '@/router/menu'
 
 // ============================================================
@@ -60,6 +60,33 @@ async function onLogout() {
   ElMessage.success('已退出登录')
   router.replace('/login')
 }
+
+// ---- 修改登录密码 ----
+const pwdShow = ref(false)
+const pwdSubmitting = ref(false)
+const pwdForm = ref({ oldPwd: '', newPwd: '', confirmPwd: '' })
+
+function onChangePwd() {
+  pwdForm.value = { oldPwd: '', newPwd: '', confirmPwd: '' }
+  pwdShow.value = true
+}
+
+async function onPwdSubmit() {
+  const { oldPwd, newPwd, confirmPwd } = pwdForm.value
+  if (!oldPwd || !newPwd) return ElMessage.warning('请填写完整')
+  if (newPwd.length < 8) return ElMessage.warning('新密码至少 8 位')
+  if (newPwd !== confirmPwd) return ElMessage.warning('两次输入的新密码不一致')
+  if (!/^(?=.*[a-zA-Z])(?=.*\d).+$/.test(newPwd)) return ElMessage.warning('新密码需同时包含字母和数字')
+  pwdSubmitting.value = true
+  const res = await changeAdminPassword(oldPwd, newPwd, confirmPwd)
+  pwdSubmitting.value = false
+  if (res.code === 0) {
+    pwdShow.value = false
+    ElMessage.success(res.message || '密码已修改，下次登录生效')
+  } else if (res.code !== -1) {
+    ElMessage.error(res.message || '密码修改失败')
+  }
+}
 </script>
 
 <template>
@@ -106,6 +133,9 @@ async function onLogout() {
             <el-dropdown-item disabled>
               <el-icon><User /></el-icon>{{ admin.info?.username || 'admin' }}
             </el-dropdown-item>
+            <el-dropdown-item divided @click="onChangePwd">
+              <el-icon><Lock /></el-icon>修改密码
+            </el-dropdown-item>
             <el-dropdown-item divided @click="onLogout">
               <el-icon><SwitchButton /></el-icon>退出登录
             </el-dropdown-item>
@@ -113,6 +143,25 @@ async function onLogout() {
         </template>
       </el-dropdown>
     </div>
+
+    <!-- 修改登录密码 -->
+    <el-dialog v-model="pwdShow" title="修改登录密码" width="420px" :close-on-click-modal="false">
+      <el-form label-width="90px" @submit.prevent>
+        <el-form-item label="当前密码">
+          <el-input v-model="pwdForm.oldPwd" type="password" show-password placeholder="请输入当前密码" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="pwdForm.newPwd" type="password" show-password placeholder="至少 8 位，含字母与数字" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="pwdForm.confirmPwd" type="password" show-password placeholder="再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pwdShow = false">取消</el-button>
+        <el-button type="primary" :loading="pwdSubmitting" @click="onPwdSubmit">确认修改</el-button>
+      </template>
+    </el-dialog>
   </header>
 </template>
 

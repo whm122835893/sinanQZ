@@ -596,7 +596,9 @@ class BlindBoxController extends BaseController
         if (!$phones && !$idLike) {
             return $this->fail(4220, '用户列表格式不正确（需为手机号或用户ID）');
         }
-        $validUsers = Db::name('users')->where(function ($q) use ($phones, $idLike) {
+        // 注意：column() 多字段时返回数字索引的行数组而非以 id 为键，
+        // 必须 select() 后显式构建 [user_id => phone]，否则 array_keys 会拿到 0/1 等错误“用户ID”
+        $validRows = Db::name('users')->where(function ($q) use ($phones, $idLike) {
             if ($phones) {
                 $q->whereIn('phone', $phones);
             }
@@ -604,7 +606,11 @@ class BlindBoxController extends BaseController
                 $q->whereOr('id', 'IN', $idLike);
             }
         })->whereNull('deleted_at')
-            ->where('is_blacklisted', 0)->column('id, phone');
+            ->where('is_blacklisted', 0)->field('id, phone')->select()->toArray();
+        $validUsers = []; // [user_id => phone]
+        foreach ($validRows as $row) {
+            $validUsers[(int) $row['id']] = $row['phone'];
+        }
         $validIds = array_map('intval', array_keys($validUsers));
         $invalidCount = count($users) - count($validIds);
         if (!$validIds) {
@@ -661,7 +667,7 @@ class BlindBoxController extends BaseController
                             'activity_id' => null,
                             'task_id'     => $taskId,
                             'user_id'     => $userId,
-                            'phone'       => $validUsers[$userId]['phone'],
+                            'phone'       => (string) $validUsers[$userId],
                             'collectible_id' => $c['id'],
                             'user_collectible_id' => $ucid,
                             'quantity'    => 1,

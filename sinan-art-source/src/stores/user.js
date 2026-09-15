@@ -12,7 +12,6 @@ export const useUserStore = defineStore('user', () => {
     nickname: '',
     avatar: '',
     phone: '',
-    walletAddress: '',
     isRealName: false,
     hasPassword: false,
     hasTransactionPassword: false,
@@ -146,6 +145,9 @@ export const useUserStore = defineStore('user', () => {
       items: (g.items || []).map((it) => ({
         userCollectibleId: it.userCollectibleId,
         serial: it.serial,
+        // 链上凭证（上链铸造后回填，未上链为空 → 详情页隐藏展示位）
+        tokenId: it.tokenId || '',
+        txHash: it.txHash || '',
         isConsigned: !!it.isConsigned
       })),
       isConsigned: !!g.isConsigned

@@ -2109,6 +2109,8 @@ export async function getChainContracts(params) {
         contractName: s(c.contractName),
         contractAddress: s(c.contractAddress),
         contractType: s(c.contractType),
+        description: s(c.description),
+        txCount: n(c.txCount),
         status: n(c.status),
         createTime: s(c.createdAt)
       })),
@@ -2126,8 +2128,8 @@ export function saveChainContract(payload) {
     network_id: payload.networkId,
     contract_name: payload.contractName,
     contract_address: payload.contractAddress,
-    contract_type: payload.contractType || 'nft',
-    token_standard: payload.tokenStandard || 'ERC721',
+    // 后端枚举：erc721 / erc1155 / ddc721 / ddc1155（token_standard 由后端按类型推导）
+    contract_type: payload.contractType || 'erc721',
     description: payload.description || ''
   }
   if (payload.id) {

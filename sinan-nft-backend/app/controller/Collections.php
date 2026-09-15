@@ -275,6 +275,9 @@ class Collections extends BaseController
                 'uc.status',
                 'uc.is_consigned',
                 'uc.acquired_at',
+                'uc.token_id',
+                'uc.tx_hash',
+                'uc.block_number',
             ])
             ->select()
             ->toArray();
@@ -302,6 +305,10 @@ class Collections extends BaseController
             $grouped[$cid]['items'][] = [
                 'userCollectibleId' => (int) $row['user_collectible_id'],
                 'serial'            => $row['serial'],
+                // 链上凭证（上链铸造后回填；未上链为 null，前端据此隐藏展示位）
+                'tokenId'           => $row['token_id'] !== null ? (string) $row['token_id'] : null,
+                'txHash'            => $row['tx_hash'],
+                'blockNumber'       => $row['block_number'] !== null ? (int) $row['block_number'] : null,
                 'isConsigned'       => (int) $row['is_consigned'] === 1,
             ];
             if (count($grouped[$cid]['nos']) < 5) {
