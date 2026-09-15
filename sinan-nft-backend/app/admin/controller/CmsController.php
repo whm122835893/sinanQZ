@@ -836,6 +836,10 @@ class CmsController extends BaseController
         'custom_icon_inventory' => ['theme', '库存自定义图标'],
         'custom_icon_wallet'    => ['theme', '钱包自定义图标'],
         'custom_icon_invite'    => ['theme', '邀请好友自定义图标'],
+        // 开屏（首次打开 C 端 H5 时展示；默认关闭，后台启用后生效）
+        'splash_enabled'  => ['basic', '开屏开关(1启用/0关闭)'],
+        'splash_image'    => ['basic', '开屏图片'],
+        'splash_duration' => ['basic', '开屏停留秒数'],
     ];
 
     /** 颜色类配置键（HEX 校验） */
@@ -909,6 +913,14 @@ class CmsController extends BaseController
             // 按钮圆角：0~24px
             if ($key === 'button_radius' && $value !== '' && (!ctype_digit($value) || (int) $value > 24)) {
                 return $this->fail(4220, '按钮圆角需为 0~24 的整数');
+            }
+            // 开屏开关：仅允许 0 或 1
+            if ($key === 'splash_enabled' && $value !== '' && !in_array($value, ['0', '1'], true)) {
+                return $this->fail(4220, '开屏开关仅允许 0（关闭）或 1（启用）');
+            }
+            // 开屏停留秒数：1~10 秒
+            if ($key === 'splash_duration' && $value !== '' && (!ctype_digit($value) || (int) $value < 1 || (int) $value > 10)) {
+                return $this->fail(4220, '开屏停留秒数需为 1~10 的整数');
             }
             // 功能图标主题：白名单校验（允许自定义图标）
             if ($key === 'feature_icon_theme' && $value !== ''

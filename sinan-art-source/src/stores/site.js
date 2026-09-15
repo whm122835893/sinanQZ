@@ -20,7 +20,11 @@ const DEFAULTS = {
   buttonRadius: 24,
   seoTitle: '',
   seoDescription: '',
-  seoKeywords: ''
+  seoKeywords: '',
+  // 开屏配置（B 端装修页配置；未启用或未配置时 C 端不展示）
+  splashEnabled: false,
+  splashImage: '',
+  splashDuration: 3
 }
 
 /** HEX 颜色与白色混合（amount 0~1，越大越浅） */
@@ -82,10 +86,21 @@ export const useSiteStore = defineStore('site', {
       for (const k of Object.keys(DEFAULTS)) {
         if (site[k] !== undefined && site[k] !== null && site[k] !== '') next[k] = site[k]
       }
-      // siteName 允许清空：B 端清空站点名后应回退展示小篆图，而非沿用缓存旧值
-      if (site.siteName !== undefined && site.siteName !== null) next.siteName = site.siteName
-      // buttonRadius 需为数值
+      // 以下字段允许为空（B 端清空后 C 端应立即生效，而非沿用缓存旧值）
+      // - siteName: 清空站点名后回退展示小篆图
+      // - siteLogo/siteAvatar: 删除品牌图后回退默认
+      // - buttonColor: 清空后跟主题色
+      // - splashImage: 关闭开屏或删除图后 C 端不展示
+      // - seoTitle/seoDescription/seoKeywords: SEO 字段允许空
+      const ALLOW_EMPTY = ['siteName', 'siteLogo', 'siteAvatar', 'buttonColor', 'splashImage', 'seoTitle', 'seoDescription', 'seoKeywords']
+      for (const k of ALLOW_EMPTY) {
+        if (site[k] !== undefined && site[k] !== null) next[k] = site[k]
+      }
+      // buttonRadius / splashDuration 需为数值
       if (next.buttonRadius !== undefined) next.buttonRadius = Number(next.buttonRadius) || 0
+      if (next.splashDuration !== undefined) next.splashDuration = Math.max(1, Math.min(10, Number(next.splashDuration) || 3))
+      // splashEnabled 需为布尔值（后端 API 已返回 bool，这里兜底）
+      if (next.splashEnabled !== undefined) next.splashEnabled = !!next.splashEnabled
       Object.assign(this, next)
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         siteName: this.siteName,
@@ -97,7 +112,10 @@ export const useSiteStore = defineStore('site', {
         buttonRadius: this.buttonRadius,
         seoTitle: this.seoTitle,
         seoDescription: this.seoDescription,
-        seoKeywords: this.seoKeywords
+        seoKeywords: this.seoKeywords,
+        splashEnabled: this.splashEnabled,
+        splashImage: this.splashImage,
+        splashDuration: this.splashDuration
       }))
       this.apply()
     },

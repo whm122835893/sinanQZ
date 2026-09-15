@@ -33,7 +33,11 @@ const form = reactive({
   custom_icon_lottery: '',
   custom_icon_inventory: '',
   custom_icon_wallet: '',
-  custom_icon_invite: ''
+  custom_icon_invite: '',
+  // 开屏
+  splash_enabled: 0,
+  splash_image: '',
+  splash_duration: 3
 })
 
 const DEFAULTS = { theme_color: '#C00000', bg_color: '#F7F8FA' }
@@ -78,6 +82,8 @@ async function load() {
   if (res.code === 0 && res.data) {
     Object.assign(form, res.data)
     form.button_radius = Number(form.button_radius) || 0
+    form.splash_enabled = Number(form.splash_enabled) === 1 ? 1 : 0
+    form.splash_duration = Math.max(1, Math.min(10, Number(form.splash_duration) || 3))
     if (!form.feature_icon_theme) form.feature_icon_theme = 'classic'
     if (!form.tab_icon_theme) form.tab_icon_theme = 'classic'
   }
@@ -300,6 +306,63 @@ async function onSave() {
               </el-form-item>
               <el-form-item label="SEO 关键词">
                 <el-input v-model="form.seo_keywords" placeholder="逗号分隔，如：数字藏品,国潮,艺术品" maxlength="120" />
+              </el-form-item>
+            </el-form>
+          </div>
+
+          <!-- 开屏配置 -->
+          <div class="adm-card">
+            <div class="adm-card__title">开屏图</div>
+            <el-form label-width="100px" class="deco__form">
+              <el-form-item label="启用开屏">
+                <el-switch
+                  v-model="form.splash_enabled"
+                  :active-value="1"
+                  :inactive-value="0"
+                  active-text="启用"
+                  inactive-text="关闭"
+                />
+                <span class="deco__hint">开启后用户首次打开 C 端 H5 会展示开屏图</span>
+              </el-form-item>
+              <el-form-item label="开屏图片">
+                <div class="deco__upload-row">
+                  <div v-if="form.splash_image" class="deco__thumb">
+                    <img :src="form.splash_image" alt="splash" />
+                    <div class="deco__thumb-ops">
+                      <el-upload
+                        :show-file-list="false"
+                        :http-request="(o) => onUpload('splash_image', o)"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                      >
+                        <el-button link type="primary" size="small" :loading="uploadingKey === 'splash_image'">重新上传</el-button>
+                      </el-upload>
+                      <el-button link type="danger" size="small" @click="form.splash_image = ''">删除</el-button>
+                    </div>
+                  </div>
+                  <el-upload
+                    v-else
+                    class="deco__uploader"
+                    :show-file-list="false"
+                    :http-request="(o) => onUpload('splash_image', o)"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                  >
+                    <div class="deco__uploader-box">
+                      <el-icon :size="20"><Plus /></el-icon>
+                      <div class="t-tertiary">上传开屏图</div>
+                    </div>
+                  </el-upload>
+                  <div class="t-tertiary deco__tip">建议 750×1624 PNG/JPG，竖版全屏展示</div>
+                </div>
+              </el-form-item>
+              <el-form-item label="停留秒数">
+                <el-input-number
+                  v-model="form.splash_duration"
+                  :min="1"
+                  :max="10"
+                  :step="1"
+                  controls-position="right"
+                />
+                <span class="deco__hint" style="margin-left:8px">1~10 秒，默认 3 秒</span>
               </el-form-item>
             </el-form>
           </div>
