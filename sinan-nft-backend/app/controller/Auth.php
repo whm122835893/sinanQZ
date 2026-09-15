@@ -95,7 +95,7 @@ class Auth extends BaseController
         $code       = $this->request->post('code', '');
         $password   = $this->request->post('password', '');
         // SEC-X1 修复（安全专项 5.1）：昵称剥离 HTML 标签，防止存储型 XSS 原样入库回显
-        $nickname   = strip_tags(trim((string) $this->request->post('nickname', '')));
+        $rawNickname = strip_tags(trim((string) $this->request->post('nickname', '')));
         $inviteCode = $this->request->post('inviteCode', '');
 
         if (!preg_match('/^1\d{10}$/', $phone)) {
@@ -104,11 +104,27 @@ class Auth extends BaseController
         if (strlen($code) !== 6) {
             return $this->fail(1001, '验证码格式错误');
         }
-        if (mb_strlen($nickname) < 2 || mb_strlen($nickname) > 20) {
-            return $this->fail(1001, '用户名长度需在 2-20 字之间');
-        }
         if (strlen($password) < 6 || strlen($password) > 20) {
             return $this->fail(1001, '登录密码长度需在 6-20 位之间');
+        }
+
+        // ---- 昵称处理 ----
+        // 1) 未填写 → 自动生成："司南-" + 手机号后 4 位
+        // 2) 填写了 → 敏感词检测 + 打码；过滤后过短 / 全是 * 则拒绝
+        if ($rawNickname === '') {
+            $nickname = gen_default_nickname($phone);
+        } else {
+            $filter = filter_nickname($rawNickname);
+            if (!$filter['ok']) {
+                return $this->fail(1001, $filter['reason'] === '昵称过短（过滤后不足 2 字）'
+                    ? '昵称过短，请重新输入'
+                    : $filter['reason']);
+            }
+            $nickname = $filter['nickname'];
+        }
+        // 兜底长度（自动生成不会触发，但防御性保留）
+        if (mb_strlen($nickname) < 2 || mb_strlen($nickname) > 20) {
+            $nickname = gen_default_nickname($phone);
         }
 
         // 校验手机号是否已注册

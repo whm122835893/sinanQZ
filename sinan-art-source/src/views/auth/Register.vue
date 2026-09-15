@@ -30,12 +30,10 @@ const confirmError = computed(() => {
   return password.value === confirm.value ? '' : '两次输入的密码不一致'
 })
 
-// 后端注册接口必填昵称（2-20 字）+ 登录密码（注册时设置）
 const canSubmit = computed(
   () =>
     phone.value.length >= 11 &&
     code.value.length >= 4 &&
-    nickname.value.trim().length >= 2 &&
     pwdValid.value &&
     confirm.value.length >= 6 &&
     !confirmError.value
@@ -105,7 +103,7 @@ function goAgreement(name) {
           </button>
         </template>
       </AppInput>
-      <AppInput v-model="nickname" label="昵称" maxlength="20" placeholder="请输入2-20位昵称" />
+      <AppInput v-model="nickname" label="昵称(选填)" maxlength="20" placeholder="留空自动生成：司南-XXXX" />
       <AppInput v-model="password" label="登录密码" type="password" password-toggle placeholder="设置6-20位登录密码" />
       <AppInput v-model="confirm" label="确认密码" type="password" password-toggle placeholder="请再次输入登录密码" :error="confirmError" />
       <AppInput v-model="invite" label="邀请码(选填)" placeholder="请输入" />

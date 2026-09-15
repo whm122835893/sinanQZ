@@ -65,10 +65,15 @@ class User extends BaseController
         if ($nickname !== null) {
             // SEC-X1 修复（安全专项 5.1）：昵称剥离 HTML 标签，防止存储型 XSS 原样入库回显
             $nickname = strip_tags(trim((string) $nickname));
-            if (mb_strlen($nickname) < 2 || mb_strlen($nickname) > 20) {
-                return $this->fail(1001, '昵称长度需在 2-20 字之间');
+            // 修改昵称不允许为空；敏感词检测 + 打码
+            if ($nickname === '') {
+                return $this->fail(1001, '昵称不能为空');
             }
-            $update['username'] = $nickname;
+            $filter = filter_nickname($nickname);
+            if (!$filter['ok']) {
+                return $this->fail(1001, $filter['reason']);
+            }
+            $update['username'] = $filter['nickname'];
         }
         if ($avatar !== null) {
             $update['avatar'] = $avatar;

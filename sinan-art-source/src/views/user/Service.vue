@@ -11,7 +11,7 @@ import { showToast, showImagePreview } from 'vant'
 const router = useRouter()
 
 // 客服配置（B 端系统参数：service_hotline / service_hours / service_online_url）
-const service = ref({ hotline: '400-888-0000', hours: '9:00 - 22:00', onlineUrl: '' })
+const service = ref({ hotline: '', hours: '9:00 - 22:00', onlineUrl: '' })
 // 社群（B 端「官方社群」配置，含二维码与 QQ 群号）
 const groups = ref([])
 const showJoin = ref(false)
@@ -24,7 +24,7 @@ async function load() {
     const cfg = await request.get('/config')
     if (cfg?.service) {
       service.value = {
-        hotline: cfg.service.hotline || '400-888-0000',
+        hotline: cfg.service.hotline || '',
         hours: cfg.service.hours || '9:00 - 22:00',
         onlineUrl: cfg.service.onlineUrl || ''
       }
@@ -47,12 +47,6 @@ function online() {
   const url = service.value.onlineUrl
   if (url) window.location.href = url
   else showToast('正在接入在线客服…')
-}
-
-function callHotline() {
-  const t = (service.value.hotline || '').trim()
-  if (!t) return showToast('客服热线待配置')
-  window.location.href = `tel:${t}`
 }
 
 function openJoin() {
@@ -99,7 +93,6 @@ function joinGroup() {
 
     <div class="service-group">
       <AppListItem title="在线客服" icon="headset" arrow @click="online" />
-      <AppListItem title="客服热线" :value="service.hotline" icon="horn" arrow border @click="callHotline" />
       <AppListItem title="常见问题" icon="file" arrow border @click="online" />
     </div>
 

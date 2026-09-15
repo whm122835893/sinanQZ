@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -11,6 +12,7 @@ import { showToast, showDialog } from 'vant'
 const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
+const site = useSiteStore()
 const { counting, remain, start } = useCountdown(60)
 
 const loginMode = ref('code') // 'password' | 'code'
@@ -26,7 +28,6 @@ const canSubmit = computed(() => {
   return code.value.length >= 4
 })
 
-// MOCK_REPLACED: 原为本地直接弹"验证码已发送"，现走后端 POST /api/auth/send-code
 async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
@@ -34,14 +35,12 @@ async function sendCode() {
     const res = await user.sendCode(phone.value, 'login')
     start()
     showToast('验证码已发送')
-    // 开发环境后端直接回传验证码，便于联调
     if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
   } catch (e) {
     showToast(e.message || '验证码发送失败')
   }
 }
 
-// MOCK_REPLACED: 原为本地直接置登录态，现走后端 POST /api/auth/login（密码/验证码双模式）
 async function onLogin() {
   if (!canSubmit.value) return
   if (!agreed.value) { showToast('请先阅读并同意协议'); return }
@@ -54,7 +53,6 @@ async function onLogin() {
       await user.login({ phone: phone.value, code: code.value })
     }
     showToast('登录成功')
-    // 登录后回跳来源页面（从全局登录弹窗进入时携带 redirect 参数）
     const redirect = route.query.redirect
     if (redirect) {
       router.replace(String(redirect))
@@ -70,9 +68,27 @@ async function onLogin() {
 function onRegister() { router.push('/auth/register') }
 function onForgot() { router.push('/auth/forgot') }
 
-function goAgreement(name) {
-  showDialog({ title: name, message: '此处为' + name + '的正文内容，实际接入后替换为真实条款。', confirmButtonText: '我知道了' })
+// 兜底文案（后台未配置协议时使用）
+const FALLBACK_AGREEMENT = '欢迎使用司南艺术数字藏品平台。请在使用前仔细阅读本协议，一旦使用即视为同意所有条款。'
+const FALLBACK_PRIVACY = '司南艺术数字藏品平台隐私政策：我们尊重并保护您的个人信息，严格按照法律法规收集、使用和保护您的信息。'
+
+function goAgreement(key) {
+  // key: 'agreement' | 'privacy'
+  const title = key === 'agreement' ? '用户服务协议' : '隐私政策'
+  const content = (key === 'agreement' ? site.agreement : site.privacy)
+    || (key === 'agreement' ? FALLBACK_AGREEMENT : FALLBACK_PRIVACY)
+  showDialog({
+    title,
+    message: content,
+    confirmButtonText: '我知道了',
+    allowHtml: true
+  })
 }
+
+onMounted(() => {
+  // 确保站点配置已加载（含协议文本）
+  if (!site.loaded) site.init().catch(() => {})
+})
 </script>
 
 <template>
@@ -120,7 +136,7 @@ function goAgreement(name) {
       <span class="auth__checkbox" :class="{ checked: agreed }">
         <AppIcon v-if="agreed" name="check" :size="12" color="#fff" />
       </span>
-      <span class="auth__agree-text">我已阅读并同意<em @click.stop="goAgreement('用户协议')">《用户协议》</em>和<em @click.stop="goAgreement('隐私政策')">《隐私政策》</em></span>
+      <span class="auth__agree-text">我已阅读并同意<em @click.stop="goAgreement('agreement')">《用户协议》</em>和<em @click.stop="goAgreement('privacy')">《隐私政策》</em></span>
     </div>
   </div>
 </template>

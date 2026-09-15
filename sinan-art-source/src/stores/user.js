@@ -8,7 +8,8 @@ import request from '@/utils/request'
 // /api/resale/listings(/mine)、/api/blind-boxes/open、/api/check-in、/api/user/verify-trade-password
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('jc_token') || '')
-  const userInfo = ref({
+  // userInfo 也持久化，避免 SPA 路由切换 / 浏览器 reload / tel: 协议触发页面导航后丢失昵称
+  const userInfo = ref(JSON.parse(localStorage.getItem('jc_user_info') || 'null') || {
     nickname: '',
     avatar: '',
     phone: '',
@@ -28,6 +29,7 @@ export const useUserStore = defineStore('user', () => {
 
   function setUserInfo(info) {
     userInfo.value = { ...userInfo.value, ...info }
+    localStorage.setItem('jc_user_info', JSON.stringify(userInfo.value))
   }
 
   // ---- 登录/注册（真实接口：POST /api/auth/login，验证码/密码双模式）----
@@ -83,6 +85,16 @@ export const useUserStore = defineStore('user', () => {
       if (token.value) await request.post('/auth/logout')
     } catch { /* 后端注销失败仍继续本地清理 */ }
     setToken('')
+    localStorage.removeItem('jc_user_info')
+    userInfo.value = {
+      nickname: '',
+      avatar: '',
+      phone: '',
+      isRealName: false,
+      hasPassword: false,
+      hasTransactionPassword: false,
+      inviteCode: ''
+    }
   }
 
   // ---- 用户信息（真实接口：GET /api/user/profile）----

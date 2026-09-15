@@ -24,7 +24,10 @@ const DEFAULTS = {
   // 开屏配置（B 端装修页配置；未启用或未配置时 C 端不展示）
   splashEnabled: false,
   splashImage: '',
-  splashDuration: 3
+  splashDuration: 3,
+  // 登录页协议（B 端「内容 → 协议管理」维护；空则使用内置兜底文案）
+  agreement: '',
+  privacy: ''
 }
 
 /** HEX 颜色与白色混合（amount 0~1，越大越浅） */
@@ -92,7 +95,7 @@ export const useSiteStore = defineStore('site', {
       // - buttonColor: 清空后跟主题色
       // - splashImage: 关闭开屏或删除图后 C 端不展示
       // - seoTitle/seoDescription/seoKeywords: SEO 字段允许空
-      const ALLOW_EMPTY = ['siteName', 'siteLogo', 'siteAvatar', 'buttonColor', 'splashImage', 'seoTitle', 'seoDescription', 'seoKeywords']
+      const ALLOW_EMPTY = ['siteName', 'siteLogo', 'siteAvatar', 'buttonColor', 'splashImage', 'seoTitle', 'seoDescription', 'seoKeywords', 'agreement', 'privacy']
       for (const k of ALLOW_EMPTY) {
         if (site[k] !== undefined && site[k] !== null) next[k] = site[k]
       }

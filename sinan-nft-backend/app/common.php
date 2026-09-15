@@ -131,3 +131,101 @@ function gen_serial_placeholder(): string
 {
     return 'TMP-' . bin2hex(random_bytes(8));
 }
+
+/**
+ * 默认昵称生成："司南-" + 手机号后 4 位
+ */
+function gen_default_nickname(string $phone): string
+{
+    $suffix = substr($phone, -4);
+    // 理论上不会空，但兜底防止用户手机号异常时长度不足
+    if ($suffix === '' || strlen($suffix) < 4) {
+        $suffix = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+    }
+    return '司南-' . $suffix;
+}
+
+/**
+ * 敏感词库（内置轻量版：注册必填的昵称字段使用，运营级词库可后续迁移到 DB / Redis）
+ * 说明：
+ *   - 数组里的每个元素是一个子串，采用简单的 str_contains 匹配
+ *   - 命中即视为敏感，注册/改昵称时拒绝
+ *   - 分四大类：政治、色情低俗、暴力辱骂、冒充平台
+ */
+function sensitive_words(): array
+{
+    static $words = null;
+    if ($words !== null) return $words;
+
+    $words = [
+        // ---- 政治敏感 ----
+        '反动', '颠覆', '台独', '港独', '藏独', '疆独', '法轮功', '六四',
+        // ---- 色情低俗 ----
+        '傻逼', '草泥马', '操你妈', '日你妈', '滚你妈', '傻B', 'SB', 'sb', 'MLGB', 'mlgb',
+        '贱人', '婊子', '操逼', '傻逼逼', '二逼', '装逼', '傻逼',
+        // ---- 暴力辱骂 ----
+        '去死', '脑残', '废物', '垃圾', '滚蛋', '狗日', '王八', '王八蛋',
+        // ---- 冒充平台/官方 ----
+        '司南官方', '司南客服', '官方客服', '司南运营', '管理员', '版主', '站长', 'CEO', '腾讯客服',
+        // ---- 其他 ----
+        '赌博', '博彩', '比特币场外', 'USDT', '外盘',
+    ];
+
+    $words = array_values(array_unique($words));
+    return $words;
+}
+
+/**
+ * 昵称敏感词检测 + 过滤
+ * 返回数组：{ ok: bool, nickname: string, reason: string }
+ *   - ok=true  ：昵称可用（可能被替换过敏感词，但替换后仍保留 ok）
+ *   - ok=false ：昵称存在敏感词且替换后为空 / 或直接拒绝（reason 字段说明原因）
+ *
+ * 处理策略：
+ *   1. 先用 str_contains 做 O(n*m) 简单匹配（昵称最多 20 字，性能足够）
+ *   2. 命中则用 * 替换对应子串（多命中多次替换）
+ *   3. 替换后剩余字符 < 2 字视为无效 → 返回 ok=false
+ *   4. 过滤后仍 2-20 字之间 → ok=true
+ */
+function filter_nickname(string $nickname): array
+{
+    $raw = $nickname;
+
+    // 1. 基础清洗：去空格/HTML 标签（与 Auth::register 里 strip_tags 保持一致）
+    $nickname = strip_tags(trim($nickname));
+
+    // 2. 空昵称
+    if ($nickname === '') {
+        return ['ok' => false, 'nickname' => '', 'reason' => '昵称为空'];
+    }
+
+    // 3. 敏感词命中 → 替换为 *
+    $hit = [];
+    foreach (sensitive_words() as $w) {
+        if ($w !== '' && str_contains($nickname, $w)) {
+            $hit[] = $w;
+            $nickname = str_replace($w, str_repeat('*', mb_strlen($w)), $nickname);
+        }
+    }
+
+    // 4. 清洗后校验长度
+    $len = mb_strlen($nickname);
+    if ($len < 2) {
+        return ['ok' => false, 'nickname' => $nickname, 'reason' => '昵称过短（过滤后不足 2 字）'];
+    }
+    if ($len > 20) {
+        return ['ok' => false, 'nickname' => $nickname, 'reason' => '昵称过长（超过 20 字）'];
+    }
+
+    // 5. 全是星号 → 拒绝
+    if (preg_match('/^[*]+$/', $nickname)) {
+        return ['ok' => false, 'nickname' => $nickname, 'reason' => '昵称包含不允许的敏感内容'];
+    }
+
+    return [
+        'ok'       => true,
+        'nickname' => $nickname,
+        'hit'      => $hit, // 命中的词（调用方可记录审计日志）
+        'reason'   => $hit ? ('昵称包含敏感词：' . implode('、', $hit) . '，已自动打码') : '',
+    ];
+}
