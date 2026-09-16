@@ -46,7 +46,7 @@ mysql -uroot -p < database/init.sql              # 基础库 + C 端种子
 mysql -uroot -p < database/admin_init.sql        # 管理端表 + 角色/权限种子
 mysql -uroot -p < database/fusion_upgrade.sql    # 融合升级（三链/审批/社区/资格购）
 mysql -uroot -p < database/fusion_final_upgrade.sql
-mysql -uroot -p < database/seed-dev.sql          # 可选：联调种子数据（生产勿执行）
+mysql -uroot -p < database/dev-only/seed-dev.sql # 可选：联调种子数据（生产严禁执行）
 ```
 
 以上脚本均幂等，可重复执行。
@@ -56,13 +56,15 @@ mysql -uroot -p < database/seed-dev.sql          # 可选：联调种子数据�
 ```bash
 cd sinan-nft-backend
 composer install
-cp .example.env .env          # 修改数据库连接 / JWT 密钥（ADMIN_SECRET 需 ≥32 字节）
+cp .example.env .env          # 修改数据库连接；配置 APP_KEY / jwt.SECRET / jwt.ADMIN_SECRET（均需 ≥32 字节随机串）
 php think run --host 0.0.0.0 --port 8080
 ```
 
 - C 端接口前缀 `/api/**`，管理端接口前缀 `/admin/**`
 - 认证：`Authorization: Bearer {token}`；敏感操作需二次校验密码（`verify-password`）
 - 验证码：`APP_DEBUG=true` 时返回 `debugCode`，不真实下发短信
+- 默认管理员 `admin / admin123`（种子数据）首次部署后必须改密：
+  `php think admin:reset-password admin`（自动生成随机密码）或 `php think admin:reset-password admin '你的新密码'`
 
 ### 3. 管理后台（sinan-admin）
 
@@ -144,7 +146,8 @@ npm run dev
 
 ## 部署要点
 
-- 后端：PHP 8.1+，MySQL 8.0 / MariaDB 10.6+；生产环境关闭 `APP_DEBUG`，`ADMIN_SECRET` / `USER_SECRET` 各自独立且 ≥32 字节
+- 后端：PHP 8.1+，MySQL 8.0 / MariaDB 10.6+；生产环境关闭 `APP_DEBUG`，`jwt.SECRET` / `jwt.ADMIN_SECRET` 各自独立且 ≥32 字节
+- 密钥轮换：`APP_KEY`（实名/短信/支付/链网络密钥的 AES 密钥）生产必须显式配置；更换前先执行 `php think rekey:encrypted <旧KEY> <新KEY>` 重加密存量密文，再更新 `.env` 的 `APP_KEY`（生产未配置或仍为默认弱密钥时后端拒绝加解密）
 - 前端：管理后台构建产物 `dist/` 部署到静态服务器，反向代理将 `/api/admin/**` 转发到后端 `/admin/**`
 - 安全：管理端登录连续失败锁定（阈值见安全策略配置）、大额退款强制审批（阈值 `large_refund_approval_threshold`，默认 1000 元）、平台清库需短信验证码 + 四步确认
 - 审计：库存恒等式（发行量=已售+锁定+预留+空投+销毁+库存）、资金恒等式（余额+手续费+已提现=充值+奖励）可在「系统 → 数据审计」随时校验

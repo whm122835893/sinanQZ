@@ -37,7 +37,8 @@ const form = reactive({
   // 开屏
   splash_enabled: 0,
   splash_image: '',
-  splash_duration: 3
+  splash_duration: 3,
+  splash_mode: 'image'
 })
 
 const DEFAULTS = { theme_color: '#C00000', bg_color: '#F7F8FA' }
@@ -84,6 +85,7 @@ async function load() {
     form.button_radius = Number(form.button_radius) || 0
     form.splash_enabled = Number(form.splash_enabled) === 1 ? 1 : 0
     form.splash_duration = Math.max(1, Math.min(10, Number(form.splash_duration) || 3))
+    if (!['every', 'daily', 'image'].includes(form.splash_mode)) form.splash_mode = 'image'
     if (!form.feature_icon_theme) form.feature_icon_theme = 'classic'
     if (!form.tab_icon_theme) form.tab_icon_theme = 'classic'
   }
@@ -322,7 +324,15 @@ async function onSave() {
                   active-text="启用"
                   inactive-text="关闭"
                 />
-                <span class="deco__hint">开启后用户首次打开 C 端 H5 会展示开屏图</span>
+                <span class="deco__hint">开启后用户打开 C 端 H5 会展示开屏图</span>
+              </el-form-item>
+              <el-form-item label="展示频率">
+                <el-radio-group v-model="form.splash_mode">
+                  <el-radio-button value="every">每次打开</el-radio-button>
+                  <el-radio-button value="daily">每天一次</el-radio-button>
+                  <el-radio-button value="image">每图一次</el-radio-button>
+                </el-radio-group>
+                <div class="deco__hint">每次打开 = 新会话首次展示（同页刷新不重复）；每天一次 = 每天首次进入展示；每图一次 = 换图后重新展示</div>
               </el-form-item>
               <el-form-item label="开屏图片">
                 <div class="deco__upload-row">

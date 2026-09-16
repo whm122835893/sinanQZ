@@ -1,53 +1,76 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { useSiteStore } from '@/stores/site'
 
 // ============================================================
-// 开屏全屏组件
+// 开屏全屏组件（重构版）
 // - B 端装修页配置启用 + 上传图片后生效
-// - 用户看过一次后写 localStorage，同设备不再重复展示（除非后台关闭/重新启用）
+// - 图片加载成功后开始倒计时；加载失败自动跳过（且不写"已看"，下次可重试）
+// - "已看"标记绑定图片标识（store.splashTargetKey）：换图后同设备自动重新展示
 // - 支持点击跳过 / 倒计时自动消失
 // ============================================================
 
 const site = useSiteStore()
-const remaining = ref(0)
+const imageReady = ref(false)
 const dismissed = ref(false)
 let timer = null
 
-const duration = Math.max(1, Math.min(10, Number(site.splashDuration) || 3))
-remaining.value = duration
+const duration = computed(() =>
+  Math.max(1, Math.min(10, Number(site.splashDuration) || 3))
+)
+const remaining = ref(duration.value)
 
-function dismiss() {
-  if (dismissed.value) return
-  dismissed.value = true
+function stopTimer() {
   if (timer) clearInterval(timer)
-  // 标记"已看过开屏"，下次不再展示
-  try {
-    localStorage.setItem('jc_splash_seen', String(Date.now()))
-  } catch { /* ignore */ }
+  timer = null
 }
 
-onMounted(() => {
+function dismiss(markSeen = true) {
+  if (dismissed.value) return
+  dismissed.value = true
+  stopTimer()
+  if (markSeen) site.markSplashSeen()
+}
+
+function onImageLoad() {
+  if (dismissed.value) return
+  imageReady.value = true
+  remaining.value = duration.value
   timer = setInterval(() => {
     remaining.value -= 1
-    if (remaining.value <= 0) dismiss()
+    if (remaining.value <= 0) dismiss(true)
   }, 1000)
-})
+}
 
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-})
+function onImageError() {
+  // 加载失败：不标记已看，静默退出，下次进入再尝试
+  dismiss(false)
+}
+
+onBeforeUnmount(stopTimer)
 </script>
 
 <template>
   <Transition name="splash-fade">
     <div
-      v-if="site.splashEnabled && site.splashImage && !dismissed"
+      v-if="!dismissed"
       class="splash"
-      @click="dismiss"
+      role="dialog"
+      aria-label="开屏"
+      @click="dismiss(true)"
     >
-      <img class="splash__img" :src="site.splashImage" alt="" />
-      <div class="splash__skip" @click.stop="dismiss">跳过 {{ remaining }}s</div>
+      <img
+        class="splash__img"
+        :src="site.splashImage"
+        alt=""
+        @load="onImageLoad"
+        @error="onImageError"
+      />
+      <div
+        v-if="imageReady"
+        class="splash__skip"
+        @click.stop="dismiss(true)"
+      >跳过 {{ remaining }}s</div>
     </div>
   </Transition>
 </template>

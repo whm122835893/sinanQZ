@@ -59,11 +59,33 @@ function verify_password(string $password, string $hash): bool
 }
 
 /**
+ * 应用层 AES-256 密钥（实名信息 / 短信密钥 / 支付渠道 / 链网络密钥等敏感数据加密统一密钥）
+ * 生产环境（APP_DEBUG=false）禁止回落源码默认值：未配置或仍为默认弱密钥时直接抛异常（fail-closed）。
+ */
+function app_key(): string
+{
+    $key    = (string) env('APP_KEY', '');
+    $weak   = 'sinan-nft-secret-key-2026';
+    $isProd = !(bool) env('APP_DEBUG', false);
+
+    if ($key === '') {
+        if ($isProd) {
+            throw new \RuntimeException('APP_KEY 未配置：生产环境必须设置随机密钥后才能加密/解密实名与密钥等敏感数据');
+        }
+        return $weak;
+    }
+    if ($isProd && $key === $weak) {
+        throw new \RuntimeException('APP_KEY 仍为源码默认弱密钥：生产环境必须替换为随机串');
+    }
+    return $key;
+}
+
+/**
  * AES-256 加密（实名信息）
  */
 function aes_encrypt(string $data): string
 {
-    $key = hash('sha256', env('APP_KEY', 'sinan-nft-secret-key-2026'), true);
+    $key = hash('sha256', app_key(), true);
     $iv  = openssl_random_pseudo_bytes(16);
     return base64_encode($iv . openssl_encrypt($data, 'AES-256-CBC', $key, 0, $iv));
 }
@@ -77,7 +99,7 @@ function aes_decrypt(string $encoded): ?string
 {
     $decoded = base64_decode($encoded);
     if (strlen($decoded) < 40) return null;
-    $key = hash('sha256', env('APP_KEY', 'sinan-nft-secret-key-2026'), true);
+    $key = hash('sha256', app_key(), true);
     $iv  = substr($decoded, 0, 16);
     $ct  = substr($decoded, 16);
     $pt  = openssl_decrypt($ct, 'AES-256-CBC', $key, 0, $iv);

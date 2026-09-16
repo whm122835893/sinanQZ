@@ -10,6 +10,7 @@ use Firebase\JWT\ExpiredException;
 use think\Request;
 use think\Response;
 use think\facade\Db;
+use app\service\JwtService;
 
 /**
  * JWT 认证中间件（C 端）
@@ -38,7 +39,7 @@ class JwtAuth
         }
 
         try {
-            $key   = new Key(env('jwt.SECRET', 'sinan-nft-secret'), env('jwt.ALGO', 'HS256'));
+            $key   = new Key(JwtService::secret(), env('jwt.ALGO', 'HS256'));
             $payload = JWT::decode($token, $key);
             $request->userId = $payload->sub ?? null;
             if (!$request->userId) {

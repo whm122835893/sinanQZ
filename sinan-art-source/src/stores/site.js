@@ -10,6 +10,29 @@ import { useIconThemeStore } from './iconTheme'
 // ============================================================
 
 const CACHE_KEY = 'jc_site_cfg'
+const SPLASH_SEEN_KEY = 'jc_splash_seen'          // image 模式：已看图片标识
+const SPLASH_SEEN_DAY_KEY = 'jc_splash_seen_day'  // daily 模式：最后展示日期
+const SPLASH_SEEN_SESSION_KEY = 'jc_splash_seen_session' // every 模式：本次会话已展示（刷新不重弹）
+
+/** 当天日期（YYYY-MM-DD） */
+function todayKey() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+/** 取 URL 稳定标识（去掉 query/hash，避免 CDN 签名变化导致"已看过"误判），失败回退原值 */
+function imageKey(url) {
+  if (!url) return ''
+  try {
+    const u = new URL(url, typeof location !== 'undefined' ? location.origin : '')
+    return u.pathname
+  } catch {
+    return String(url)
+  }
+}
+
 const DEFAULTS = {
   siteName: '',           // 空=展示小篆"千年司南｜一器载道"图；运营在 B 端填 siteName 后覆盖
   siteLogo: '',
@@ -25,6 +48,8 @@ const DEFAULTS = {
   splashEnabled: false,
   splashImage: '',
   splashDuration: 3,
+  // every = 每次打开都展示；daily = 每天一次；image = 每图一次（默认）
+  splashMode: 'image',
   // 登录页协议（B 端「内容 → 协议管理」维护；空则使用内置兜底文案）
   agreement: '',
   privacy: ''
@@ -63,7 +88,37 @@ export const useSiteStore = defineStore('site', {
     /** 品牌头像（优先平台头像，回退 Logo/默认） */
     brandAvatar: (s) => s.siteAvatar || s.siteLogo || '/images/platform-logo.png',
     /** 实际按钮色（留空跟随主题色） */
-    buttonColorValue: (s) => s.buttonColor || s.themeColor
+    buttonColorValue: (s) => s.buttonColor || s.themeColor,
+    /** 开屏基线条件：启用且有图 */
+    splashReady: (s) => s.splashEnabled && !!s.splashImage,
+    /** 当前开屏的目标标识：图片地址变化即视为"新开屏" */
+    splashTargetKey: (s) => (s.splashImage ? `image:${imageKey(s.splashImage)}` : ''),
+    /** 是否需要展示开屏（按 splashMode 分支判定） */
+    shouldShowSplash() {
+      if (!this.splashReady) return false
+      // every：每次新会话展示（同会话内刷新不重复）
+      if (this.splashMode === 'every') {
+        try {
+          return !sessionStorage.getItem(SPLASH_SEEN_SESSION_KEY)
+        } catch {
+          return true
+        }
+      }
+      // daily：每天只展示一次
+      if (this.splashMode === 'daily') {
+        try {
+          return localStorage.getItem(SPLASH_SEEN_DAY_KEY) !== todayKey()
+        } catch {
+          return true
+        }
+      }
+      // image（每图一次，含未知值兜底）：当前图尚未看过
+      try {
+        return localStorage.getItem(SPLASH_SEEN_KEY) !== this.splashTargetKey
+      } catch {
+        return true
+      }
+    }
   },
 
   actions: {
@@ -82,6 +137,29 @@ export const useSiteStore = defineStore('site', {
         if (cfg?.site?.customIcons) iconTheme.setCustomIcons(cfg.site.customIcons)
       } catch { /* 网络异常时沿用缓存 */ }
       this.loaded = true
+    },
+
+    /** 记录已看过当前开屏（绑定图片标识，换图后自动重新展示） */
+    markSplashSeen() {
+      // every 模式：写入会话标记，刷新页面不重复展示
+      if (this.splashMode === 'every') {
+        try {
+          sessionStorage.setItem(SPLASH_SEEN_SESSION_KEY, '1')
+        } catch { /* ignore */ }
+        return
+      }
+      if (this.splashMode === 'daily') {
+        try {
+          localStorage.setItem(SPLASH_SEEN_DAY_KEY, todayKey())
+        } catch { /* ignore */ }
+        return
+      }
+      // image 模式：记录已看的图片标识
+      const key = this.splashTargetKey
+      if (!key) return
+      try {
+        localStorage.setItem(SPLASH_SEEN_KEY, key)
+      } catch { /* ignore */ }
     },
 
     set(site) {
@@ -104,6 +182,9 @@ export const useSiteStore = defineStore('site', {
       if (next.splashDuration !== undefined) next.splashDuration = Math.max(1, Math.min(10, Number(next.splashDuration) || 3))
       // splashEnabled 需为布尔值（后端 API 已返回 bool，这里兜底）
       if (next.splashEnabled !== undefined) next.splashEnabled = !!next.splashEnabled
+      // splashMode 需为白名单值（非法回退 image）
+      const SPLASH_MODES = ['every', 'daily', 'image']
+      if (next.splashMode !== undefined) next.splashMode = SPLASH_MODES.includes(next.splashMode) ? next.splashMode : 'image'
       Object.assign(this, next)
       localStorage.setItem(CACHE_KEY, JSON.stringify({
         siteName: this.siteName,
@@ -118,7 +199,8 @@ export const useSiteStore = defineStore('site', {
         seoKeywords: this.seoKeywords,
         splashEnabled: this.splashEnabled,
         splashImage: this.splashImage,
-        splashDuration: this.splashDuration
+        splashDuration: this.splashDuration,
+        splashMode: this.splashMode
       }))
       this.apply()
     },

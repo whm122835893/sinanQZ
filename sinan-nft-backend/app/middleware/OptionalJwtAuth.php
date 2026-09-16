@@ -8,6 +8,7 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use think\Request;
 use think\Response;
+use app\service\JwtService;
 
 /**
  * 可选 JWT 中间件
@@ -24,7 +25,7 @@ class OptionalJwtAuth
             $token = trim(substr($authHeader, 7));
             if ($token) {
                 try {
-                    $key    = new Key(env('jwt.SECRET', 'sinan-nft-secret'), env('jwt.ALGO', 'HS256'));
+                    $key    = new Key(JwtService::secret(), env('jwt.ALGO', 'HS256'));
                     $payload = JWT::decode($token, $key);
                     if (!empty($payload->sub)) {
                         $request->userId = (int) $payload->sub;

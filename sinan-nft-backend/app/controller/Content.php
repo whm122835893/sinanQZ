@@ -124,7 +124,7 @@ class Content extends BaseController
         $list = Db::name('system_configs')->whereIn('config_key', $keys)->column('config_value', 'config_key');
 
         // 站点装修（B 端配置的全局风格：名称/头像/主题色/图标主题等）
-        $siteKeys = ['site_name', 'site_logo', 'site_avatar', 'theme_color', 'bg_color', 'button_color', 'button_radius', 'seo_title', 'seo_description', 'seo_keywords', 'feature_icon_theme', 'tab_icon_theme', 'custom_icon_calendar', 'custom_icon_activity', 'custom_icon_lottery', 'custom_icon_inventory', 'custom_icon_wallet', 'custom_icon_invite', 'splash_enabled', 'splash_image', 'splash_duration', 'agreement_user', 'agreement_privacy'];
+        $siteKeys = ['site_name', 'site_logo', 'site_avatar', 'theme_color', 'bg_color', 'button_color', 'button_radius', 'seo_title', 'seo_description', 'seo_keywords', 'feature_icon_theme', 'tab_icon_theme', 'custom_icon_calendar', 'custom_icon_activity', 'custom_icon_lottery', 'custom_icon_inventory', 'custom_icon_wallet', 'custom_icon_invite', 'splash_enabled', 'splash_image', 'splash_duration', 'splash_mode', 'agreement_user', 'agreement_privacy'];
         $site = Db::name('site_settings')->whereIn('setting_key', $siteKeys)->column('setting_value', 'setting_key');
 
         return $this->success([
@@ -164,6 +164,7 @@ class Content extends BaseController
                 'splashEnabled'  => (int) ($site['splash_enabled'] ?? 0) === 1,
                 'splashImage'    => $site['splash_image'] ?? '',
                 'splashDuration' => max(1, min(10, (int) ($site['splash_duration'] ?? 3))),
+                'splashMode'     => in_array($site['splash_mode'] ?? '', ['every', 'daily', 'image'], true) ? $site['splash_mode'] : 'image',
                 // 登录页协议（B 端「内容 → 协议管理」维护，纯文本）
                 'agreement'      => $site['agreement_user'] ?? '',
                 'privacy'        => $site['agreement_privacy'] ?? '',

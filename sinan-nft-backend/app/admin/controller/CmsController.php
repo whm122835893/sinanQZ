@@ -840,6 +840,7 @@ class CmsController extends BaseController
         'splash_enabled'  => ['basic', '开屏开关(1启用/0关闭)'],
         'splash_image'    => ['basic', '开屏图片'],
         'splash_duration' => ['basic', '开屏停留秒数'],
+        'splash_mode'     => ['basic', '开屏展示频率(every每次打开/daily每天一次/image每图一次)'],
     ];
 
     /** 颜色类配置键（HEX 校验） */
@@ -921,6 +922,10 @@ class CmsController extends BaseController
             // 开屏停留秒数：1~10 秒
             if ($key === 'splash_duration' && $value !== '' && (!ctype_digit($value) || (int) $value < 1 || (int) $value > 10)) {
                 return $this->fail(4220, '开屏停留秒数需为 1~10 的整数');
+            }
+            // 开屏展示频率：every（每次打开）/ daily（每天一次）/ image（每图一次）
+            if ($key === 'splash_mode' && $value !== '' && !in_array($value, ['every', 'daily', 'image'], true)) {
+                return $this->fail(4220, '开屏展示频率仅允许 every（每次打开）、daily（每天一次）或 image（每图一次）');
             }
             // 功能图标主题：白名单校验（允许自定义图标）
             if ($key === 'feature_icon_theme' && $value !== ''

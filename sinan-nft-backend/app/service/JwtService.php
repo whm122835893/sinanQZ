@@ -11,6 +11,21 @@ use Firebase\JWT\Key;
  */
 class JwtService
 {
+    /**
+     * C 端 JWT 密钥：必须显式配置（jwt.SECRET，≥32 字节），
+     * 禁止回落源码默认值——源码可见默认密钥等于任何人可伪造用户令牌。
+     * 未配置/过短时抛异常：登录签发立即失败（fail-closed）。
+     */
+    public static function secret(): string
+    {
+        $secret = (string) env('jwt.SECRET', '');
+        if ($secret === '' || strlen($secret) < 32) {
+            \think\facade\Log::error('C 端 JWT 密钥未配置或不安全：请在 .env 设置 jwt.SECRET（≥32 字节随机串）');
+            throw new \RuntimeException('user jwt secret not configured or too short');
+        }
+        return $secret;
+    }
+
     public static function encode(int $userId, string $phone): string
     {
         $now  = time();
@@ -22,12 +37,12 @@ class JwtService
             'sub' => $userId,
             'phone' => $phone,
         ];
-        return JWT::encode($payload, env('jwt.SECRET'), env('jwt.ALGO', 'HS256'));
+        return JWT::encode($payload, self::secret(), env('jwt.ALGO', 'HS256'));
     }
 
     public static function decode(string $token): object
     {
-        $key = new Key(env('jwt.SECRET'), env('jwt.ALGO', 'HS256'));
+        $key = new Key(self::secret(), env('jwt.ALGO', 'HS256'));
         return JWT::decode($token, $key);
     }
 }
