@@ -12,8 +12,31 @@ function q1($s){global $PDO;$r=$PDO->query($s);return $r?$r->fetchColumn():null;
 function q($s){global $PDO;return $PDO->query($s)->fetchAll(PDO::FETCH_ASSOC);}
 
 echo "=== Z3 盲盒概率卡方检验（1000 次模拟）===\n";
-// 找一个可开的盲盒
-$box=q("SELECT id,collectible_id FROM nft_blind_boxes WHERE is_openable=1 LIMIT 1");
+// 找一个 ≥2 奖品桶的可开盲盒；若无则自建夹具盒（4 桶：10%/20%/30%/40%）
+$box=q("SELECT b.id,b.collectible_id FROM nft_blind_boxes b
+       WHERE b.is_openable=1 AND (SELECT COUNT(*) FROM nft_blind_box_items i WHERE i.blind_box_id=b.id AND i.deleted_at IS NULL)>=2
+       LIMIT 1");
+$seeded=false;
+if(empty($box)){
+  // 夹具：专用藏品 + 盲盒 + 4 奖品桶（概率 10/20/30/40）
+  foreach([9901,9902,9903,9904] as $cid){
+    $PDO->exec("DELETE FROM nft_blind_box_items WHERE prize_collectible_id=$cid");
+    $PDO->exec("DELETE FROM nft_collectibles WHERE id=$cid");
+    $PDO->exec("INSERT INTO nft_collectibles (id,category_id,name,subtitle,image,price,edition,circulate,sold,locked_quantity,status,issuer,created_at,updated_at)
+      VALUES ($cid,1,'卡方检验$cid','','/img/test.png',100,10000,0,0,0,'onsale','司南文创',NOW(),NOW())");
+  }
+  $PDO->exec("DELETE FROM nft_blind_boxes WHERE collectible_id=9901");
+  $PDO->exec("INSERT INTO nft_blind_boxes (collectible_id,description,is_openable,opened_count) VALUES (9901,'Z3卡方夹具盒',1,0)");
+  $bid=(int)$PDO->query("SELECT id FROM nft_blind_boxes WHERE collectible_id=9901")->fetchColumn();
+  $probsCfg=[[9902,0.10],[9903,0.20],[9904,0.30],[9901,0.40]];
+  foreach($probsCfg as $k=>$pc){
+    $PDO->exec("INSERT INTO nft_blind_box_items (blind_box_id,prize_collectible_id,probability,quantity_limit,quantity_distributed)
+      VALUES ($bid,{$pc[0]},{$pc[1]},NULL,0)");
+  }
+  $box=[['id'=>$bid,'collectible_id'=>9901]];
+  $seeded=true;
+  echo "  [夹具] 自建 4 桶盲盒 id={$bid}（10%/20%/30%/40%）\n";
+}
 if(empty($box)){T('Z3-0 找到可用盲盒', false, '无可用盲盒');echo "PASS: $pass FAIL: $fail\n";exit(1);}
 $box=$box[0];
 echo "  盲盒 id={$box['id']} collectible_id={$box['collectible_id']}\n";

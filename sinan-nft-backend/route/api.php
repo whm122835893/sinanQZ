@@ -59,6 +59,9 @@ Route::group('/api', function () {
     // 求购挂单（公开列表）
     Route::get('buy-requests', 'BuyRequest/list');
 
+    // 置换挂单（公开列表）
+    Route::get('swap-offers', 'Swap/list');
+
     // ========== 需要 JWT 认证 ==========
 
     Route::group('', function () {
@@ -93,6 +96,12 @@ Route::group('/api', function () {
         // 求购挂单
         Route::post('buy-requests',                 'BuyRequest/create');
         Route::post('buy-requests/:id/accept',      'BuyRequest/accept');
+
+        // 置换（C 端闭环：发起/接受/撤销/我的挂单）
+        Route::post('swap-offers',                  'Swap/create');
+        Route::post('swap-offers/:id/accept',       'Swap/accept');
+        Route::post('swap-offers/:id/cancel',       'Swap/cancel');
+        Route::get('swap-offers/mine',              'Swap/mine');
 
         // 转赠
         Route::post('transfers',                'Transfers/create');

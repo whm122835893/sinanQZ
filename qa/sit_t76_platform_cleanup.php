@@ -8,7 +8,7 @@
  *    7.6.5 验证码一次性 + 备份文件完整可恢复（restore 回基线，环境复原供 H 系列使用）
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8301';
+$BASE='http://127.0.0.1:8080';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;$fails=[];
 function T($n,$c,$d=''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
@@ -88,7 +88,7 @@ $cp='137'.substr((string)time(),-8);
 exe("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES
      ('$cp','register','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',
       '".date('Y-m-d H:i:s')."','127.0.0.1','".date('Y-m-d H:i:s')."')");
-$rc=http('POST','/api/auth/register',['phone'=>$cp,'code'=>'654321','nickname'=>'清库演练']);
+$rc=http('POST','/api/auth/register',['phone'=>$cp,'code'=>'654321','password'=>'Pass#2026','nickname'=>'清库演练']);
 $tokC=(string)($rc['data']['token']??'');
 T('7.6.0b C 端测试用户注册', $tokC!=='', json_encode($rc,JSON_UNESCAPED_UNICODE));
 

@@ -5,7 +5,7 @@
  *  前置：后端 8301 已启动；nft_admin_users 需有 finance/risk 账号（脚本自建）
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8301';
+$BASE='http://127.0.0.1:8080';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
@@ -73,7 +73,7 @@ exe("DELETE FROM nft_refunds WHERE refund_no LIKE 'RF%' AND order_id NOT IN (SEL
 exe("DELETE FROM nft_approval_requests WHERE target_type='refund' AND target_id NOT IN (SELECT id FROM nft_refunds)");
 $phone='13900007101';
 exe("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','register','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
-$r=json_decode((function()use($BASE,$phone){$ch=curl_init($BASE.'/api/auth/register');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],CURLOPT_POSTFIELDS=>json_encode(['phone'=>$phone,'code'=>'654321','nickname'=>'退款用户'])]);$raw=curl_exec($ch);curl_close($ch);return $raw;})(),true);
+$r=json_decode((function()use($BASE,$phone){$ch=curl_init($BASE.'/api/auth/register');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],CURLOPT_POSTFIELDS=>json_encode(['phone'=>$phone,'code'=>'654321','password'=>'Pass#2026','nickname'=>'退款用户'])]);$raw=curl_exec($ch);curl_close($ch);return $raw;})(),true);
 $uid=(int)v("SELECT id FROM nft_users WHERE phone='$phone'");
 exe("UPDATE nft_users SET is_realname=1 WHERE id=$uid");
 exe("DELETE FROM nft_wallets WHERE user_id=$uid");
@@ -81,9 +81,34 @@ exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,created_at,update
 T('7.1.3 C 端测试用户就绪', $uid>0, "uid=$uid");
 
 // 藏品 9401~9406：初始 sold=0 circulate=0；订单造数后累计
+// 先清全部引用表（f4f5/t45 等脚本残留的挂单/分解/盲盒等会触发 FK RESTRICT 导致种子失败）
+$FIX='(9401,9402,9403,9404,9405,9406)';
+exe("SET FOREIGN_KEY_CHECKS=0");
+exe("DELETE FROM nft_resale_listings WHERE collectible_id IN $FIX OR user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_decompose_records WHERE rule_id IN (SELECT id FROM nft_decompose_rules WHERE source_collectible_id IN $FIX)");
+exe("DELETE FROM nft_decompose_items WHERE rule_id IN (SELECT id FROM nft_decompose_rules WHERE source_collectible_id IN $FIX) OR result_collectible_id IN $FIX");
+exe("DELETE FROM nft_decompose_rules WHERE source_collectible_id IN $FIX");
+exe("DELETE FROM nft_blind_box_items WHERE prize_collectible_id IN $FIX");
+exe("DELETE FROM nft_blind_boxes WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_transfers WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_airdrop_records WHERE collectible_id IN $FIX OR user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_airdrop_snapshots WHERE user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_airdrop_activities WHERE collectible_id IN $FIX OR snapshot_collectible_id IN $FIX");
+exe("DELETE FROM nft_lucky_draw_records WHERE user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_lucky_draw_prizes WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_synthesis_record_items WHERE user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_synthesis_records WHERE result_user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_synthesis_materials WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_synthesis_activities WHERE result_collectible_id IN $FIX");
+exe("DELETE FROM nft_buy_requests WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_user_favorites WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_inventory_quotas WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_qualification_configs WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_orders WHERE collectible_id IN $FIX AND order_no LIKE 'F71-%'");
+exe("DELETE FROM nft_user_collectibles WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_collectibles WHERE id IN $FIX");
+exe("SET FOREIGN_KEY_CHECKS=1");
 foreach([9401,9402,9403,9404,9405,9406] as $cid){
-  exe("DELETE FROM nft_user_collectibles WHERE collectible_id=$cid");
-  exe("DELETE FROM nft_collectibles WHERE id=$cid");
   exe("INSERT INTO nft_collectibles (id,category_id,name,subtitle,image,price,edition,circulate,sold,locked_quantity,status,issuer,created_at,updated_at)
     VALUES ($cid,1,'退款测试$cid','','/img/test.png',100,100,0,0,0,'onsale','司南文创',NOW(),NOW())");
 }
@@ -241,11 +266,32 @@ exe("DELETE FROM nft_payments WHERE order_id IN (SELECT id FROM nft_orders WHERE
 exe("DELETE FROM nft_refunds WHERE order_id IN (SELECT id FROM nft_orders WHERE order_no LIKE 'F71-%')");
 exe("DELETE FROM nft_approval_requests WHERE target_type='refund' AND target_id NOT IN (SELECT id FROM nft_refunds)");
 exe("DELETE FROM nft_orders WHERE order_no LIKE 'F71-%'");
-// 9401~9406 为多脚本共用夹具段：先清引用行（transfers/盲盒奖品/历史资产），再删藏品，避免 FK RESTRICT
-exe("DELETE FROM nft_transfers WHERE collectible_id IN (9401,9402,9403,9404,9405,9406)");
-exe("DELETE FROM nft_blind_box_items WHERE prize_collectible_id IN (9401,9402,9403,9404,9405,9406)");
-exe("DELETE FROM nft_user_collectibles WHERE collectible_id IN (9401,9402,9403,9404,9405,9406)");
-exe("DELETE FROM nft_collectibles WHERE id IN (9401,9402,9403,9404,9405,9406)");
+// 9401~9406 为多脚本共用夹具段：先清全部引用表（挂单/转赠/盲盒/分解/空投/合成等），再删藏品，避免 FK RESTRICT
+$FIX='(9401,9402,9403,9404,9405,9406)';
+exe("SET FOREIGN_KEY_CHECKS=0");
+exe("DELETE FROM nft_resale_listings WHERE collectible_id IN $FIX OR user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_decompose_records WHERE rule_id IN (SELECT id FROM nft_decompose_rules WHERE source_collectible_id IN $FIX)");
+exe("DELETE FROM nft_decompose_items WHERE rule_id IN (SELECT id FROM nft_decompose_rules WHERE source_collectible_id IN $FIX) OR result_collectible_id IN $FIX");
+exe("DELETE FROM nft_decompose_rules WHERE source_collectible_id IN $FIX");
+exe("DELETE FROM nft_blind_box_items WHERE prize_collectible_id IN $FIX");
+exe("DELETE FROM nft_blind_boxes WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_transfers WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_airdrop_records WHERE collectible_id IN $FIX OR user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_airdrop_snapshots WHERE user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_airdrop_activities WHERE collectible_id IN $FIX OR snapshot_collectible_id IN $FIX");
+exe("DELETE FROM nft_lucky_draw_records WHERE user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_lucky_draw_prizes WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_synthesis_record_items WHERE user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_synthesis_records WHERE result_user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id IN $FIX)");
+exe("DELETE FROM nft_synthesis_materials WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_synthesis_activities WHERE result_collectible_id IN $FIX");
+exe("DELETE FROM nft_buy_requests WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_user_favorites WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_inventory_quotas WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_qualification_configs WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_user_collectibles WHERE collectible_id IN $FIX");
+exe("DELETE FROM nft_collectibles WHERE id IN $FIX");
+exe("SET FOREIGN_KEY_CHECKS=1");
 exe("DELETE FROM nft_verification_codes WHERE phone LIKE '139000071%'");
 T('7.8.1 F71 订单族已清理', v("SELECT COUNT(*) FROM nft_orders WHERE order_no LIKE 'F71-%'")==0);
 T('7.8.2 测试用户已清理', v("SELECT COUNT(*) FROM nft_users WHERE phone LIKE '139000071%'")==0);

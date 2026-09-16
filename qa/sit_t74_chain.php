@@ -11,7 +11,7 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;$fails=[];
 function T($n,$c,$d=''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function http($m,$u,$b=null,$t=null){global $BASE;$ch=curl_init($BASE.$u);$h=['Content-Type: application/json'];if($t)$h[]="Authorization: Bearer $t";
@@ -27,6 +27,8 @@ $tokFin  =login('finance_admin','RoleTest#2026');
 $tokRisk =login('risk_admin','RoleTest#2026');
 T('7.4.0 四角色登录', $tokSuper&&$tokOp&&$tokFin&&$tokRisk);
 $catId=(int)v("SELECT id FROM nft_categories ORDER BY id LIMIT 1");
+$chainUid=(int)v("SELECT id FROM nft_users ORDER BY id LIMIT 1");
+T('7.4.0 链测试用户存在', $chainUid>0, "uid=$chainUid");
 T('7.4.0 分类存在', $catId>0, "cat=$catId");
 $ADDR='0x'.substr(dechex(time()).bin2hex(random_bytes(4)),0,18); // 唯一测试合约地址
 
@@ -108,10 +110,10 @@ exe("INSERT INTO nft_collectibles (category_id,name,image,price,edition,sold,res
      VALUES ($catId,'F74链上铸造测试藏品','/img/t74.png',10.00,10,0,0,0,0,'wenchang','$ADDR',0,'onsale',1,NOW(3),NOW(3))");
 $colId=(int)v("SELECT LAST_INSERT_ID()");
 exe("INSERT INTO nft_user_collectibles (user_id,collectible_id,serial,status,source,acquired_price,acquired_at,created_at,updated_at)
-     VALUES (7,$colId,'F74-1','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
+     VALUES ($chainUid,$colId,'F74-1','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
 $uc1=(int)v("SELECT LAST_INSERT_ID()");
 exe("INSERT INTO nft_user_collectibles (user_id,collectible_id,serial,status,source,acquired_price,acquired_at,created_at,updated_at)
-     VALUES (7,$colId,'F74-2','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
+     VALUES ($chainUid,$colId,'F74-2','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
 $uc2=(int)v("SELECT LAST_INSERT_ID()");
 T('7.4.4a 造数：藏品+2 持仓', $colId>0 && $uc1>0 && $uc2>0, "col=$colId uc=$uc1/$uc2");
 $r=http('POST',"/admin/chain/mint/$colId",[],$tokSuper);
@@ -145,7 +147,7 @@ T('7.4.5c 无孤儿流水（流水源=持仓表）', $orphan===0);
 
 echo "\n=== 7.4.6 停用拦截 ===\n";
 exe("INSERT INTO nft_user_collectibles (user_id,collectible_id,serial,status,source,acquired_price,acquired_at,created_at,updated_at)
-     VALUES (7,$colId,'F74-3','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
+     VALUES ($chainUid,$colId,'F74-3','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
 $uc3=(int)v("SELECT LAST_INSERT_ID()");
 $r=http('POST',"/admin/chain/mint/$colId",[],$tokSuper);
 T('7.4.6a 新增未上链持仓可再铸造', $r['code']===200 && (int)($r['data']['minted']??-1)===1);
@@ -158,7 +160,7 @@ T('7.4.6b 未配置链藏品拒绝', $r['code']===4220, 'msg='.mb_substr((string
 // 停用链后
 http('PUT','/admin/chain/networks/1',['status'=>0],$tokSuper);
 exe("INSERT INTO nft_user_collectibles (user_id,collectible_id,serial,status,source,acquired_price,acquired_at,created_at,updated_at)
-     VALUES (7,$colId,'F74-4','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
+     VALUES ($chainUid,$colId,'F74-4','held','purchase',10.00,NOW(3),NOW(3),NOW(3))");
 $r=http('POST',"/admin/chain/mint/$colId",[],$tokSuper);
 T('7.4.6c 链停用后拒绝铸造', $r['code']===4220, 'msg='.mb_substr((string)($r['message']??''),0,40));
 http('PUT','/admin/chain/networks/1',['status'=>1],$tokSuper);

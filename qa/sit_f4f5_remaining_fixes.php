@@ -2,10 +2,10 @@
 /** 回归脚本：F4/F5 剩余 8 项缺陷修复验证
  *  覆盖：D1（下架后重挂500）、K02（转赠开关）、K03（求购开关）、K06（软删除求购）、
  *        K07（关寄售联动下架）、DC03（C端分解入口）、RF11（中签人数）、BB35（空投盲盒开启）
- *  前置：后端 127.0.0.1:8301 已启动，MySQL sinan_nft 已导入全部 SQL
+ *  前置：后端 127.0.0.1:8080 已启动，MySQL sinan_nft 已导入全部 SQL
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8301';
+$BASE='http://127.0.0.1:8080';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
@@ -18,7 +18,7 @@ function regUser($phone,$nick){global $PDO,$BASE;
   $PDO->exec("DELETE FROM nft_verification_codes WHERE phone='$phone'");
   $PDO->exec("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','register','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
   $ch=curl_init($BASE.'/api/auth/register');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
-    CURLOPT_POSTFIELDS=>json_encode(['phone'=>$phone,'code'=>'654321','nickname'=>$nick])]);
+    CURLOPT_POSTFIELDS=>json_encode(['phone'=>$phone,'code'=>'654321','password'=>'Pass#2026','nickname'=>$nick])]);
   $j=json_decode(curl_exec($ch),true)?:[];curl_close($ch);
   $uid=$j['code']===0?(int)v("SELECT id FROM nft_users WHERE phone='$phone'"):0;
   return [$uid,(string)($j['data']['token']??'')];
@@ -166,21 +166,29 @@ $r=http('POST','/api/decompose/execute',['ruleId'=>$ruleId,'userCollectibleId'=>
 T('DC03.10 已消耗资产不可重复分解', $r['code']!==0, "code={$r['code']}");
 
 echo "\n=== RF11 中签人数=winner_count ===\n";
-exe("INSERT INTO nft_raffle_activities (collectible_id,name,ticket_price,limit_per_user,winner_count,sale_quantity,sale_price,
-     registration_start,registration_end,draw_time,purchase_start,purchase_end,status,created_at,updated_at)
-     VALUES (9410,'RF11回归',0,5,2,2,100,'".date('Y-m-d H:i:s',time()-3600)."','".date('Y-m-d H:i:s',time()+3600)."',
+[$uidC,$tokC]=regUser('13900008103','修复回归C');
+exe("UPDATE nft_users SET is_realname=1, transaction_password='$tradeHash' WHERE id=$uidC");
+// 新表结构：draw_code 体系列 + max_wins_per_user（无 limit_per_user 列）
+exe("INSERT INTO nft_raffle_activities (collectible_id,name,description,ticket_price,draw_code_enabled,draw_code_price,buy_code_limit,
+     winner_count,max_wins_per_user,sale_quantity,sale_price,registration_start,registration_end,draw_time,purchase_start,purchase_end,status,created_at,updated_at)
+     VALUES (9410,'RF11回归','中签人数回归',0,0,0,5,2,1,2,100,'".date('Y-m-d H:i:s',time()-3600)."','".date('Y-m-d H:i:s',time()+3600)."',
      '".date('Y-m-d H:i:s',time()+7200)."','".date('Y-m-d H:i:s',time()+7200)."','".date('Y-m-d H:i:s',time()+86400)."',1,NOW(),NOW())");
 $actId=(int)v("SELECT id FROM nft_raffle_activities WHERE collectible_id=9410 ORDER BY id DESC LIMIT 1");
-$r=http('POST',"/api/raffle/activities/$actId/register",['ticketCount'=>3],$tokA);
-T('RF11.1 A 报名 3 票', $r['code']===0, "code={$r['code']} msg={$r['message']}");
-$r=http('POST',"/api/raffle/activities/$actId/register",['ticketCount'=>1],$tokB);
-T('RF11.2 B 报名 1 票', $r['code']===0, "code={$r['code']} msg={$r['message']}");
+// 新版报名接口：每活动 1 人 1 票（ticketCount 已废弃），A/B/C 三人报名 → 3 票抽 2 中
+$r=http('POST',"/api/raffle/activities/$actId/register",[],$tokA);
+T('RF11.1 A 报名成功(1票)', $r['code']===0, "code={$r['code']} msg={$r['message']}");
+$r=http('POST',"/api/raffle/activities/$actId/register",[],$tokB);
+T('RF11.2 B 报名成功(1票)', $r['code']===0, "code={$r['code']} msg={$r['message']}");
+$r=http('POST',"/api/raffle/activities/$actId/register",[],$tokC);
+T('RF11.2b C 报名成功(1票)', $r['code']===0, "code={$r['code']} msg={$r['message']}");
+T('RF11.2c 报名总数=3', (int)v("SELECT COUNT(*) FROM nft_raffle_registrations WHERE activity_id=$actId")===3);
 $r=http('POST',"/admin/raffle/$actId/draw",[],$admTok);
 T('RF11.3 管理端执行抽签', $r['code']===200, "code={$r['code']} msg={$r['message']}");
-T('RF11.4 中签人数=winner_count(2)', (int)v("SELECT COUNT(*) FROM nft_raffle_registrations WHERE activity_id=$actId AND draw_status=1")===2,
+T('RF11.4 中签人数=winner_count(2)，3票抽2', (int)v("SELECT COUNT(*) FROM nft_raffle_registrations WHERE activity_id=$actId AND draw_status=1")===2,
     'winners='.v("SELECT COUNT(*) FROM nft_raffle_registrations WHERE activity_id=$actId AND draw_status=1"));
-T('RF11.5 中签为 2 个不同用户', v("SELECT COUNT(DISTINCT user_id) FROM nft_raffle_registrations WHERE activity_id=$actId AND draw_status=1")===2);
-T('RF11.6 活动置已结束(3)', v("SELECT status FROM nft_raffle_activities WHERE id=$actId")=='3');
+T('RF11.5 中签为 2 个不同用户', v("SELECT COUNT(DISTINCT user_id) FROM nft_raffle_registrations WHERE activity_id=$actId AND draw_status=1")==2);
+T('RF11.6 活动置已结束(3)+win_locked', v("SELECT status FROM nft_raffle_activities WHERE id=$actId")=='3'
+    && (int)v("SELECT win_locked FROM nft_raffle_activities WHERE id=$actId")===1);
 exe("DELETE FROM nft_raffle_registrations WHERE activity_id=$actId");
 exe("DELETE FROM nft_raffle_activities WHERE id=$actId");
 

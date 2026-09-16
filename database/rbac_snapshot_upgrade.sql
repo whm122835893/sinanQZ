@@ -26,6 +26,15 @@ INSERT IGNORE INTO `nft_admin_permissions` (`name`, `code`, `module`, `type`, `p
 ('数据快照',   'report:snapshot',            'report',    1, 1700, '/report/snapshot',   '', 5),
 ('回收站',     'platform:trash:list',        'platform', 1, 1800, '/platform/trash',   'DeleteFilled', 2);
 
+-- F7-D3：抽签管理权限码补登记（app/admin/route/app.php 的 RaffleController
+-- 写操作均绑定 marketing:raffle:manage，此前权限字典漏登记导致非超管角色无法授权）
+INSERT IGNORE INTO `nft_admin_permissions` (`name`, `code`, `module`, `type`, `parent_id`, `path`, `icon`, `sort_order`) VALUES
+('抽签管理',   'marketing:raffle:manage',   'marketing', 2, 1000, '',                    '', 8);
+
+INSERT IGNORE INTO `nft_admin_role_permissions` (`role_id`, `permission_id`)
+SELECT r.id, p.id FROM `nft_admin_roles` r, `nft_admin_permissions` p
+WHERE r.code IN ('super_admin', 'operator') AND p.code = 'marketing:raffle:manage';
+
 -- ----------------------------------------------------------------------------
 -- 二、F7-D1：角色授权补全（super 全量保持一致；运营补市场/营销模块；
 --     财务/风控补数据快照对账；回收站保持平台运维家族=仅超管）

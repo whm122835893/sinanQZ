@@ -5,7 +5,7 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;$defects=[];
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function D($n,$c,$d=''){global $defects;if($c){$defects[]=$n.($d?" | $d":"");echo "  DEFECT $n".($d?" | $d":"")."\n";}}
@@ -56,6 +56,15 @@ if($old){$ids=implode(',',array_column($old,'id'));
 [$uidA,$tokA,]=regUser('13900009101','审计甲');
 [$uidB,$tokB,]=regUser('13900009102','审计乙');
 [$uidC,$tokC,]=regUser('13900009103','审计丙');
+// 探针夹具：藏品 9001（详情/管理端探针）+ 文物展品 1（详情探针），基线清库后自建
+if(v("SELECT COUNT(*) FROM nft_collectibles WHERE id=9001")==0){
+  exe("INSERT INTO nft_collectibles (id,category_id,name,subtitle,image,price,edition,circulate,sold,locked_quantity,per_user_limit,is_release,is_transferable,is_resaleable,is_buy_request_enabled,resale_price_mode,status,issuer,brand,created_at,updated_at)
+    VALUES (9001,1,'审计探针藏品','','/img/test.png',100,1000,0,0,0,10,1,1,1,1,0,'onsale','司南文创','司南',NOW(),NOW())");
+}
+if(v("SELECT COUNT(*) FROM nft_artifacts WHERE id=1")==0){
+  exe("INSERT INTO nft_artifacts (id,name,dynasty,image,material,period,story,created_at,updated_at)
+    VALUES (1,'审计探针展品','现代','/img/test.png','纸','当代','审计夹具',NOW(),NOW())");
+}
 T('0.2 测试用户甲/乙/丙注册', $uidA>0&&$uidB>0&&$uidC>0, "A=$uidA B=$uidB C=$uidC");
 $th=password_hash('Trade#2026',PASSWORD_BCRYPT);
 exe("UPDATE nft_users SET is_realname=1, transaction_password='$th' WHERE id IN ($uidA,$uidB,$uidC)");

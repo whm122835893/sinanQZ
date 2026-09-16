@@ -10,7 +10,7 @@
  *    7.3.7 站点装修：白名单保存/颜色 HEX 校验/圆角范围/非白名单键跳过/C 端 config 实时生效
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8301';
+$BASE='http://127.0.0.1:8080';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;$fails=[];
 function T($n,$c,$d=''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}

@@ -14,7 +14,7 @@
  */
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
-$BASE = 'http://127.0.0.1:8301';
+$BASE = 'http://127.0.0.1:8080';
 $PDO  = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_WARNING]);
 $pass = 0; $fail = 0; $fails = [];
 function T($n, $c, $d = ''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;printf("%s %s%s\n",$c?"  PASS":"  FAIL",$n,$d?" | $d":"");}
@@ -221,6 +221,14 @@ T('H2-2d 签到双击仅一条记录/一份奖励', $recU === 1 && $txReward <= 
   "records=$recU rewardTx=$txReward points {$pts0}->{$pts1}");
 
 /* e) 免费抽奖 H2-D1 探针（修复前预期 FAIL） */
+/* 自建进行中的抽奖活动（免费抽依赖启用活动+完整奖池；上游 t6 的活动可能已被停用/耗尽） */
+exe("DELETE FROM nft_lucky_draw_records WHERE activity_id IN (SELECT id FROM nft_lucky_draw_activities WHERE name='H2-免费抽探针')");
+exe("DELETE FROM nft_lucky_draw_activities WHERE name='H2-免费抽探针'");
+exe("INSERT INTO nft_lucky_draw_activities (name,status,eligibility_type,grant_mode,start_time,end_time,created_at,updated_at)
+     VALUES ('H2-免费抽探针',1,'all','realtime','".date('Y-m-d H:i:s',time()-600)."','".date('Y-m-d H:i:s',time()+600)."',NOW(3),NOW(3))");
+$h2ActId = (int)v("SELECT id FROM nft_lucky_draw_activities WHERE name='H2-免费抽探针'");
+exe("INSERT INTO nft_lucky_draw_prizes (activity_id,tier_name,prize_type,prize_name,collectible_id,coin_amount,total,won,sort_order,probability,created_at,updated_at)
+     VALUES ($h2ActId,'谢谢参与','none','谢谢参与',NULL,NULL,500,0,1,1.0000,NOW(3),NOW(3))");
 $LD1 = '15200000002';
 $d1 = burst([['url'=>"$BASE/api/lucky-draw/draw",'tok'=>$TOK[$LD1],'b'=>[]]])[0];
 $d2 = burst([['url'=>"$BASE/api/lucky-draw/draw",'tok'=>$TOK[$LD1],'b'=>[]]])[0];

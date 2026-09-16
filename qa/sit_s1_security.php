@@ -13,7 +13,7 @@
  *   10. 信息泄露：异常响应无堆栈、SQL 错误细节回显评估、404 统一 JSON、debugCode 部署约束
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8301';
+$BASE='http://127.0.0.1:8080';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;$findings=[];
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
@@ -44,7 +44,7 @@ function newUser($tag,$balance=5000){
   $phone='138'.str_pad((string)random_int(10000000,99999999),8,'0',STR_PAD_LEFT);
   $r=http('POST','/api/auth/send-code',['phone'=>$phone,'scene'=>'register']);
   $code=$r['data']['debugCode']??null; if(!$code){echo "  FATAL send-code: ".json_encode($r,JSON_UNESCAPED_UNICODE)."\n";exit(1);}
-  $r=http('POST','/api/auth/register',['phone'=>$phone,'code'=>$code,'nickname'=>"安全测试$tag"]);
+  $r=http('POST','/api/auth/register',['phone'=>$phone,'code'=>$code,'password'=>'Pass#2026','nickname'=>"安全测试$tag"]);
   $tok=$r['data']['token']??''; if(!$tok){echo "  FATAL register: ".json_encode($r,JSON_UNESCAPED_UNICODE)."\n";exit(1);}
   $uid=(int)v("SELECT id FROM nft_users WHERE phone='$phone'");
   exe("UPDATE nft_users SET is_realname=1, realname_status=2,
@@ -74,6 +74,16 @@ echo "=============================================================\n";
 
 /* ---------------- 测试夹具 ---------------- */
 echo "\n=== 0. 环境与夹具准备 ===\n";
+// 藏品 9001 基础种子（t76 清库后自建，避免依赖历史会话残留）
+if(v("SELECT COUNT(*) FROM nft_collectibles WHERE id=9001")==0){
+  exe("INSERT INTO nft_collectibles (id,category_id,name,subtitle,image,price,edition,circulate,sold,locked_quantity,per_user_limit,
+       is_release,is_resaleable,is_transferable,is_buy_request_enabled,resale_price_mode,resale_price_min,resale_price_max,status,issuer,brand,created_at,updated_at)
+      VALUES (9001,1,'安全测试藏品','S1夹具','/img/test.png',100,100000,0,0,0,99,1,1,1,1,0,0,0,'onsale','司南文创','司南',NOW(),NOW())");
+}
+exe("DELETE FROM nft_resale_listings WHERE collectible_id=9001 OR user_collectible_id IN (SELECT id FROM nft_user_collectibles WHERE collectible_id=9001)");
+exe("DELETE FROM nft_transfers WHERE collectible_id=9001");
+exe("DELETE FROM nft_user_collectibles WHERE collectible_id=9001");
+exe("DELETE FROM nft_orders WHERE collectible_id=9001 AND order_no LIKE 'S1-%'");
 exe("UPDATE nft_collectibles SET is_release=1,status='onsale',onsale_at=NULL,off_sale_at=NULL,per_user_limit=99,is_resaleable=1,is_transferable=1,resale_price_mode=0 WHERE id=9001");
 T('0.1 藏品 9001 开启发售+寄售（不限价）', v("SELECT is_release FROM nft_collectibles WHERE id=9001")=='1');
 $adminPwdHash=password_hash('RoleTest#2026',PASSWORD_BCRYPT);

@@ -10,7 +10,7 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function http($m,$u,$b=null,$t=null){global $BASE;$ch=curl_init($BASE.$u);$h=['Content-Type: application/json'];if($t)$h[]="Authorization: Bearer $t";
@@ -23,7 +23,7 @@ function adminLogin($u,$p){$r=http('POST','/admin/auth/login',['username'=>$u,'p
 echo "=== 7.2.1 权限字典与路由绑定完整性 ===\n";
 $dict=[];
 foreach(q("SELECT code FROM nft_admin_permissions WHERE status=1") as $row) $dict[$row['code']]=1;
-T('7.2.1a 启用权限码共 98 个（91 原始 + 7 项漂移修复）', count($dict)===98, 'count='.count($dict));
+T('7.2.1a 启用权限码共 100 个（91 原始 + 7 项漂移修复 + 抽签管理 + 抽签码查询）', count($dict)===100, 'count='.count($dict));
 $disabled=(int)v("SELECT COUNT(*) FROM nft_admin_permissions WHERE status<>1");
 T('7.2.1b 无残留禁用权限码', $disabled===0, "disabled=$disabled");
 // 解析路由文件：所有 AdminPermission 绑定码必须在字典内
@@ -191,7 +191,7 @@ if($old){$ids=implode(',',array_column($old,'id'));exe("SET FOREIGN_KEY_CHECKS=0
   foreach(['nft_wallets','nft_wallet_transactions','nft_user_collectibles','nft_orders','nft_payments'] as $t) exe("DELETE FROM $t WHERE user_id IN ($ids)");
   exe("DELETE FROM nft_users WHERE id IN ($ids)");exe("SET FOREIGN_KEY_CHECKS=1");}
 exe("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','register','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
-$r=http('POST','/api/auth/register',['phone'=>$phone,'code'=>'654321','nickname'=>'RBAC隔离用户']);
+$r=http('POST','/api/auth/register',['phone'=>$phone,'code'=>'654321','password'=>'Pass#2026','nickname'=>'RBAC隔离用户']);
 T('7.2.5c C 端用户注册成功', ($r['code']??-1)===0 || $r['code']===200, json_encode($r,JSON_UNESCAPED_UNICODE));
 exe("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','login','".password_hash('123456',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
 $r=http('POST','/api/auth/login',['phone'=>$phone,'code'=>'123456']);

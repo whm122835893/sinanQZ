@@ -22,7 +22,7 @@
  */
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
-$BASE = 'http://127.0.0.1:8301';
+$BASE = 'http://127.0.0.1:8080';
 $PDO  = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_WARNING]);
 $pass = 0; $fail = 0; $fails = [];
 function T($n, $c, $d = ''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;printf("%s %s%s\n",$c?"  PASS":"  FAIL",$n,$d?" | $d":"");}
