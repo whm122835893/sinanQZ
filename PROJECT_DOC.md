@@ -33,7 +33,7 @@
 | 管理后台 | `sinan-admin/` | 运营管理后台，覆盖藏品全生命周期（Vue 3 + Element Plus） |
 | 后端服务 | `sinan-nft-backend/` | ThinkPHP 8 多应用后端（api = C 端 / admin = 管理端） |
 
-核心业务闭环：**藏品发售 → 购买/盲盒/合成 → 持仓 → 寄售/转赠/置换 → 链上铸造 → 审计**。
+核心业务闭环：**藏品发售 → 购买/盲盒/合成 → 持仓 → 寄售/转赠/统一置换 → 链上铸造 → 审计**。
 
 ---
 
@@ -165,7 +165,9 @@ sinanQZ/
     ├── admin_init.sql         # 管理端扩展表：管理员/角色/权限/操作日志/审批/链网络/链合约
     ├── fusion_upgrade.sql     # 融合升级迁移：三链字段、审批流、社区、资格购白名单等
     ├── fusion_final_upgrade.sql
-    ├── full_feature_upgrade.sql  # 抽签购/求购/置换/分解等新功能表
+    ├── full_feature_upgrade.sql  # 抽签购/求购/分解等新功能表
+    ├── swap_plan_upgrade.sql     # 统一置换（回收+按比例空投）计划/源配置/名单/明细 4 表
+    ├── swap_c2c_removal.sql     # C 端用户间置换（补差价）体系下线：DROP swap_offers/records
     ├── marketing_activity_upgrade.sql
     ├── activity_reward_upgrade.sql
     ├── announcement_publish_upgrade.sql
@@ -311,7 +313,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 | 寄售市场 | `/resale` | 挂单/求购/成交三 Tab，冻结/解冻/系统下架、市场参数配置 |
 | 转赠管理 | `/transfer` | 审批 + 撤销已完成转赠（二次流转校验） |
 | 求购挂单 | `/buy-request` | 求购列表、关闭、删除 |
-| 置换管理 | `/swap` | 置换挂单/记录、关闭、删除 |
+| 置换管理 | `/swap` | 统一置换计划列表、用户名单/资产明细查看（执行入口在藏品详情） |
 
 ### 6.6 资产
 
@@ -422,7 +424,6 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 | GET | `/api/resale/listings` | 寄售挂单池 |
 | GET | `/api/resale/history` | 成交历史 |
 | GET | `/api/buy-requests` | 求购挂单列表 |
-| GET | `/api/swap-offers` | 置换挂单列表 |
 
 #### 需 JWT 认证接口
 
@@ -446,8 +447,6 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 | GET | `/api/resale/listings/mine` | 我的挂单 |
 | POST | `/api/buy-requests` | 创建求购挂单 |
 | POST | `/api/buy-requests/:id/accept` | 接受求购 |
-| POST | `/api/swap-offers` | 创建置换挂单 |
-| POST | `/api/swap-offers/:id/accept` | 接受置换 |
 | POST | `/api/transfers` | 创建转赠 |
 | POST | `/api/transfers/:transferId/handle` | 处理转赠（接收/拒绝） |
 | GET | `/api/transfers/mine` | 我的转赠 |
@@ -495,7 +494,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 | 平台 | `/admin/platform` | cleanup-logs / cleanup-preview / cleanup-send-code / cleanup-execute |
 | 抽签 | `/admin/raffle` | list / detail / save / start / draw / cancel / delete |
 | 求购 | `/admin/buy-request` | list / close / delete |
-| 置换 | `/admin/swap` | list / records / close / delete |
+| 置换 | `/admin/swap` | plans / plans/:id（统一置换记录查询） |
 | 分解 | `/admin/decompose` | rules / records |
 | 回收站 | `/admin/trash` | collectibles / orders / users / banners / announcements / recover / purge |
 
@@ -595,7 +594,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 |------|------|
 | `nft_raffle_activities` / `registrations` | 抽签购活动 + 报名 |
 | `nft_buy_requests` | 求购挂单 |
-| `nft_swap_offers` / `swap_records` | 置换挂单 + 记录 |
+| `nft_swap_plans` / `plan_items` / `plan_users` / `plan_details` | 统一置换：计划 + 源配置 + 用户名单 + 资产明细 |
 | `nft_decompose_rules` / `items` / `records` | 分解规则 + 记录 |
 
 ### 8.5 关键约束

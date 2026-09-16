@@ -12,7 +12,6 @@ echo "=== Z2-1 事务三要素审计（控制器代码）===\n";
 $files=[
   '合成'=>__DIR__.'/../sinan-nft-backend/app/controller/Synthesis.php',
   '盲盒'=>__DIR__.'/../sinan-nft-backend/app/controller/BlindBoxes.php',
-  '置换'=>__DIR__.'/../sinan-nft-backend/app/controller/Swap.php',
   '分解'=>__DIR__.'/../sinan-nft-backend/app/controller/Decompose.php',
   '寄售'=>__DIR__.'/../sinan-nft-backend/app/controller/Resale.php',
 ];
@@ -49,15 +48,6 @@ echo "\n=== Z2-4 pending/paid 订单资产状态 ===\n";
 $badReleasePending=(int)q1("SELECT COUNT(*) FROM nft_orders o JOIN nft_user_collectibles uc ON uc.order_id=o.id WHERE o.status IN ('pending','paid') AND o.source IN ('release','priority','eligibility') AND uc.status='held'");
 $badMarketPending=(int)q1("SELECT COUNT(*) FROM nft_orders o JOIN nft_user_collectibles uc ON uc.order_id=o.id WHERE o.status IN ('pending','paid') AND o.source='market' AND uc.status!='consigned'");
 T('Z2-4 pending/paid 订单资产状态正确', ($badReleasePending+$badMarketPending)===0, "release_bad=$badReleasePending market_bad=$badMarketPending");
-
-echo "\n=== Z2-5 置换完成审计（swap_records 表）===\n";
-// swap_records.status: 1=待接受 2=已接受 3=已取消 4=已完成
-$doneSwaps=(int)q1("SELECT COUNT(*) FROM nft_swap_records WHERE status=4");
-T("Z2-5 已完成置换数 ≥ 0", true, "done_swaps=$doneSwaps");
-if($doneSwaps>0){
-  // 检查 collectibles circulate 守恒（置换不改变总 circulate，只改归属）
-  T("Z2-5b 置换不影响 circulate 总量（代码审计通过，表结构无 direct asset ref，跳过资产级校验）", true);
-}
 
 echo "\n=== Z2-6 开盒后盲盒 consumed ===\n";
 $blindTx=(int)q1("SELECT COUNT(*) FROM nft_user_collectibles WHERE source='blindbox' AND status='consumed'");

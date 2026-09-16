@@ -14,7 +14,7 @@ $bizTables = [
   'resale_listings','transfers','buy_requests','refunds',
   'destroy_records','blacklist','risk_alerts','security_events',
   'support_tickets','ticket_replies','approval_requests',
-  'swap_offers','swap_records',
+  'swap_plans','swap_plan_items','swap_plan_users','swap_plan_details',
   'blind_box_items','blind_boxes',
   'synthesis_records','synthesis_record_items','synthesis_materials','synthesis_activities',
   'decompose_rules','decompose_records','decompose_items',

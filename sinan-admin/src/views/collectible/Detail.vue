@@ -13,7 +13,8 @@ import {
   toggleCollectibleResale,
   toggleCollectibleTransferable,
   toggleCollectibleBuyRequest,
-  swapCollectible
+  swapCollectible,
+  swapPreview
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import PasswordVerify from '@/components/PasswordVerify.vue'
@@ -100,44 +101,98 @@ async function onDestroyVerified() {
   }
 }
 
-// ---- 置换：回收当前藏品 → 向同一批用户空投新藏品 ----
+// ---- 统一置换：回收多个源藏品 → 按「Σ(持有数量 × 比例)」向持有人空投新藏品 ----
 const swapShow = ref(false)
 const swapPwdShow = ref(false)
-const swapForm = ref({ newCollectibleId: '', quantityPerUser: 1, reason: '' })
+const swapPreviewShow = ref(false)
+const swapPreviewData = ref(null)
+const swapForm = ref({ sources: [], newCollectibleId: '', reason: '' })
 const swapping = ref(false)
+const previewing = ref(false)
 
 function openSwap() {
-  swapForm.value = { newCollectibleId: '', quantityPerUser: 1, reason: '' }
+  // 当前藏品默认作为第一个源藏品
+  swapForm.value = { sources: [{ collectibleId: String(id), ratio: 1 }], newCollectibleId: '', reason: '' }
+  swapPreviewData.value = null
   swapShow.value = true
 }
 
-async function onSwapSubmit() {
+function addSwapSource() {
+  if (swapForm.value.sources.length >= 10) return ElMessage.warning('单次置换最多支持 10 个源藏品')
+  swapForm.value.sources.push({ collectibleId: '', ratio: 1 })
+}
+
+function removeSwapSource(idx) {
+  swapForm.value.sources.splice(idx, 1)
+}
+
+/** 表单校验：通过返回提交载荷，失败返回 null */
+function validateSwapForm() {
   const f = swapForm.value
-  if (!f.newCollectibleId) return ElMessage.warning('请输入新藏品ID')
-  if (Number(f.newCollectibleId) === Number(id)) return ElMessage.warning('新藏品不能与当前藏品相同')
-  if (!Number.isInteger(f.quantityPerUser) || f.quantityPerUser < 1) return ElMessage.warning('每人空投份数需为正整数')
-  // 二次确认
+  if (!f.sources.length) { ElMessage.warning('请至少配置一个源藏品'); return null }
+  const ids = new Set()
+  for (let i = 0; i < f.sources.length; i++) {
+    const src = f.sources[i]
+    const cid = Number(src.collectibleId)
+    if (!cid || cid <= 0) { ElMessage.warning(`请填写第 ${i + 1} 个源藏品ID`); return null }
+    if (ids.has(cid)) { ElMessage.warning(`源藏品不可重复（ID: ${cid}）`); return null }
+    ids.add(cid)
+    if (!Number.isInteger(src.ratio) || src.ratio < 1 || src.ratio > 100) {
+      ElMessage.warning(`第 ${i + 1} 个源藏品置换比例需为 1~100 的整数`); return null
+    }
+  }
+  const nid = Number(f.newCollectibleId)
+  if (!nid || nid <= 0) { ElMessage.warning('请输入目标（新）藏品ID'); return null }
+  if (ids.has(nid)) { ElMessage.warning('目标新藏品不能与源藏品相同'); return null }
+  return {
+    oldCollectibles: f.sources.map((s) => ({ collectibleId: Number(s.collectibleId), ratio: s.ratio })),
+    newCollectibleId: nid,
+    reason: f.reason
+  }
+}
+
+/** 名单预览：按比例计算受影响用户与空投份数（只读） */
+async function onSwapPreview() {
+  const payload = validateSwapForm()
+  if (!payload) return
+  previewing.value = true
+  try {
+    const res = await swapPreview(payload)
+    if (res.code === 0) {
+      swapPreviewData.value = res.data
+      swapPreviewShow.value = true
+    }
+  } finally {
+    previewing.value = false
+  }
+}
+
+async function onSwapSubmit() {
+  const payload = validateSwapForm()
+  if (!payload) return
+  const s = swapPreviewData.value?.summary
+  const summaryText = s
+    ? `受影响 ${s.userCount} 人，回收 ${s.totalRecovered} 份，按比例空投 ${s.totalAirdrop} 份。`
+    : ''
   await ElMessageBox.confirm(
-    `即将执行置换：回收「${detail.value.name}」所有有效持仓，并向同一批用户每人空投 ${f.quantityPerUser} 份新藏品（ID: ${f.newCollectibleId}）。\n\n此操作不可撤销，将批量回收并空投，是否继续？`,
-    '藏品置换确认',
+    `即将执行统一置换：回收 ${payload.oldCollectibles.length} 个源藏品（${payload.oldCollectibles.map((i) => `#${i.collectibleId} 1:${i.ratio}`).join('、')}）的所有有效持仓，并按比例向持有人空投新藏品（ID: ${payload.newCollectibleId}）。\n\n${summaryText}此操作不可撤销，是否继续？`,
+    '统一置换确认',
     { type: 'warning', confirmButtonText: '确认置换', cancelButtonText: '取消' }
   )
   swapPwdShow.value = true
 }
 
 async function onSwapVerified() {
+  const payload = validateSwapForm()
+  if (!payload) return
   swapping.value = true
   try {
-    const res = await swapCollectible({
-      oldCollectibleId: id,
-      newCollectibleId: Number(swapForm.value.newCollectibleId),
-      quantityPerUser: swapForm.value.quantityPerUser,
-      reason: swapForm.value.reason
-    })
+    const res = await swapCollectible(payload)
     if (res.code === 0) {
       const d = res.data
-      ElMessage.success(`置换完成：回收 ${d.recoveredCount} 份（${d.userCount} 人），空投新藏品 ${d.airdropQuantity} 份`)
+      ElMessage.success(`置换完成：回收 ${d.recoveredCount} 份（${d.userCount} 人），按比例空投 ${d.airdropQuantity} 份（计划号 ${d.planNo}）`)
       swapShow.value = false
+      swapPreviewData.value = null
       load()
     }
   } finally {
@@ -521,18 +576,33 @@ async function onResaleVerified() {
         </template>
       </el-dialog>
 
-      <!-- 置换弹窗 -->
-      <el-dialog v-model="swapShow" title="藏品置换" width="480px" append-to-body :close-on-click-modal="false">
+      <!-- 统一置换弹窗（多源 + 比例 + 目标 + 名单预览） -->
+      <el-dialog v-model="swapShow" title="统一置换（回收 + 按比例空投）" width="680px" append-to-body :close-on-click-modal="false">
         <el-form label-width="110px">
-          <el-form-item label="回收旧藏品">
-            <el-tag type="info" effect="plain">{{ detail.name }}（ID: {{ id }}）</el-tag>
-            <span class="t-tertiary" style="margin-left: 8px; font-size: 12px">将回收该藏品所有有效持仓</span>
+          <el-form-item label="回收源藏品">
+            <div class="cd__swap-sources">
+              <div v-for="(src, idx) in swapForm.sources" :key="idx" class="cd__swap-source">
+                <el-input v-model="src.collectibleId" placeholder="藏品ID" style="width: 150px">
+                  <template #prepend v-if="Number(src.collectibleId) === id">当前</template>
+                </el-input>
+                <span class="t-tertiary" style="font-size: 12px">每持有 1 份 →</span>
+                <el-input-number v-model="src.ratio" :min="1" :max="100" style="width: 110px" />
+                <span class="t-tertiary" style="font-size: 12px">份新藏品</span>
+                <el-button
+                  v-if="swapForm.sources.length > 1"
+                  link
+                  type="danger"
+                  @click="removeSwapSource(idx)"
+                >移除</el-button>
+              </div>
+              <el-button link type="primary" size="small" @click="addSwapSource">+ 添加源藏品</el-button>
+            </div>
+            <div class="t-tertiary" style="font-size: 12px">
+              将统一回收上述藏品的全部有效持仓（含持有/寄售中/转赠冻结），例：a 比例 1:2、b 比例 1:3，用户持有 a、b 各 1 份 → 空投 2 + 3 = 5 份
+            </div>
           </el-form-item>
-          <el-form-item label="空投新藏品ID">
-            <el-input v-model="swapForm.newCollectibleId" placeholder="请输入新藏品ID" />
-          </el-form-item>
-          <el-form-item label="每人空投份数">
-            <el-input-number v-model="swapForm.quantityPerUser" :min="1" :max="100" />
+          <el-form-item label="目标新藏品ID">
+            <el-input v-model="swapForm.newCollectibleId" placeholder="空投给持有回收藏品用户的新藏品" style="width: 220px" />
           </el-form-item>
           <el-form-item label="置换原因">
             <el-input v-model="swapForm.reason" type="textarea" :rows="2" placeholder="如：版本升级置换（选填）" />
@@ -542,11 +612,88 @@ async function onResaleVerified() {
           type="warning"
           :closable="false"
           show-icon
-          title="置换将批量回收当前藏品的所有有效持仓（含寄售中），并向完全相同的一批用户空投新藏品。单一事务保证回收与空投用户精准对齐，操作不可撤销。"
+          title="置换将统一回收所有源藏品的有效持仓，并按比例向持有人空投目标新藏品；单一事务保证名单精准对齐，操作不可撤销，执行后生成计划名单与资产明细。"
         />
         <template #footer>
           <el-button @click="swapShow = false">取消</el-button>
+          <el-button :loading="previewing" @click="onSwapPreview">名单预览</el-button>
           <el-button type="warning" :loading="swapping" @click="onSwapSubmit">确认置换（需密码验证）</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 置换名单预览弹窗 -->
+      <el-dialog v-model="swapPreviewShow" title="置换名单预览（只读）" width="920px" append-to-body>
+        <template v-if="swapPreviewData">
+          <div class="cd__swap-summary">
+            <div class="cd__swap-stat">
+              <div class="cd__swap-v">{{ swapPreviewData.summary.userCount }}</div>
+              <div class="cd__swap-l">受影响用户</div>
+            </div>
+            <div class="cd__swap-stat">
+              <div class="cd__swap-v">{{ swapPreviewData.summary.totalRecovered }}</div>
+              <div class="cd__swap-l">回收总份数</div>
+            </div>
+            <div class="cd__swap-stat">
+              <div class="cd__swap-v">{{ swapPreviewData.summary.totalAirdrop }}</div>
+              <div class="cd__swap-l">按比例空投份数</div>
+            </div>
+            <div class="cd__swap-stat">
+              <div class="cd__swap-v" :class="{ 'is-danger': swapPreviewData.newCollectible.stockPool < swapPreviewData.summary.totalAirdrop }">
+                {{ swapPreviewData.newCollectible.stockPool }}
+              </div>
+              <div class="cd__swap-l">目标库存池</div>
+            </div>
+          </div>
+          <el-alert
+            v-if="swapPreviewData.newCollectible.stockPool < swapPreviewData.summary.totalAirdrop"
+            type="error"
+            :closable="false"
+            show-icon
+            :title="`目标藏品「${swapPreviewData.newCollectible.name}」库存池不足：${swapPreviewData.newCollectible.stockPool} / ${swapPreviewData.summary.totalAirdrop}，无法执行置换`"
+            style="margin-bottom: 12px"
+          />
+
+          <div class="t-tertiary" style="font-size: 13px; margin-bottom: 4px">源藏品配置</div>
+          <el-table :data="swapPreviewData.items" size="small" border style="margin-bottom: 14px">
+            <el-table-column label="藏品" min-width="220">
+              <template #default="{ row }">
+                <el-image :src="row.image" fit="cover" style="width: 32px; height: 32px; border-radius: 4px; vertical-align: middle; margin-right: 6px" />
+                {{ row.name }}（#{{ row.collectibleId }}）
+              </template>
+            </el-table-column>
+            <el-table-column label="比例（每份→新藏品）" width="150">
+              <template #default="{ row }">1 : {{ row.ratio }}</template>
+            </el-table-column>
+            <el-table-column prop="holdingCount" label="有效持仓" width="90" />
+            <el-table-column prop="holdingUsers" label="持有人数" width="90" />
+            <el-table-column label="该藏品空投合计" width="120">
+              <template #default="{ row }">{{ row.holdingCount * row.ratio }}</template>
+            </el-table-column>
+          </el-table>
+
+          <div class="t-tertiary" style="font-size: 13px; margin-bottom: 4px">
+            用户名单（按空投份数降序，最多显示前 {{ swapPreviewData.users.length }} 条；执行后完整名单与明细可在「置换管理 → 置换回收记录」查看）
+          </div>
+          <el-table :data="swapPreviewData.users" size="small" border max-height="380">
+            <el-table-column prop="userId" label="用户ID" width="90" />
+            <el-table-column label="持有明细（数量 × 比例）" min-width="300">
+              <template #default="{ row }">
+                <span v-for="(h, i) in row.holdings" :key="h.collectibleId">
+                  <template v-if="i > 0"> + </template>{{ h.name }} {{ h.quantity }}×{{ h.ratio }}（{{ h.newQuantity }}）
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="recoveredTotal" label="回收合计" width="90" />
+            <el-table-column label="空投新藏品" width="100">
+              <template #default="{ row }">
+                <el-tag type="warning" effect="plain" size="small">{{ row.airdropQuantity }} 份</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+        <template #footer>
+          <el-button @click="swapPreviewShow = false">关闭</el-button>
+          <el-button type="warning" :disabled="swapPreviewData && swapPreviewData.newCollectible.stockPool < swapPreviewData.summary.totalAirdrop" @click="swapPreviewShow = false">返回执行</el-button>
         </template>
       </el-dialog>
 
@@ -657,6 +804,48 @@ async function onResaleVerified() {
 }
 
 .cd__hero { display: flex; gap: 16px; }
+
+// ---- 统一置换弹窗 ----
+.cd__swap-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.cd__swap-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cd__swap-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.cd__swap-stat {
+  text-align: center;
+  padding: 10px 0;
+  border-radius: 8px;
+  background: $color-surface;
+}
+
+.cd__swap-v {
+  font-size: 20px;
+  font-weight: 700;
+
+  &.is-danger { color: #f56c6c; }
+}
+
+.cd__swap-l {
+  font-size: 12px;
+  color: $color-text-tertiary;
+  margin-top: 2px;
+}
 
 .cd__cover {
   width: 110px;

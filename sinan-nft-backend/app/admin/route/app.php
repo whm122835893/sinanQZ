@@ -92,6 +92,7 @@ Route::group('collectibles', function () {
     Route::delete(':id', 'CollectibleController/delete')->middleware(AdminPermission::class, 'collectible:delete');
     Route::post('airdrop', 'CollectibleController/airdrop')->middleware(AdminPermission::class, 'collectible:airdrop');
     Route::post('swap', 'CollectibleController/swap')->middleware(AdminPermission::class, 'collectible:swap');
+    Route::post('swap-preview', 'CollectibleController/swapPreview')->middleware(AdminPermission::class, 'collectible:swap');
     Route::put(':id/market-config', 'CollectibleController/marketConfig')->middleware(AdminPermission::class, 'collectible:market');
     Route::post(':id/qualification', 'CollectibleController/qualification')->middleware(AdminPermission::class, 'collectible:qualification');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'collectible:list');
@@ -441,13 +442,12 @@ Route::group('buy-request', function () {
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'market:buyrequest:list');
 
 // ---------------------------------------------------------------------------
-// 置换（market:swap:*）— P1
+// 统一置换记录（market:swap:list）— 管理员回收+按比例空投的名单/明细查询
+// 执行入口：/admin/collectibles/swap（collectible:swap 权限）
 // ---------------------------------------------------------------------------
 Route::group('swap', function () {
-    Route::get('', 'SwapController/list');
-    Route::get('records', 'SwapController/records');
-    Route::post(':id/close', 'SwapController/close');
-    Route::delete(':id', 'SwapController/delete');
+    Route::get('plans', 'SwapController/plans');
+    Route::get('plans/:id', 'SwapController/planDetail');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'market:swap:list');
 
 // ---------------------------------------------------------------------------

@@ -46,7 +46,7 @@ echo "=== R0 数据准备 ===\n";
 $oldIds=q("SELECT id FROM nft_users WHERE phone LIKE '13900009%'");
 if($oldIds){$oldIds=implode(',',array_column($oldIds,'id'));
   exe("SET FOREIGN_KEY_CHECKS=0");
-  foreach(['nft_wallets','nft_wallet_transactions','nft_user_collectibles','nft_swap_offers','nft_swap_records',
+  foreach(['nft_wallets','nft_wallet_transactions','nft_user_collectibles',
            'nft_buy_requests','nft_orders','nft_payments','nft_resale_listings','nft_raffle_registrations',
            'nft_synthesis_records','nft_verification_codes'] as $t){
     exe("DELETE FROM $t WHERE user_id IN ($oldIds)");
@@ -54,7 +54,6 @@ if($oldIds){$oldIds=implode(',',array_column($oldIds,'id'));
   exe("DELETE FROM nft_payments WHERE order_id IN (SELECT id FROM nft_orders WHERE user_id IN ($oldIds))");
   exe("DELETE FROM nft_orders WHERE user_id IN ($oldIds)");
   exe("DELETE FROM nft_resale_listings WHERE seller_id IN ($oldIds)");
-  exe("DELETE FROM nft_swap_records WHERE offer_user_id IN ($oldIds) OR accept_user_id IN ($oldIds)");
   exe("DELETE FROM nft_buy_requests WHERE accepted_by IN ($oldIds)");
   exe("DELETE FROM nft_users WHERE id IN ($oldIds)");
   exe("SET FOREIGN_KEY_CHECKS=1");
@@ -77,25 +76,19 @@ seedCollectible(9301,'K01关寄售'); exe("UPDATE nft_collectibles SET is_resale
 seedCollectible(9302,'K04固定价'); exe("UPDATE nft_collectibles SET resale_price_mode=1, resale_price_min=500, resale_price_max=500 WHERE id=9302");
 seedCollectible(9303,'K04区间价'); exe("UPDATE nft_collectibles SET resale_price_mode=2, resale_price_min=100, resale_price_max=300 WHERE id=9303");
 seedCollectible(9304,'K05全局价');
-seedCollectible(9305,'置换A');
-seedCollectible(9306,'置换B');
 seedCollectible(9307,'求购标的');
 seedCollectible(9308,'合成材料');
 seedCollectible(9309,'合成产物');
 seedCollectible(9310,'抽签发售');
-// A 持仓：K0x 各 1 件 + 置换A + 求购标的×2 + 材料×2
+// A 持仓：K0x 各 1 件 + 求购标的×2 + 材料×2
 $ucK01=seedHolder($uidA,9301)[0]; $ucK04=seedHolder($uidA,9302)[0];
 $ucK04b=seedHolder($uidA,9303)[0]; $ucK05=seedHolder($uidA,9304)[0];
-$ucSwapA=seedHolder($uidA,9305)[0];
 $ucBq=seedHolder($uidA,9307,2);
 $matIds=seedHolder($uidA,9308,2);
-// B 持仓：置换B
-$ucSwapB=seedHolder($uidB,9306)[0];
 // 全局最高价 = 1000
 exe("INSERT INTO nft_system_configs (config_key,config_value,updated_at) VALUES ('resale_price_global_max','1000',NOW())
      ON DUPLICATE KEY UPDATE config_value='1000', updated_at=NOW()");
 // 清历史
-exe("DELETE FROM nft_swap_offers WHERE offer_user_id IN ($uidA,$uidB)");
 exe("DELETE FROM nft_buy_requests WHERE user_id IN ($uidA,$uidB)");
 T('R0.3 藏品/持仓/全局价配置就绪', v("SELECT COUNT(*) FROM nft_user_collectibles WHERE user_id IN ($uidA,$uidB) AND status='held'")>=8);
 
@@ -128,11 +121,6 @@ $ucK05b=seedHolder($uidA,9304)[0];
 $r=http('POST','/api/resale/listings',['userCollectibleId'=>$ucK05b,'price'=>900,'paymentPassword'=>'Trade#2026'],$tokA);
 T('K05.4 调低全局价后原价被拒（实时生效）', $r['code']!==0 && strpos($r['message'],'全局最高价')!==false, "code={$r['code']} msg={$r['message']}");
 exe("UPDATE nft_system_configs SET config_value='1000' WHERE config_key='resale_price_global_max'");
-
-echo "\n=== S06 置换过户 ===\n";
-// F4/F5 调研结论：swap_offers/swap_records 表已建但 C 端路由与控制器从未实现（route/api.php 无 swap 路由）
-// 功能缺口移交产品排期，本回归段跳过（不计 PASS/FAIL）
-echo "  SKIP S06.x 置换过户 | 功能未实现：nft_swap_offers/records 表已建，/api/swap-offers 路由与控制器待开发\n";
 
 echo "\n=== B08 求购生成订单 ===\n";
 $r=http('POST','/api/buy-requests',['collectibleId'=>9307,'price'=>100,'quantity'=>2,'remark'=>'B08回归'],$tokB);

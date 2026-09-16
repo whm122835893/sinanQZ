@@ -46,7 +46,7 @@ T('0.1 管理端登录 admin', $atok!=='', "code={$ar['code']}");
 $old=q("SELECT id FROM nft_users WHERE phone LIKE '139000091%'");
 if($old){$ids=implode(',',array_column($old,'id'));
   exe("SET FOREIGN_KEY_CHECKS=0");
-  foreach(['nft_wallets','nft_wallet_transactions','nft_user_collectibles','nft_orders','nft_payments','nft_resale_listings','nft_transfers','nft_buy_requests','nft_swap_offers','nft_swap_records','nft_synthesis_records','nft_decompose_records','nft_raffle_registrations','nft_lucky_draw_chances','nft_activity_reward_records','nft_airdrop_records','nft_check_in_records'] as $tb){exe("DELETE FROM $tb WHERE user_id IN ($ids)");}
+  foreach(['nft_wallets','nft_wallet_transactions','nft_user_collectibles','nft_orders','nft_payments','nft_resale_listings','nft_transfers','nft_buy_requests','nft_synthesis_records','nft_decompose_records','nft_raffle_registrations','nft_lucky_draw_chances','nft_activity_reward_records','nft_airdrop_records','nft_check_in_records'] as $tb){exe("DELETE FROM $tb WHERE user_id IN ($ids)");}
   exe("DELETE FROM nft_transfers WHERE from_user_id IN ($ids) OR to_user_id IN ($ids)");
   exe("DELETE FROM nft_resale_listings WHERE seller_id IN ($ids)");
   exe("DELETE FROM nft_buy_requests WHERE accepted_by IN ($ids)");
@@ -148,7 +148,7 @@ $adminRead=[
   '/admin/approvals','/admin/approvals/stats',
   '/admin/platform/cleanup-logs','/admin/platform/cleanup-preview',
   '/admin/raffle','/admin/raffle/registrations','/admin/raffle/codes','/admin/raffle/winners','/admin/raffle/logs',
-  '/admin/buy-request','/admin/swap','/admin/swap/records',
+  '/admin/buy-request','/admin/swap/plans',
   '/admin/decompose/rules','/admin/decompose/records',
   '/admin/trash/collectibles','/admin/trash/orders','/admin/trash/users','/admin/trash/banners','/admin/trash/announcements',
 ];

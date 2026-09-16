@@ -502,16 +502,43 @@ export function toggleCollectibleBuyRequest(id, enabled) {
 }
 
 /**
- * 藏品置换：批量回收旧藏品 → 向同一批用户空投新藏品
- * 仅管理员可操作，单一事务保证回收与空投用户精准对齐
+ * 统一置换预览：按源藏品比例计算受影响用户名单与空投份数（只读，不执行）
+ * oldCollectibles: [{collectibleId, ratio}] 每持有 1 份源藏品 → 空投 ratio 份新藏品
  */
-export function swapCollectible({ oldCollectibleId, newCollectibleId, quantityPerUser = 1, reason = '' }) {
-  return post('/collectibles/swap', {
-    old_collectible_id: oldCollectibleId,
+export function swapPreview({ oldCollectibles, newCollectibleId, reason = '' }) {
+  return post('/collectibles/swap-preview', {
+    old_collectibles: oldCollectibles.map((i) => ({
+      collectible_id: i.collectibleId,
+      ratio: i.ratio
+    })),
     new_collectible_id: newCollectibleId,
-    quantity_per_user: quantityPerUser,
     reason
   })
+}
+
+/**
+ * 统一置换：批量回收多个源藏品的所有有效持仓 → 按「Σ(持有数量 × 比例)」向持有人空投新藏品
+ * 单一事务；执行后生成置换计划（源配置/用户名单/资产明细留痕）
+ */
+export function swapCollectible({ oldCollectibles, newCollectibleId, reason = '' }) {
+  return post('/collectibles/swap', {
+    old_collectibles: oldCollectibles.map((i) => ({
+      collectible_id: i.collectibleId,
+      ratio: i.ratio
+    })),
+    new_collectible_id: newCollectibleId,
+    reason
+  })
+}
+
+/** 统一置换计划列表（回收+按比例空投记录） */
+export function getSwapPlans(params = {}) {
+  return get('/swap/plans', params)
+}
+
+/** 统一置换计划详情（源配置 + 用户名单 + 资产明细，名单/明细分页） */
+export function getSwapPlanDetail(id, params = {}) {
+  return get(`/swap/plans/${id}`, params)
 }
 
 // ============================================================
