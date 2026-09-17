@@ -52,12 +52,14 @@ Route::group('users', function () {
     Route::get('', 'UserController/list');
     // 静态路由需注册在 :id 通配路由之前（否则 /assets/1 会被 :id 吸收）
     Route::get('assets/:id', 'UserController/assets')->middleware(AdminPermission::class, 'user:detail');
+    Route::get('holdings/:id', 'UserController/holdings')->middleware(AdminPermission::class, 'user:detail');
     Route::get(':id', 'UserController/detail')->middleware(AdminPermission::class, 'user:detail');
     Route::post(':id/freeze', 'UserController/freeze')->middleware(AdminPermission::class, 'user:freeze');
     Route::post(':id/reset-transaction-password', 'UserController/resetTransactionPassword')->middleware(AdminPermission::class, 'user:manage');
     Route::post(':id/force-logout', 'UserController/forceLogout')->middleware(AdminPermission::class, 'user:manage');
     Route::post(':id/blacklist', 'UserController/blacklist')->middleware(AdminPermission::class, 'user:blacklist');
     Route::post('recover', 'UserController/recover')->middleware(AdminPermission::class, 'user:recover');
+    Route::post(':id/recover-batch', 'UserController/recoverBatch')->middleware(AdminPermission::class, 'user:recover');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'user:list');
 
 // ---------------------------------------------------------------------------
@@ -93,6 +95,8 @@ Route::group('collectibles', function () {
     Route::post('airdrop', 'CollectibleController/airdrop')->middleware(AdminPermission::class, 'collectible:airdrop');
     Route::post('swap', 'CollectibleController/swap')->middleware(AdminPermission::class, 'collectible:swap');
     Route::post('swap-preview', 'CollectibleController/swapPreview')->middleware(AdminPermission::class, 'collectible:swap');
+    Route::post(':id/batch-recover', 'CollectibleController/batchRecover')->middleware(AdminPermission::class, 'collectible:batch-recover');
+    Route::post(':id/recover-by-phone', 'CollectibleController/recoverByPhone')->middleware(AdminPermission::class, 'collectible:phone-recover');
     Route::put(':id/market-config', 'CollectibleController/marketConfig')->middleware(AdminPermission::class, 'collectible:market');
     Route::post(':id/qualification', 'CollectibleController/qualification')->middleware(AdminPermission::class, 'collectible:qualification');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'collectible:list');

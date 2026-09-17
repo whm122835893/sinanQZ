@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getUserList, getUserDetail, getUserAssets, recoverUserCollectible, freezeUser, resetTradePwd, toggleBlacklist, removeBlacklist, forceLogoutUser } from '@/api'
+import { getUserList, getUserDetail, getUserAssets, getUserHoldings, recoverUserCollectible, recoverUserCollectibleBatch, freezeUser, resetTradePwd, toggleBlacklist, removeBlacklist, forceLogoutUser } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { USER_STATUS, REALNAME_STATUS } from '@/utils/maps'
@@ -35,6 +35,12 @@ const assetsLoading = ref(false)
 const assetStatus = ref('')
 const assetPage = ref(1)
 
+// ---- 用户有效持仓聚合（批量回收份数数据源） ----
+const holdings = ref([])
+const holdingsLoading = ref(false)
+const batchShow = ref(false)
+const batchForm = ref({ collectibleId: null, name: '', total: 1, quantity: 1, reason: '' })
+
 const filters = [
   {
     field: 'status',
@@ -63,6 +69,7 @@ async function openDetail(u) {
   assetStatus.value = ''
   assetPage.value = 1
   loadAssets()
+  loadHoldings()
 }
 
 async function loadAssets() {
@@ -80,9 +87,21 @@ async function loadAssets() {
   }
 }
 
+async function loadHoldings() {
+  if (!detail.value) return
+  holdingsLoading.value = true
+  try {
+    const res = await getUserHoldings(detail.value.id)
+    if (res.code === 0) holdings.value = res.data.list
+  } finally {
+    holdingsLoading.value = false
+  }
+}
+
 function onAssetStatusChange() {
   assetPage.value = 1
-  loadAssets()
+  if (assetStatus.value === '') loadHoldings()
+  else loadAssets()
 }
 
 /** 强制回收（超卖/错空投/多合处置）：填原因 → 回收 → 按来源回退计数器 */
@@ -102,7 +121,32 @@ async function onRecover(a) {
     const d = res.data || {}
     ElMessage.success(d.counterReverted ? `已回收，已回退计数器（${d.counter}）` : '已回收（计数器守卫拦截，未回退）')
     loadAssets()
+    loadHoldings()
     // 刷新抽屉头部持仓统计
+    const fresh = await getUserDetail(detail.value.id)
+    if (fresh.code === 0) detail.value = fresh.data
+  }
+}
+
+function openBatchRecover(h) {
+  batchForm.value = { collectibleId: h.collectibleId, name: h.name, total: h.total, quantity: 1, reason: '' }
+  batchShow.value = true
+}
+
+async function onBatchRecoverSubmit() {
+  const f = batchForm.value
+  if (!f.reason.trim()) return ElMessage.warning('回收原因必填')
+  const res = await recoverUserCollectibleBatch({
+    userId: detail.value.id,
+    collectibleId: f.collectibleId,
+    quantity: f.quantity,
+    reason: f.reason.trim()
+  })
+  if (res.code === 0) {
+    ElMessage.success(res.message || `已回收 ${f.quantity} 份`)
+    batchShow.value = false
+    loadAssets()
+    loadHoldings()
     const fresh = await getUserDetail(detail.value.id)
     if (fresh.code === 0) detail.value = fresh.data
   }
@@ -288,7 +332,7 @@ async function onForceLogout() {
           </div>
         </div>
 
-        <!-- 持有资产（回收入口） -->
+        <!-- 持有资产（回收入口：缺省按藏品聚合可回收选份数；指定状态查看逐份明细） -->
         <div class="adm-card" style="margin-bottom: 12px; box-shadow: none">
           <div class="asset__head">
             <div class="adm-card__title">持有资产</div>
@@ -296,7 +340,30 @@ async function onForceLogout() {
               <el-option v-for="o in ASSET_STATUS_OPTS" :key="o.value" :value="o.value" :label="o.label" />
             </el-select>
           </div>
-          <div v-loading="assetsLoading">
+
+          <!-- 有效持仓（缺省）：按藏品聚合，回收可选份数 -->
+          <div v-if="assetStatus === ''" v-loading="holdingsLoading">
+            <div v-for="h in holdings" :key="h.collectibleId" class="asset__row">
+              <img class="asset__cover" :src="h.cover" :alt="h.name" />
+              <div class="asset__info">
+                <div class="asset__name">{{ h.name }}</div>
+                <div class="asset__sub">有效持仓 {{ h.total }} 份</div>
+              </div>
+              <div class="asset__ops">
+                <el-button
+                  v-permission="'user:recover'"
+                  link
+                  type="danger"
+                  size="small"
+                  @click="openBatchRecover(h)"
+                >回收</el-button>
+              </div>
+            </div>
+            <el-empty v-if="!holdingsLoading && !holdings.length" description="暂无有效持仓" :image-size="60" />
+          </div>
+
+          <!-- 指定状态：逐份明细（持有中/寄售中/冻结中可单独回收某一份） -->
+          <div v-else v-loading="assetsLoading">
             <div v-for="a in assets.list" :key="a.id" class="asset__row">
               <img class="asset__cover" :src="a.cover" :alt="a.name" />
               <div class="asset__info">
@@ -315,11 +382,7 @@ async function onForceLogout() {
                 >回收</el-button>
               </div>
             </div>
-            <el-empty
-              v-if="!assetsLoading && !assets.list.length"
-              :description="assetStatus === '' ? '暂无有效持仓' : '该状态下暂无资产'"
-              :image-size="60"
-            />
+            <el-empty v-if="!assetsLoading && !assets.list.length" description="该状态下暂无资产" :image-size="60" />
             <div v-if="assets.total > 20" class="asset__pager">
               <el-pagination
                 v-model:current-page="assetPage"
@@ -383,6 +446,25 @@ async function onForceLogout() {
         </div>
       </template>
     </el-drawer>
+
+    <!-- 回收弹窗（选份数） -->
+    <el-dialog v-model="batchShow" title="回收藏品" width="440px" append-to-body :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="藏品">
+          <span>{{ batchForm.name }}（有效持仓 {{ batchForm.total }} 份）</span>
+        </el-form-item>
+        <el-form-item label="回收份数">
+          <el-input-number v-model="batchForm.quantity" :min="1" :max="batchForm.total" :step="1" step-strictly />
+        </el-form-item>
+        <el-form-item label="回收原因">
+          <el-input v-model="batchForm.reason" type="textarea" :rows="3" placeholder="回收原因（必填，写入审计日志）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchShow = false">取消</el-button>
+        <el-button type="danger" @click="onBatchRecoverSubmit">确认回收</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 

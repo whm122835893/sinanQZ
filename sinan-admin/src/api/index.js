@@ -226,6 +226,43 @@ export function recoverUserCollectible({ id, reason }) {
   return post('/users/recover', { user_collectible_id: id, reason })
 }
 
+/**
+ * 用户维度批量回收：回收该用户在某藏品下的指定份数（1~N）
+ * @param {number} userId 用户 ID
+ * @param {number} collectibleId 藏品 ID
+ * @param {number} quantity 回收份数（1~该藏品有效持仓份数）
+ * @param {string} reason 回收原因（必填）
+ */
+export function recoverUserCollectibleBatch({ userId, collectibleId, quantity, reason }) {
+  return post(`/users/${userId}/recover-batch`, { collectible_id: collectibleId, quantity, reason })
+}
+
+/** 用户有效持仓按藏品聚合（批量回收份数上限数据源） */
+export async function getUserHoldings(id) {
+  const res = await get(`/users/holdings/${id}`)
+  if (res.code !== 0) return res
+  const d = res.data || {}
+  return {
+    code: 0,
+    message: res.message,
+    data: {
+      list: (d.list || []).map((g) => ({
+        collectibleId: n(g.collectibleId),
+        name: s(g.collectibleName),
+        cover: s(g.collectibleImage),
+        total: n(g.total),
+        items: (g.items || []).map((it) => ({
+          id: n(it.id),
+          serial: s(it.serial),
+          status: s(it.status),
+          source: s(it.source),
+          acquiredTime: s(it.acquiredAt)
+        }))
+      }))
+    }
+  }
+}
+
 /** 用户资产列表（详情抽屉-回收入口数据源；params.status 缺省=有效持仓） */
 export async function getUserAssets(id, params = {}) {
   const res = await get(`/users/assets/${id}`, params)
@@ -460,6 +497,16 @@ export function airdropCollectible({ id, phones, quantity, reason = '运营空�
 /** 销毁库存 */
 export function destroyCollectible({ id, quantity, reason = '管理员销毁库存' }) {
   return post(`/collectibles/${id}/destroy`, { quantity, reason })
+}
+
+/** 全体回收：回收该藏品所有用户的有效持仓（持有/寄售中/转赠冻结），需管理员密码验证 */
+export function batchRecoverCollectible({ id, reason = '管理后台全体回收' }) {
+  return post(`/collectibles/${id}/batch-recover`, { reason })
+}
+
+/** 批量回收：按持仓用户手机号回收其在该藏品下的全部有效持仓（单份/多份） */
+export function recoverCollectibleByPhone({ id, phones, reason = '管理后台批量回收' }) {
+  return post(`/collectibles/${id}/recover-by-phone`, { phones, reason })
 }
 
 /** 新增配额 */

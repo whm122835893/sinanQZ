@@ -6,6 +6,8 @@ import {
   getCollectibleDetail,
   airdropCollectible,
   destroyCollectible,
+  batchRecoverCollectible,
+  recoverCollectibleByPhone,
   addQuota,
   toggleQuota,
   releaseCollectible,
@@ -97,6 +99,54 @@ async function onDestroyVerified() {
   if (res.code === 0) {
     ElMessage.success(`已销毁 ${res.data.destroyed} 份（不可恢复），生成销毁记录`)
     destroyShow.value = false
+    load()
+  }
+}
+
+// ---- 全体回收 ----
+const batchShow = ref(false)
+const batchPwdShow = ref(false)
+const batchReason = ref('')
+
+function onBatchRecoverSubmit() {
+  ElMessageBox.confirm(
+    `确认全体回收「${detail.value.name}」？将回收所有用户持有的该藏品有效持仓（含持有中/寄售中/转赠冻结），按来源回退库存计数器。操作不可撤销，是否继续？`,
+    '全体回收确认',
+    { type: 'warning', confirmButtonText: '确认回收', cancelButtonText: '取消' }
+  ).then(() => {
+    batchPwdShow.value = true
+  }).catch(() => {})
+}
+
+async function onBatchRecoverVerified() {
+  const res = await batchRecoverCollectible({ id, reason: batchReason.value })
+  if (res.code === 0) {
+    ElMessage.success(`全体回收完成：已回收 ${res.data.recovered} 份（涉及 ${res.data.users} 位用户），并写入审计日志`)
+    batchShow.value = false
+    load()
+  }
+}
+
+// ---- 批量回收（按手机号，单份/多份全量回收） ----
+const phoneShow = ref(false)
+const phonePwdShow = ref(false)
+const phoneForm = ref({ phones: '' })
+const phoneReason = ref('')
+
+function onPhoneRecoverSubmit() {
+  const phones = phoneForm.value.phones.split(/[\n,，\s]+/).filter(Boolean)
+  if (!phones.length) return ElMessage.warning('请输入至少一个持仓用户手机号')
+  if (phones.some((p) => !/^1\d{10}$/.test(p))) return ElMessage.warning('存在格式错误的手机号')
+  phonePwdShow.value = true
+}
+
+async function onPhoneRecoverVerified() {
+  const phones = phoneForm.value.phones.split(/[\n,，\s]+/).filter(Boolean)
+  const res = await recoverCollectibleByPhone({ id, phones, reason: phoneReason.value })
+  if (res.code === 0) {
+    const missing = res.data.missingPhones?.length
+    ElMessage.success(`已回收 ${res.data.recovered} 份（涉及 ${res.data.users} 位用户）${missing ? `；忽略 ${missing} 个未匹配手机号` : ''}，并写入审计日志`)
+    phoneShow.value = false
     load()
   }
 }
@@ -399,6 +449,8 @@ async function onResaleVerified() {
                 <el-button type="primary" plain @click="airShow = true">独立空投</el-button>
                 <el-button type="warning" plain @click="openSwap">置换</el-button>
                 <el-button type="danger" plain @click="destroyShow = true">销毁库存</el-button>
+                <el-button type="danger" plain @click="batchShow = true">全体回收</el-button>
+                <el-button type="danger" plain @click="phoneShow = true">批量回收</el-button>
                 <el-button plain @click="router.push(`/collectible/edit/${id}`)">编辑藏品</el-button>
                 <el-button type="primary" @click="releaseShow = true">发售配置</el-button>
               </div>
@@ -573,6 +625,48 @@ async function onResaleVerified() {
         <template #footer>
           <el-button @click="destroyShow = false">取消</el-button>
           <el-button type="danger" @click="onDestroySubmit">销毁（需密码验证）</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 全体回收弹窗 -->
+      <el-dialog v-model="batchShow" title="全体回收" width="480px" append-to-body :close-on-click-modal="false">
+        <el-form label-width="90px">
+          <el-form-item label="藏品名称">
+            <span>{{ detail.name }}（ID: {{ id }}）</span>
+          </el-form-item>
+          <el-form-item label="回收原因">
+            <el-input v-model="batchReason" type="textarea" :rows="2" placeholder="如：错发活动空投需全体回收（选填）" />
+          </el-form-item>
+        </el-form>
+        <el-alert type="error" :closable="false" show-icon title="将回收所有用户持有的该藏品有效持仓（持有中/寄售中/转赠冻结），按来源回退库存计数器；操作不可撤销，需管理员密码验证。" />
+        <template #footer>
+          <el-button @click="batchShow = false">取消</el-button>
+          <el-button type="danger" @click="onBatchRecoverSubmit">确认回收（需密码验证）</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 批量回收弹窗（按手机号，单份/多份） -->
+      <el-dialog v-model="phoneShow" title="批量回收" width="480px" append-to-body :close-on-click-modal="false">
+        <el-form label-width="90px">
+          <el-form-item label="藏品名称">
+            <span>{{ detail.name }}（ID: {{ id }}）</span>
+          </el-form-item>
+          <el-form-item label="持仓手机号">
+            <el-input
+              v-model="phoneForm.phones"
+              type="textarea"
+              :rows="4"
+              placeholder="批量手机号，换行/逗号分隔（回收每个手机号对应用户在该藏品下的全部有效持仓）"
+            />
+          </el-form-item>
+          <el-form-item label="回收原因">
+            <el-input v-model="phoneReason" type="textarea" :rows="2" placeholder="如：用户误操作多持需回收（选填）" />
+          </el-form-item>
+        </el-form>
+        <el-alert type="warning" :closable="false" show-icon title="按手机号回收对应用户在该藏品下的全部有效持仓（单份或多份），需管理员密码验证，操作不可撤销。" />
+        <template #footer>
+          <el-button @click="phoneShow = false">取消</el-button>
+          <el-button type="danger" @click="onPhoneRecoverSubmit">确认回收（需密码验证）</el-button>
         </template>
       </el-dialog>
 
@@ -785,6 +879,8 @@ async function onResaleVerified() {
       <!-- 密码验证 -->
       <PasswordVerify v-model="airPwdShow" title="空投验证" @verified="onAirdropVerified" />
       <PasswordVerify v-model="destroyPwdShow" title="销毁验证" @verified="onDestroyVerified" />
+      <PasswordVerify v-model="batchPwdShow" title="全体回收验证" @verified="onBatchRecoverVerified" />
+      <PasswordVerify v-model="phonePwdShow" title="批量回收验证" @verified="onPhoneRecoverVerified" />
       <PasswordVerify v-model="swapPwdShow" title="置换验证" @verified="onSwapVerified" />
       <PasswordVerify v-model="pricePwdShow" title="寄售管控验证" @verified="onResaleVerified" />
     </template>

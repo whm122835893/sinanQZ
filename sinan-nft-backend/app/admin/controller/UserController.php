@@ -416,7 +416,6 @@ class UserController extends BaseController
         $reason = trim((string) $this->request->param('reason', ''));
 
         $now = date('Y-m-d H:i:s');
-        $revert = ['source' => '', 'reverted' => false, 'counter' => ''];
 
         Db::startTrans();
         try {
@@ -436,30 +435,7 @@ class UserController extends BaseController
                 return $this->fail(4220, '仅持有中/寄售中/冻结中的藏品可强制回收（当前：' . $uc['status'] . '）');
             }
 
-            // 若在寄售：取消挂单
-            if ($uc['status'] === 'consigned') {
-                $listing = Db::name('resale_listings')->where('user_collectible_id', $ucid)
-                    ->where('status', 'selling')->find();
-                if ($listing) {
-                    Db::name('resale_listings')->where('id', $listing['id'])->update([
-                        'status'             => 'cancelled',
-                        'system_delisted'    => 1,
-                        'system_delisted_at' => $now,
-                        'delist_reason'      => '管理员强制回收：' . $reason,
-                        'updated_at'         => $now,
-                    ]);
-                }
-            }
-
-            // 持有记录 → recovered
-            Db::name('user_collectibles')->where('id', $ucid)->update([
-                'status'      => 'recovered',
-                'is_consigned' => 0,
-                'updated_at'  => $now,
-            ]);
-
-            // 按资产来源回退计数器（sold/airdropped_count/盲盒台账/配额）与 circulate（文档 4.3.4）
-            $revert = InventoryService::revertOnRecover($uc);
+            $revert = $this->recoverRow($uc, $reason, $now);
 
             Db::commit();
         } catch (\Throwable $e) {
@@ -476,6 +452,164 @@ class UserController extends BaseController
             'counterReverted' => (bool) $revert['reverted'],
             'counter'         => $revert['counter'],
         ], '藏品已强制回收');
+    }
+
+    /**
+     * POST /admin/user/recover-batch { collectible_id, quantity, reason }
+     * 用户维度批量回收：回收该用户在某藏品下的指定份数（1~N，N=有效持仓份数）
+     * 按 id 升序回收最早获得的有效持仓，逐份走 recoverRow；份数超限或计数器回退失败即整体回滚。
+     */
+    public function recoverBatch()
+    {
+        $userId = $this->positiveInt('id');
+        if ($userId === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $collectibleId = (int) $this->request->param('collectible_id');
+        $quantity      = (int) $this->request->param('quantity');
+        $reason        = trim((string) $this->request->param('reason', ''));
+
+        if ($collectibleId <= 0) {
+            return $this->fail(4220, 'collectible_id 参数不正确');
+        }
+        if ($quantity <= 0) {
+            return $this->fail(4220, '回收份数必须为大于 0 的整数');
+        }
+        if ($reason === '') {
+            return $this->fail(4220, '回收原因不能为空');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $available = 0;
+
+        Db::startTrans();
+        try {
+            $rows = Db::name('user_collectibles')
+                ->where('user_id', $userId)
+                ->where('collectible_id', $collectibleId)
+                ->whereIn('status', ['held', 'consigned', 'frozen'])
+                ->order('id')
+                ->lock(true)
+                ->select()->toArray();
+            $available = count($rows);
+            if (!$available) {
+                Db::rollback();
+                return $this->fail(4220, '该用户在该藏品下无有效持仓可回收');
+            }
+            if ($quantity > $available) {
+                Db::rollback();
+                return $this->fail(4220, "回收份数超过可回收上限（当前有效持仓 {$available} 份）");
+            }
+
+            $revertedCount = 0;
+            foreach (array_slice($rows, 0, $quantity) as $uc) {
+                $revert = $this->recoverRow($uc, $reason, $now);
+                if (!empty($revert['reverted'])) {
+                    $revertedCount++;
+                }
+            }
+
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '批量回收失败：' . $e->getMessage());
+        }
+
+        $this->audit('user', 'recover_batch', "批量回收用户（ID {$userId}）收藏品 x{$quantity} 份",
+            ['collectible_id' => $collectibleId, 'quantity' => $quantity, 'available' => $available, 'reason' => $reason],
+            'collectible', $collectibleId);
+
+        return $this->success([
+            'recovered'       => $quantity,
+            'available'       => $available,
+            'counterReverted' => $revertedCount,
+        ], "已回收 {$quantity} 份（回退计数器 {$revertedCount} 份）");
+    }
+
+    /**
+     * 事务内回收单条持仓（调用方已锁定并校验 status ∈ held/consigned/frozen）
+     * 取消寄售挂单/取消待确认转赠 → 置 recovered → 按来源回退计数器（文档 4.3.4）
+     * @return array revertOnRecover 的回退结果
+     */
+    private function recoverRow(array $uc, string $reason, string $now): array
+    {
+        // 寄售中：联动下架在售挂单
+        if ($uc['status'] === 'consigned') {
+            $listing = Db::name('resale_listings')->where('user_collectible_id', $uc['id'])
+                ->where('status', 'selling')->find();
+            if ($listing) {
+                Db::name('resale_listings')->where('id', $listing['id'])->update([
+                    'status'             => 'cancelled',
+                    'is_system_delisted' => 1,
+                    'system_delisted_at' => $now,
+                    'delist_reason'      => '管理员强制回收：' . $reason,
+                    'updated_at'         => $now,
+                ]);
+            }
+        }
+
+        // 转赠中（冻结）：取消待确认转赠
+        if ($uc['status'] === 'frozen') {
+            Db::name('transfers')
+                ->where('user_collectible_id', $uc['id'])
+                ->where('status', 'pending')
+                ->update(['status' => 'cancelled', 'updated_at' => $now]);
+        }
+
+        // 资产置已回收
+        Db::name('user_collectibles')->where('id', $uc['id'])->update([
+            'status'       => 'recovered',
+            'is_consigned' => 0,
+            'updated_at'   => $now,
+        ]);
+
+        return InventoryService::revertOnRecover($uc);
+    }
+
+    /**
+     * GET /admin/user/holdings/:id
+     * 用户有效持仓按藏品聚合（批量回收份数上限数据源）
+     * 每个藏品返回 total（有效持仓份数）与 items（每份 serial/status 明细）。
+     */
+    public function holdings(int $id)
+    {
+        if (!Db::name('users')->where('id', $id)->whereNull('deleted_at')->count()) {
+            return $this->fail(4040, '用户不存在');
+        }
+
+        $rows = Db::name('user_collectibles')->alias('uc')
+            ->join('collectibles c', 'c.id = uc.collectible_id', 'LEFT')
+            ->where('uc.user_id', $id)
+            ->whereIn('uc.status', ['held', 'consigned', 'frozen'])
+            ->field('uc.id, uc.serial, uc.status, uc.source, uc.acquired_at,
+                     c.id AS collectible_id, c.name AS collectible_name, c.image AS collectible_image')
+            ->order('uc.collectible_id', 'asc')
+            ->order('uc.id', 'asc')
+            ->select()->toArray();
+
+        $groups = [];
+        foreach ($rows as $r) {
+            $cid = (int) $r['collectible_id'];
+            if (!isset($groups[$cid])) {
+                $groups[$cid] = [
+                    'collectible_id'    => $cid,
+                    'collectible_name'  => $r['collectible_name'],
+                    'collectible_image' => $r['collectible_image'],
+                    'total'             => 0,
+                    'items'             => [],
+                ];
+            }
+            $groups[$cid]['total']++;
+            $groups[$cid]['items'][] = [
+                'id'          => (int) $r['id'],
+                'serial'      => $r['serial'],
+                'status'      => $r['status'],
+                'source'      => $r['source'],
+                'acquired_at' => $r['acquired_at'],
+            ];
+        }
+
+        return $this->success(['list' => camelize_keys(array_values($groups))]);
     }
 
     /**

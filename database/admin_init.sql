@@ -763,6 +763,8 @@ INSERT INTO `nft_admin_permissions` (`id`, `name`, `code`, `module`, `type`, `pa
 (410, '寄售开关/价格管控', 'collectible:market', 'collectible', 2, 400, '', '', 10),
 (411, '资格购配置', 'collectible:qualification', 'collectible', 2, 400, '', '', 11),
 (412, '库存审计', 'collectible:audit', 'collectible', 2, 400, '', '', 12),
+(413, '全体回收', 'collectible:batch-recover', 'collectible', 2, 400, '', '', 14),
+(414, '批量回收', 'collectible:phone-recover', 'collectible', 2, 400, '', '', 15),
 -- 盲盒管理
 (500, '盲盒管理', 'blindbox:list', 'blindbox', 1, 0, '/blindbox', 'Box', 5),
 (501, '盲盒详情', 'blindbox:detail', 'blindbox', 1, 500, '/blindbox/:id', '', 1),
@@ -855,7 +857,7 @@ INSERT INTO `nft_admin_role_permissions` (`role_id`, `permission_id`) VALUES
 (2, 100),
 (2, 200), (2, 201), (2, 202), (2, 203), (2, 204), (2, 205),
 (2, 300),
-(2, 400), (2, 401), (2, 402), (2, 403), (2, 404), (2, 405), (2, 406), (2, 407), (2, 408), (2, 409), (2, 410), (2, 411), (2, 412),
+(2, 400), (2, 401), (2, 402), (2, 403), (2, 404), (2, 405), (2, 406), (2, 407), (2, 408), (2, 409), (2, 410), (2, 411), (2, 412), (2, 413), (2, 414),
 (2, 500), (2, 501), (2, 502), (2, 503), (2, 504), (2, 505), (2, 506), (2, 507), (2, 508), (2, 509),
 (2, 600), (2, 601),
 (2, 800),

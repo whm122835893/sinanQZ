@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use app\admin\service\AdminLogService;
+use app\service\InventoryException;
+use app\service\InventoryService;
 use think\facade\Db;
 
 /**
@@ -845,6 +847,194 @@ class CollectibleController extends BaseController
             'fail'    => count($failList),
             'invalidUsers' => $invalidCount,
         ], '空投完成：' . $successUsers . ' 位用户共 ' . $success . ' 份' . ($invalidCount > 0 ? '（' . $invalidCount . ' 个无效用户已跳过）' : ''));
+    }
+
+    /**
+     * POST /admin/collectible/batch-recover { reason? }
+     * 全体回收：回收该藏品所有用户的有效持仓（持有中/寄售中/转赠冻结）
+     * 单一事务：取消寄售挂单/取消待确认转赠 → 置 recovered → 按来源回退计数器。
+     */
+    public function batchRecover()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $reason = trim((string) $this->request->param('reason', ''));
+        if ($reason === '') {
+            $reason = '管理后台全体回收';
+        }
+
+        $c = Db::name('collectibles')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$c) {
+            return $this->fail(4040, '藏品不存在');
+        }
+
+        $now  = date('Y-m-d H:i:s');
+
+        Db::startTrans();
+        try {
+            $rows = Db::name('user_collectibles')
+                ->where('collectible_id', $id)
+                ->whereIn('status', ['held', 'consigned', 'frozen'])
+                ->lock(true)
+                ->select()->toArray();
+            if (!$rows) {
+                Db::rollback();
+                return $this->fail(4220, '该藏品当前无有效持仓可回收');
+            }
+
+            $this->recoverHoldings($rows, $reason, $now);
+            Db::commit();
+        } catch (InventoryException $e) {
+            Db::rollback();
+            return $this->fail(4220, $e->getMessage());
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '全体回收失败：' . $e->getMessage());
+        }
+
+        $count     = count($rows);
+        $userCount = count(array_unique(array_column($rows, 'user_id')));
+        $this->audit('collectible', 'batch_recover', '全体回收藏品「' . $c['name'] . '」' . $count . ' 份（' . $userCount . ' 人）',
+            ['reason' => $reason], 'collectible', $id);
+
+        return $this->success(['recovered' => $count, 'users' => $userCount],
+            '已回收 ' . $count . ' 份（涉及 ' . $userCount . ' 位用户）');
+    }
+
+    /**
+     * POST /admin/collectible/recover-by-phone { phones[], reason? }
+     * 批量回收：按持仓用户手机号回收其在该藏品下的全部有效持仓（单份/多份）
+     */
+    public function recoverByPhone()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $reason = trim((string) $this->request->param('reason', ''));
+        if ($reason === '') {
+            $reason = '管理后台批量回收';
+        }
+
+        $phonesRaw = $this->request->param('phones', []);
+        if (!is_array($phonesRaw)) {
+            return $this->fail(4220, 'phones 参数格式不正确');
+        }
+        $phones = [];
+        foreach ($phonesRaw as $p) {
+            $p = trim((string) $p);
+            if ($p === '') {
+                continue;
+            }
+            if (!preg_match('/^1\d{10}$/', $p)) {
+                return $this->fail(4220, '手机号格式不正确：' . $p);
+            }
+            $phones[] = $p;
+        }
+        $phones = array_values(array_unique($phones));
+        if (!$phones) {
+            return $this->fail(4220, '请至少输入一个持仓用户手机号');
+        }
+
+        $c = Db::name('collectibles')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$c) {
+            return $this->fail(4040, '藏品不存在');
+        }
+
+        $userRows = Db::name('users')->whereIn('phone', $phones)->whereNull('deleted_at')
+            ->field('id, phone, uid')->select()->toArray();
+        $userIds = array_values(array_unique(array_map('intval', array_column($userRows, 'id'))));
+        if (!$userIds) {
+            return $this->fail(4040, '未找到匹配持仓用户（手机号不存在或已删除）');
+        }
+        $foundPhones   = array_column($userRows, 'phone');
+        $missingPhones = array_values(array_diff($phones, $foundPhones));
+
+        $now = date('Y-m-d H:i:s');
+
+        Db::startTrans();
+        try {
+            $rows = Db::name('user_collectibles')
+                ->where('collectible_id', $id)
+                ->whereIn('user_id', $userIds)
+                ->whereIn('status', ['held', 'consigned', 'frozen'])
+                ->lock(true)
+                ->select()->toArray();
+            if (!$rows) {
+                Db::rollback();
+                return $this->fail(4220, '相关用户在该藏品下无有效持仓可回收');
+            }
+
+            $this->recoverHoldings($rows, $reason, $now);
+            Db::commit();
+        } catch (InventoryException $e) {
+            Db::rollback();
+            return $this->fail(4220, $e->getMessage());
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '批量回收失败：' . $e->getMessage());
+        }
+
+        $count        = count($rows);
+        $affectedUsers = count(array_unique(array_column($rows, 'user_id')));
+        $this->audit('collectible', 'recover_by_phone', '批量回收藏品「' . $c['name'] . '」' . $count . ' 份（' . $affectedUsers . ' 人）',
+            ['reason' => $reason, 'phones' => $phones, 'missing_phones' => $missingPhones], 'collectible', $id);
+
+        $msg = '已回收 ' . $count . ' 份（涉及 ' . $affectedUsers . ' 位用户）';
+        if ($missingPhones) {
+            $msg .= '；忽略未匹配手机号 ' . count($missingPhones) . ' 个';
+        }
+        return $this->success(['recovered' => $count, 'users' => $affectedUsers, 'missingPhones' => $missingPhones], $msg);
+    }
+
+    /**
+     * 事务内回收藏品持有行（调用方已在事务中锁定并校验 status ∈ held/consigned/frozen）
+     * 逐行：取消寄售挂单/取消待确认转赠 → 置 recovered → 按来源回退计数器。
+     * 任一计数器回退失败即抛异常，由调用方整体回滚，保证守恒审计不漂移。
+     */
+    private function recoverHoldings(array $rows, string $reason, string $now): void
+    {
+        foreach ($rows as $uc) {
+            // 寄售中：联动下架在售挂单
+            if ($uc['status'] === 'consigned') {
+                $listing = Db::name('resale_listings')
+                    ->where('user_collectible_id', $uc['id'])
+                    ->where('status', 'selling')
+                    ->find();
+                if ($listing) {
+                    Db::name('resale_listings')->where('id', $listing['id'])->update([
+                        'status'             => 'cancelled',
+                        'is_system_delisted' => 1,
+                        'system_delisted_at' => $now,
+                        'delist_reason'      => '管理员强制回收：' . $reason,
+                        'updated_at'         => $now,
+                    ]);
+                }
+            }
+
+            // 转赠中（冻结）：取消待确认转赠（资产回收后转赠无法继续）
+            if ($uc['status'] === 'frozen') {
+                Db::name('transfers')
+                    ->where('user_collectible_id', $uc['id'])
+                    ->where('status', 'pending')
+                    ->update(['status' => 'cancelled', 'updated_at' => $now]);
+            }
+
+            // 资产置已回收
+            Db::name('user_collectibles')->where('id', $uc['id'])->update([
+                'status'       => 'recovered',
+                'is_consigned' => 0,
+                'updated_at'   => $now,
+            ]);
+
+            // 按来源回退藏品计数器（sold/airdropped_count/盲盒台账/配额）与 circulate
+            $revert = InventoryService::revertOnRecover($uc);
+            if (empty($revert['reverted'])) {
+                throw new InventoryException('回收资产计数器回退失败（资产ID：' . $uc['id'] . '，来源：' . ($revert['source'] ?? 'unknown') . '），已中止并整体回滚');
+            }
+        }
     }
 
     /**
