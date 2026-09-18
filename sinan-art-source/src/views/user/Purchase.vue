@@ -140,10 +140,10 @@ async function reject(o) {
 
 <style lang="scss" scoped>
 .purchase-tabs {
-  display: flex; gap: 10px; padding: 14px $page-padding; background: $color-card; margin-bottom: 8px;
+  display: flex; gap: 8px; padding: 14px $page-padding; margin-bottom: 8px;
   &__item {
-    flex: 1; text-align: center; padding: 8px 0; font-size: 14px; cursor: pointer;
-    border-radius: $radius-pill; background: $color-surface; color: $color-text-secondary;
+    flex: 1; text-align: center; padding: 10px 0; font-size: 14px; cursor: pointer;
+    border-radius: $radius-md; background: $color-surface; color: $color-text-secondary;
   }
   &__item.active { background: $color-primary; color: #fff; font-weight: 600; }
 }

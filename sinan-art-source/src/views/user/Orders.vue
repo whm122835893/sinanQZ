@@ -17,8 +17,8 @@ const { requireLogin } = useLoginGate()
 const tabs = [
   { key: 'all', label: '全部' },
   { key: 'done', label: '已完成' },
-  { key: 'resale', label: '市场购买' },
-  { key: 'release', label: '发售购买' },
+  { key: 'pending', label: '待支付' },
+  { key: 'cancelled', label: '已取消' },
   { key: 'airdrop', label: '空投' }
 ]
 const active = ref('all')
@@ -60,19 +60,33 @@ const fmtTime = (ts) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// 统一标记：给两类数据都加上 isAirdrop 标记，并按时间倒序合并
+const merged = computed(() => {
+  const orders = (orderStore.orders || []).map(o => ({ ...o, isAirdrop: false, kindText: o.kind === 'resale' ? '市场购买' : '发售购买' }))
+  const airdrops = (orderStore.airdrops || []).map(a => ({ ...a, isAirdrop: true, kindText: '官方空投' }))
+  const all = [...orders, ...airdrops]
+  all.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+  return all
+})
+
 // 当前 tab 对应的列表
 const list = computed(() => {
   if (!user.isLoggedIn) return []
-  if (active.value === 'airdrop') return orderStore.airdrops
-  if (active.value === 'all') return orderStore.orders
-  return orderStore.orders.filter(o => o.kind === active.value)
+  switch (active.value) {
+    case 'all':      return merged.value
+    case 'done':     return merged.value.filter(x => x.status === 'done' || x.status === 'issued')
+    case 'pending':  return merged.value.filter(x => x.status === 'pending')
+    case 'cancelled':return merged.value.filter(x => x.status === 'cancelled' || x.status === 'failed')
+    case 'airdrop':  return merged.value.filter(x => x.isAirdrop)
+    default:         return []
+  }
 })
 
 // 是否空列表
 const isEmpty = computed(() => list.value.length === 0)
 
 function action(o) {
-  if (active.value === 'airdrop') {
+  if (o.isAirdrop) {
     if (o.status === 'issued') showToast('空投藏品已存入我的库存')
     else if (o.status === 'failed') showToast('发放失败，请联系客服')
     else showToast('空投处理中')
@@ -90,7 +104,7 @@ function goDetail(o) {
 
 let cancellingId = null
 async function onCancel(o) {
-  if (cancellingId || o.status !== 'pending') return
+  if (cancellingId || o.status !== 'pending' || o.isAirdrop) return
   try {
     await showConfirmDialog({
       title: '取消订单',
@@ -125,54 +139,38 @@ async function onCancel(o) {
       >{{ tab.label }}</div>
     </div>
 
-    <!-- 普通订单列表 -->
-    <div class="mine-orders__list" v-if="!isEmpty && active !== 'airdrop'">
-      <div v-for="o in list" :key="o.id" class="order-card">
+    <!-- 统一列表 -->
+    <div class="mine-orders__list" v-if="!isEmpty">
+      <div v-for="o in list" :key="o.id" class="order-card" :class="{ 'airdrop-card': o.isAirdrop }">
         <div class="order-card__head">
-          <span class="order-card__no">订单号 {{ o.id }}</span>
-          <span class="order-card__status" :class="statusMeta[o.status].cls">
-            {{ o.status === 'pending' ? '待支付 ' + remainText(o) : statusMeta[o.status].text }}
+          <span class="order-card__no">{{ o.isAirdrop ? '空投单号 #' : '订单号 ' }}{{ o.id }}</span>
+          <span class="order-card__status" :class="statusMeta[o.status]?.cls || ''">
+            <template v-if="o.isAirdrop">
+              {{ statusMeta[o.status]?.text || o.status }}
+            </template>
+            <template v-else>
+              {{ o.status === 'pending' ? '待支付 ' + remainText(o) : statusMeta[o.status]?.text || o.status }}
+            </template>
           </span>
         </div>
         <div class="order-card__body" @click="goDetail(o)">
           <img class="order-card__cover" :src="o.cover" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
           <div class="order-card__info">
             <p class="order-card__name">{{ o.name }}</p>
-            <p class="order-card__sub">{{ o.kind === 'resale' ? '市场购买' : '发售购买' }}{{ o.no ? ' · 编号 #' + o.no : '' }} · ×{{ o.qty }}</p>
-            <p class="order-card__time">{{ fmtTime(o.createdAt) }}</p>
+            <p class="order-card__sub">
+              {{ o.kindText }}{{ o.isAirdrop ? '' : (o.no ? ' · 编号 #' + o.no : '') }} · ×{{ o.qty }}
+            </p>
+            <p class="order-card__time">{{ o.isAirdrop ? '发放于 ' : '' }}{{ fmtTime(o.createdAt) }}</p>
           </div>
-          <div class="order-card__price">
+          <div class="order-card__price" v-if="!o.isAirdrop">
             <span>合计</span>
             <b>¥{{ (o.price * o.qty).toFixed(2) }}</b>
           </div>
         </div>
         <div class="order-card__foot">
-          <button v-if="o.status === 'pending'" class="order-card__btn order-card__btn--ghost" :disabled="cancellingId === o.id" @click="onCancel(o)">
+          <button v-if="!o.isAirdrop && o.status === 'pending'" class="order-card__btn order-card__btn--ghost" :disabled="cancellingId === o.id" @click="onCancel(o)">
             {{ cancellingId === o.id ? '取消中...' : '取消订单' }}
           </button>
-          <button class="order-card__btn" @click="action(o)">查看藏品</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 空投记录列表 -->
-    <div class="mine-orders__list" v-if="!isEmpty && active === 'airdrop'">
-      <div v-for="o in list" :key="o.id" class="order-card airdrop-card">
-        <div class="order-card__head">
-          <span class="order-card__no">空投单号 #{{ o.id }}</span>
-          <span class="order-card__status" :class="statusMeta[o.status].cls">
-            {{ statusMeta[o.status]?.text || o.status }}
-          </span>
-        </div>
-        <div class="order-card__body" @click="goDetail(o)">
-          <img class="order-card__cover" :src="o.cover" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
-          <div class="order-card__info">
-            <p class="order-card__name">{{ o.name }}</p>
-            <p class="order-card__sub">官方空投 · ×{{ o.qty }}</p>
-            <p class="order-card__time">发放于 {{ fmtTime(o.createdAt) }}</p>
-          </div>
-        </div>
-        <div class="order-card__foot">
           <button class="order-card__btn" @click="goDetail(o)">查看藏品</button>
         </div>
       </div>
@@ -184,16 +182,12 @@ async function onCancel(o) {
 
 <style scoped lang="scss">
 .mine-orders__tabs {
-  display: flex; padding: 12px $page-padding; background: $color-card; gap: 24px;
-  border-bottom: 1px solid $color-border; overflow-x: auto;
+  display: flex; gap: 8px; padding: 14px $page-padding; margin-bottom: 8px;
   .mine-orders__tab {
-    font-size: 14px; color: $color-text-secondary; white-space: nowrap; cursor: pointer; position: relative; padding-bottom: 6px;
+    flex: 1; text-align: center; padding: 10px 0; font-size: 14px; cursor: pointer;
+    border-radius: $radius-md; background: $color-surface; color: $color-text-secondary;
   }
-  .mine-orders__tab.active { color: $color-text-primary; font-weight: 700; }
-  .mine-orders__tab.active::after {
-    content: ''; position: absolute; left: 50%; transform: translateX(-50%); bottom: 0;
-    width: 18px; height: 3px; border-radius: 2px; background: $color-primary;
-  }
+  .mine-orders__tab.active { background: $color-primary; color: #fff; font-weight: 600; }
 }
 
 .mine-orders__list { padding: 12px $page-padding; }
