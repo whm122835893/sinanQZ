@@ -18,7 +18,7 @@ use think\facade\Db;
  * 严谨性设计：
  * - 支付渠道密钥 config JSON 整体 AES 加密，接口仅回显脱敏摘要
  * - 短信/支付配置变更强制写审计日志
- * - 渠道编码白名单：balance/alipay/wechat/huifu/unionpay
+ * - 渠道编码白名单：balance/alipay/wechat/huifu/unionpay/yeepay
  */
 class SystemController extends BaseController
 {
@@ -98,7 +98,7 @@ class SystemController extends BaseController
     // ============================================================
 
     /** 渠道编码白名单 */
-    private const CHANNEL_CODES = ['balance', 'alipay', 'wechat', 'huifu', 'unionpay'];
+    private const CHANNEL_CODES = ['balance', 'alipay', 'wechat', 'huifu', 'unionpay', 'yeepay'];
 
     /**
      * GET /admin/system/payment-channels

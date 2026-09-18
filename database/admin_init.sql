@@ -508,8 +508,8 @@ CREATE TABLE `nft_sms_configs` (
 DROP TABLE IF EXISTS `nft_payment_channels`;
 CREATE TABLE `nft_payment_channels` (
   `id`             INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `channel_code`   VARCHAR(30)  NOT NULL                 COMMENT '渠道编码：balance/alipay/wechat/huifu/unionpay',
-  `channel_name`   VARCHAR(50)  NOT NULL                 COMMENT '渠道名称：余额/支付宝/微信支付/汇付天下/银联',
+  `channel_code`   VARCHAR(30)  NOT NULL                 COMMENT '渠道编码：balance/alipay/wechat/huifu/unionpay/yeepay',
+  `channel_name`   VARCHAR(50)  NOT NULL                 COMMENT '渠道名称：余额/支付宝/微信支付/汇付天下/银联/易宝支付',
   `fee_rate`       DECIMAL(5,2) NOT NULL DEFAULT 0.00    COMMENT '渠道手续费率（%）',
   `status`         TINYINT      NOT NULL DEFAULT 0      COMMENT '状态：1启用 0停用',
   `is_recommended` TINYINT(1)   NOT NULL DEFAULT 0      COMMENT '是否推荐展示：1是',
@@ -913,7 +913,8 @@ INSERT INTO `nft_payment_channels`
 (2, 'alipay',  '支付宝',  0.60, 0, 0, 2, '支付宝当面付/APP支付，需配置应用ID与私钥'),
 (3, 'wechat',  '微信支付', 0.60, 0, 0, 3, '微信Native/JSAPI支付，需配置商户号与API密钥'),
 (4, 'huifu',   '汇付天下', 0.38, 0, 0, 4, '汇付天下聚合支付（钱包brand默认汇付），需配置商户号'),
-(5, 'unionpay','银联支付', 0.50, 0, 0, 5, '银联在线支付，需配置商户号与证书');
+(5, 'unionpay','银联支付', 0.50, 0, 0, 5, '银联在线支付，需配置商户号与证书'),
+(6, 'yeepay',  '易宝支付', 0.50, 0, 0, 6, '易宝支付聚合支付，需配置商户号与密钥');
 
 -- 4.7 系统参数补充（风控/安全相关阈值，后台「系统配置」可改）
 INSERT INTO `nft_system_configs` (`config_key`, `config_value`, `description`) VALUES

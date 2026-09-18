@@ -285,7 +285,7 @@ const openTrendOption = computed(() => {
   }
 })
 
-const PAY_METHOD_NAME = { balance: '余额支付', alipay: '支付宝', wechat: '微信支付', huifu: '汇付天下', unionpay: '云闪付' }
+const PAY_METHOD_NAME = { balance: '余额支付', alipay: '支付宝', wechat: '微信支付', huifu: '汇付天下', unionpay: '云闪付', yeepay: '易宝支付' }
 </script>
 
 <template>

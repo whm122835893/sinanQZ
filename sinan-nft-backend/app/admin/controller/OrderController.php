@@ -177,7 +177,7 @@ class OrderController extends BaseController
     }
 
     /**
-     * POST /admin/order/mark-paid { id, payment_method(balance/alipay/wechat), transaction_no? }
+     * POST /admin/order/mark-paid { id, payment_method(balance/alipay/wechat/huifu/unionpay/yeepay), transaction_no? }
      * 标记支付成功（第三方支付确认到账场景；事务逻辑与 C 端支付完全一致）
      */
     public function markPaid()
@@ -187,8 +187,8 @@ class OrderController extends BaseController
             return $this->fail(4220, 'id 参数不正确');
         }
         $method = (string) $this->request->param('payment_method', 'alipay');
-        if (!in_array($method, ['balance', 'alipay', 'wechat'], true)) {
-            return $this->fail(4220, 'payment_method 仅允许 balance/alipay/wechat');
+        if (!in_array($method, \app\service\PaymentService::CODES, true)) {
+            return $this->fail(4220, 'payment_method 仅允许 balance/alipay/wechat/huifu/unionpay/yeepay');
         }
 
         Db::startTrans();

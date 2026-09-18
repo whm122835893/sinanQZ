@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 use app\service\ActivityRewardService;
+use app\service\PaymentService;
 
 use think\facade\Db;
 
@@ -198,11 +199,15 @@ class Orders extends BaseController
 
             Db::commit();
 
-            $payments = [
-                ['method' => 'balance', 'name' => '余额支付', 'balance' => (float) Db::name('wallets')->where('user_id', $userId)->value('available')],
-                ['method' => 'alipay', 'name' => '支付宝'],
-                ['method' => 'wechat', 'name' => '微信'],
-            ];
+            // 支付方式：读取后台「系统设置→支付渠道」启用的渠道（余额附当前可用余额）
+            $payments = [];
+            foreach (PaymentService::availableMethods() as $pm) {
+                $item = ['method' => $pm['method'], 'name' => $pm['name']];
+                if ($pm['method'] === 'balance') {
+                    $item['balance'] = (float) Db::name('wallets')->where('user_id', $userId)->value('available');
+                }
+                $payments[] = $item;
+            }
 
             return $this->success([
                 'orderNo'    => $orderNo,
@@ -218,6 +223,15 @@ class Orders extends BaseController
     }
 
     /**
+     * GET /api/payments/available
+     * C 端可用支付方式（后台「系统设置→支付渠道」启用的渠道，按 sort_order 排序）
+     */
+    public function paymentMethods()
+    {
+        return $this->success(PaymentService::availableMethods());
+    }
+
+    /**
      * POST /api/orders/:orderNo/pay
      * 支付订单
      */
@@ -229,7 +243,7 @@ class Orders extends BaseController
         $paymentPassword = $this->request->post('paymentPassword', '');
 
         if (!$userId) return $this->fail(2001, '未登录');
-        if (!in_array($method, ['balance', 'alipay', 'wechat'])) {
+        if (!in_array($method, PaymentService::CODES, true)) {
             return $this->fail(1001, '支付方式不支持');
         }
 
@@ -286,10 +300,12 @@ class Orders extends BaseController
                     'created_at'     => $now,
                 ]);
             } else {
-                // 第三方支付显式开关：PAY_MOCK=true 时 mock 成功；false 走真实收银台（当前未接入则拒绝）
-                if (!(bool) env('PAY_MOCK', true)) {
+                // 第三方支付：读取后台「系统设置→支付渠道」的启停/密钥配置，
+                // 开发联调（APP_DEBUG）mock 成功；生产在收银台 SDK 接入前明确拒绝
+                [$thirdOk, $thirdMsg] = PaymentService::payThirdParty($method, $orderNo);
+                if (!$thirdOk) {
                     Db::rollback();
-                    return $this->fail(5001, '第三方支付网关未接入，暂无法支付');
+                    return $this->fail(5001, $thirdMsg);
                 }
             }
 

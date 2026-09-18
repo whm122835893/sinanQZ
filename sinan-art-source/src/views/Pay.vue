@@ -9,6 +9,7 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useCountdown } from '@/utils/useCountdown'
 import { showToast } from 'vant'
+import request from '@/utils/request'
 
 const route = useRoute()
 const router = useRouter()
@@ -28,12 +29,25 @@ const unitPrice = ref('0')
 const orderNo = ref('')
 const listingId = ref(0)                // 挂单模式：寄售挂单 ID
 const batchTotal = ref(null)            // 批量模式：订单总额（不同地板价累加，非单价×数量）
-const payMethods = ['微信', '支付宝', '汇']
-const payMethod = ref('微信')
-// 支付方式展示名 → 后端 paymentMethod（balance/alipay/wechat）
-const methodMap = { 微信: 'wechat', 支付宝: 'alipay', 汇: 'balance' }
+const payMethods = ref([])   // [{ method, name }] 后台启用的支付渠道
+const payMethod = ref('')    // 渠道编码 balance/alipay/wechat/huifu/unionpay/yeepay
+// 从后台读取启用的支付渠道；失败时兜底为仅余额支付
+async function loadPayMethods() {
+  try {
+    const list = await request.get('/payments/available')
+    payMethods.value = Array.isArray(list) ? list : []
+  } catch (e) {
+    payMethods.value = [{ method: 'balance', name: '余额支付' }]
+  }
+  const preferred = payMethods.value.find((m) => m.method === 'wechat')
+    || payMethods.value.find((m) => m.method === 'alipay')
+    || payMethods.value.find((m) => m.method !== 'balance')
+    || payMethods.value.find((m) => m.method === 'balance')
+  if (preferred) payMethod.value = preferred.method
+}
 
 onMounted(async () => {
+  await loadPayMethods()
   if (!requireLogin(route.fullPath)) {
     // 未登录：弹出全局登录提示并返回上一页
     router.back()
@@ -48,7 +62,6 @@ onMounted(async () => {
       circulationCount: d.circulationCount
     }
     unitPrice.value = d.price
-    payMethod.value = '微信'
   } else if (isBatch.value) {
     const d = await store.fetchDetail(id)
     meta.value = {
@@ -61,7 +74,6 @@ onMounted(async () => {
     orderNo.value = no
     qty.value = Number(route.query.quantity) || 1
     batchTotal.value = Number(route.query.totalPrice) || 0
-    payMethod.value = '微信'
   } else {
     const res = await store.fetchResale(id)
     meta.value = res.meta
@@ -69,7 +81,6 @@ onMounted(async () => {
     unitPrice.value = target.price
     orderNo.value = target.no
     listingId.value = target.listingId || 0
-    payMethod.value = target.payment || '微信'
   }
   // 已持有数量（后端限购按累计计算，前端仅做前置提示）
   await user.fetchInventory().catch(() => {})
@@ -147,7 +158,7 @@ async function submit() {
       payNo = order.id
     }
     await orderStore.payOrder(payNo, {
-      paymentMethod: methodMap[payMethod.value] || 'wechat',
+      paymentMethod: payMethod.value || 'balance',
       paymentPassword: payPwd.value
     })
     stop()
@@ -227,13 +238,13 @@ function goHome() { router.replace('/') }
         <div class="pay-pay">
           <div
             v-for="m in payMethods"
-            :key="m"
+            :key="m.method"
             class="pay-pay__item"
-            :class="{ active: payMethod === m }"
-            @click="payMethod = m"
+            :class="{ active: payMethod === m.method }"
+            @click="payMethod = m.method"
           >
-            <span class="pay-pay__name">{{ m }}</span>
-            <i class="pay-pay__radio" :class="{ active: payMethod === m }"></i>
+            <span class="pay-pay__name">{{ m.name }}</span>
+            <i class="pay-pay__radio" :class="{ active: payMethod === m.method }"></i>
           </div>
         </div>
       </section>

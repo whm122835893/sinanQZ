@@ -56,6 +56,9 @@ Route::group('/api', function () {
     Route::get('resale/listings', 'Resale/pool');
     Route::get('resale/history',  'Resale/history');
 
+    // 支付方式（公开；后台启用的渠道自动返回）
+    Route::get('payments/available', 'Orders/paymentMethods');
+
     // 求购挂单（公开列表）
     Route::get('buy-requests', 'BuyRequest/list');
 

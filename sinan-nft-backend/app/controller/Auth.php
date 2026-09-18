@@ -6,6 +6,7 @@ use app\BaseController;
 
 use app\service\DrawCodeService;
 use app\service\JwtService;
+use app\service\SmsService;
 use think\facade\Db;
 
 /**
@@ -67,15 +68,20 @@ class Auth extends BaseController
             return $this->fail(1001, '验证码发送过于频繁，请稍后再试');
         }
 
-        // 短信网关显式开关：SMS_MOCK=true 本地 mock（不真发短信）；false 走真实网关（当前未接入则拒绝）
-        if (!(bool) env('SMS_MOCK', true)) {
-            return $this->fail(5001, '短信网关未接入，暂无法发送验证码');
-        }
-
-        // 生成 6 位验证码存库（bcrypt 哈希）
+        // 生成 6 位验证码
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $now  = date('Y-m-d H:i:s.v');
 
+        // 短信渠道：读取后台「系统设置→短信配置」（nft_sms_configs），替代原 SMS_MOCK 环境变量
+        // mock 渠道本地模拟；aliyun/tencent 走真实渠道（服务商 SDK 接入后即生效）
+        $smsConfig = SmsService::getConfig();
+        $content   = '【' . (string) ($smsConfig['signature'] ?: '司南') . '】您的验证码：' . $code . '，5分钟内有效。';
+        [$sent, $smsMsg] = SmsService::send($phone, $content, $smsConfig);
+        if (!$sent) {
+            return $this->fail(5001, $smsMsg);
+        }
+
+        // 发送成功后再落库（bcrypt 哈希，防明文泄库）
         Db::name('verification_codes')->insert([
             'phone'      => $phone,
             'scene'      => $scene,
@@ -86,8 +92,8 @@ class Auth extends BaseController
             'created_at' => $now,
         ]);
 
-        // 开发联调（APP_DEBUG=true）返回明文验证码；生产环境不返回
-        return $this->success(['debugCode' => env('APP_DEBUG') ? $code : null]);
+        // 仅 mock 渠道 + 开发联调（APP_DEBUG=true）返回明文验证码；真实渠道生产不返回
+        return $this->success(['debugCode' => (SmsService::isMock($smsConfig) && env('APP_DEBUG')) ? $code : null]);
     }
 
     /**

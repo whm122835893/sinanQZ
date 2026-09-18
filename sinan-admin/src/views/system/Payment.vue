@@ -18,7 +18,8 @@ const CODE_LABEL = {
   alipay: '支付宝',
   wechat: '微信支付',
   huifu: '汇付天下',
-  unionpay: '银联云闪付'
+  unionpay: '银联云闪付',
+  yeepay: '易宝支付'
 }
 
 onMounted(load)
@@ -278,6 +279,7 @@ async function onClearConfig(c) {
   &.is-wechat { background: #07c160; }
   &.is-huifu { background: #d4a574; }
   &.is-unionpay { background: #c00000; }
+  &.is-yeepay { background: #0086c9; }
 }
 
 .pm__channel-name {
