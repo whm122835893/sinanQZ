@@ -1,9 +1,34 @@
 <script setup>
-import { ref } from 'vue'
-import { getLoginLogs, getOperationLogs } from '@/api'
+import { ref, onMounted } from 'vue'
+import { getLoginLogs, getOperationLogs, getLogModules } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 
 const activeTab = ref('operation')
+
+// 操作日志的模块下拉筛选（接口 GET /permission/log-modules 提供选项）
+const moduleOptions = ref([{ value: '', label: '全部模块' }])
+const filters = ref([
+  {
+    field: 'module',
+    label: '模块',
+    options: moduleOptions,
+    placeholder: '选择模块'
+  }
+])
+
+onMounted(async () => {
+  try {
+    const res = await getLogModules()
+    if (res.code === 0 && Array.isArray(res.data)) {
+      moduleOptions.value = [
+        { value: '', label: '全部模块' },
+        ...res.data.map((m) => ({ value: m, label: m }))
+      ]
+    }
+  } catch (_) {
+    // 加载失败不阻塞页面，下拉退化为仅"全部模块"
+  }
+})
 
 // CSV 导出列定义
 const opExportColumns = [
@@ -32,7 +57,8 @@ const loginExportColumns = [
       <el-tab-pane label="操作日志" name="operation" lazy>
         <AdminTablePage
           :fetch="getOperationLogs"
-          search-placeholder="搜索管理员 / 模块 / 操作"
+          :filters="filters"
+          search-placeholder="搜索管理员 / 操作 / 明细"
           exportable
           export-filename="操作日志"
           :export-columns="opExportColumns"

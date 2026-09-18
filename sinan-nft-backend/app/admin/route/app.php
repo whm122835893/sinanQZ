@@ -294,6 +294,7 @@ Route::group('permission', function () {
     // 日志
     Route::get('operation-logs', 'PermissionController/operationLogs');
     Route::get('login-logs', 'PermissionController/loginLogs');
+    Route::get('log-modules', 'PermissionController/logModules');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'permission:admin');
 
 // ---------------------------------------------------------------------------

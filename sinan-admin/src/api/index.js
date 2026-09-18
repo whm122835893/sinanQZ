@@ -2596,6 +2596,10 @@ export async function getOperationLogs(params) {
     }
   }
 }
+
+export function getLogModules() {
+  return get('/permission/log-modules')
+}
 // ---- 平台清库（四步流：预览 → 输入确认文本 → 密码 → 短信验证码执行） ----
 
 export function getCleanupPreview() {
