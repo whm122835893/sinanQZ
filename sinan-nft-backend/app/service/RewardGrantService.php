@@ -281,7 +281,6 @@ class RewardGrantService
                 'collectible_id' => $collectibleId,
                 'quantity'    => 1,
                 'status'      => 'issued',
-                'reward_type' => $isBlindbox ? 'blindbox' : 'collectible',
                 'issued_at'   => $now,
                 'created_at'  => $now,
                 'updated_at'  => $now,
