@@ -7,6 +7,7 @@ import request from '@/utils/request'
 export const useOrderStore = defineStore('order', () => {
   const orders = ref([])          // 我的订单
   const purchaseOrders = ref([])  // 转赠记录
+  const airdrops = ref([])        // 空投记录
 
   // 后端时间字符串（YYYY-MM-DD HH:mm:ss[.v]）→ 时间戳
   const toTs = (s) => (s ? new Date(String(s).replace(/-/g, '/')).getTime() : 0)
@@ -86,6 +87,24 @@ export const useOrderStore = defineStore('order', () => {
     return purchaseOrders.value
   }
 
+  // 空投记录（GET /api/airdrops/mine）
+  async function fetchAirdrops() {
+    const res = await request.get('/airdrops/mine', { params: { page: 1, pageSize: 50 } })
+    airdrops.value = (res.list || []).map((a) => ({
+      id: String(a.id),
+      itemId: String(a.collectibleId),
+      cover: a.image,
+      name: a.name,
+      no: '',
+      price: 0,
+      qty: a.quantity,
+      status: a.status === 'issued' ? 'issued' : a.status === 'failed' ? 'failed' : 'pending',
+      createdAt: toTs(a.issuedAt || a.createdAt),
+      issuedAt: toTs(a.issuedAt),
+    }))
+    return airdrops.value
+  }
+
   // 待支付订单剩余支付时间 mm:ss（列表页倒计时展示）
   function remainText(o) {
     if (!o || !o.expiresAt) return ''
@@ -101,5 +120,5 @@ export const useOrderStore = defineStore('order', () => {
     await fetchPurchaseOrders()
   }
 
-  return { orders, purchaseOrders, createOrder, payOrder, cancelOrder, fetchOrders, fetchPurchaseOrders, remainText, handleTransfer }
+  return { orders, purchaseOrders, airdrops, createOrder, payOrder, cancelOrder, fetchOrders, fetchPurchaseOrders, fetchAirdrops, remainText, handleTransfer }
 })

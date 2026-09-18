@@ -566,4 +566,44 @@ class Orders extends BaseController
 
         return $this->paginate($items, $total, $p['page'], $p['pageSize']);
     }
+
+    /**
+     * GET /api/airdrops/mine
+     * 当前用户收到的空投发放记录（从 airdrop_records 表查）
+     * —— 展示在"我的订单"页面的「空投」tab 里
+     */
+    public function airdropMine()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $p = $this->pagination();
+
+        $query = Db::name('airdrop_records')->alias('ar')
+            ->join('collectibles c', 'c.id = ar.collectible_id')
+            ->where('ar.user_id', $userId)
+            ->order('ar.id', 'desc');
+
+        $total = (clone $query)->count();
+        $rows = $query->limit($p['offset'], $p['pageSize'])->field([
+            'ar.id', 'ar.task_id', 'ar.phone', 'ar.collectible_id',
+            'ar.quantity', 'ar.status', 'ar.issued_at', 'ar.created_at',
+            'c.name', 'c.image',
+        ])->select()->toArray();
+
+        $items = array_map(fn ($r) => [
+            'id'            => (int) $r['id'],
+            'taskId'        => (int) $r['task_id'],
+            'phone'         => $r['phone'],
+            'collectibleId' => (int) $r['collectible_id'],
+            'name'          => $r['name'],
+            'image'         => $r['image'],
+            'quantity'      => (int) $r['quantity'],
+            'status'        => $r['status'],   // issued / failed / pending
+            'issuedAt'      => $r['issued_at'],
+            'createdAt'     => $r['created_at'],
+        ], $rows);
+
+        return $this->paginate($items, $total, $p['page'], $p['pageSize']);
+    }
 }

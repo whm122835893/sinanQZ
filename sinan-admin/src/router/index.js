@@ -51,6 +51,7 @@ const routes = [
       { path: 'marketing/invite', name: 'invite', component: () => import('@/views/marketing/Invite.vue'), meta: { title: '邀请活动', perm: 'marketing' } },
       { path: 'marketing/register', name: 'register', component: () => import('@/views/marketing/Register.vue'), meta: { title: '注册活动', perm: 'marketing' } },
       { path: 'marketing/reward-records', name: 'reward-records', component: () => import('@/views/marketing/RewardRecords.vue'), meta: { title: '奖励名单', perm: 'marketing' } },
+      { path: 'marketing/airdrop-tasks', name: 'airdrop-tasks', component: () => import('@/views/marketing/AirdropTasks.vue'), meta: { title: '独立空投记录', perm: 'marketing' } },
       { path: 'marketing/priority', name: 'priority', component: () => import('@/views/marketing/Priority.vue'), meta: { title: '优先购管理', perm: 'marketing' } },
       { path: 'marketing/qualification', name: 'qualification', component: () => import('@/views/marketing/Qualification.vue'), meta: { title: '资格购管理', perm: 'marketing' } },
 

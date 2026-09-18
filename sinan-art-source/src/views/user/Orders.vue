@@ -18,7 +18,8 @@ const tabs = [
   { key: 'all', label: '全部' },
   { key: 'done', label: '已完成' },
   { key: 'resale', label: '市场购买' },
-  { key: 'release', label: '发售购买' }
+  { key: 'release', label: '发售购买' },
+  { key: 'airdrop', label: '空投' }
 ]
 const active = ref('all')
 
@@ -29,6 +30,7 @@ onMounted(() => {
   // 未登录统一弹全局登录提示
   requireLogin(route.fullPath)
   orderStore.fetchOrders().catch(() => {})
+  orderStore.fetchAirdrops().catch(() => {})
   timer = setInterval(() => {
     now.value = Date.now()
   }, 1000)
@@ -38,7 +40,9 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 const statusMeta = {
   pending: { text: '待支付', cls: 'pending' },
   done: { text: '已完成', cls: 'done' },
-  cancelled: { text: '已取消', cls: 'canceled' }
+  cancelled: { text: '已取消', cls: 'canceled' },
+  issued: { text: '已发放', cls: 'done' },
+  failed: { text: '发放失败', cls: 'canceled' }
 }
 
 // 待支付订单剩余支付时间 mm:ss
@@ -50,24 +54,38 @@ function remainText(o) {
 }
 
 const fmtTime = (ts) => {
+  if (!ts) return '-'
   const d = new Date(ts)
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// 当前 tab 对应的列表
 const list = computed(() => {
   if (!user.isLoggedIn) return []
+  if (active.value === 'airdrop') return orderStore.airdrops
   if (active.value === 'all') return orderStore.orders
   return orderStore.orders.filter(o => o.kind === active.value)
 })
 
+// 是否空列表
+const isEmpty = computed(() => list.value.length === 0)
+
 function action(o) {
-  if (o.status === 'pending') showToast('订单待支付，请在支付页完成支付')
-  else if (o.status === 'cancelled') showToast('订单已超时取消，库存已释放')
-  else showToast('藏品已存入我的库存')
+  if (active.value === 'airdrop') {
+    if (o.status === 'issued') showToast('空投藏品已存入我的库存')
+    else if (o.status === 'failed') showToast('发放失败，请联系客服')
+    else showToast('空投处理中')
+  } else {
+    if (o.status === 'pending') showToast('订单待支付，请在支付页完成支付')
+    else if (o.status === 'cancelled') showToast('订单已超时取消，库存已释放')
+    else showToast('藏品已存入我的库存')
+  }
 }
+
 function goDetail(o) {
-  router.push({ name: 'collection-detail', params: { id: o.itemId || o.id } })
+  if (!o.itemId) return
+  router.push({ name: 'collection-detail', params: { id: o.itemId } })
 }
 
 let cancellingId = null
@@ -107,7 +125,8 @@ async function onCancel(o) {
       >{{ tab.label }}</div>
     </div>
 
-    <div class="mine-orders__list" v-if="list.length">
+    <!-- 普通订单列表 -->
+    <div class="mine-orders__list" v-if="!isEmpty && active !== 'airdrop'">
       <div v-for="o in list" :key="o.id" class="order-card">
         <div class="order-card__head">
           <span class="order-card__no">订单号 {{ o.id }}</span>
@@ -136,7 +155,30 @@ async function onCancel(o) {
       </div>
     </div>
 
-    <AppEmpty v-else description="暂无相关订单" />
+    <!-- 空投记录列表 -->
+    <div class="mine-orders__list" v-if="!isEmpty && active === 'airdrop'">
+      <div v-for="o in list" :key="o.id" class="order-card airdrop-card">
+        <div class="order-card__head">
+          <span class="order-card__no">空投单号 #{{ o.id }}</span>
+          <span class="order-card__status" :class="statusMeta[o.status].cls">
+            {{ statusMeta[o.status]?.text || o.status }}
+          </span>
+        </div>
+        <div class="order-card__body" @click="goDetail(o)">
+          <img class="order-card__cover" :src="o.cover" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
+          <div class="order-card__info">
+            <p class="order-card__name">{{ o.name }}</p>
+            <p class="order-card__sub">官方空投 · ×{{ o.qty }}</p>
+            <p class="order-card__time">发放于 {{ fmtTime(o.createdAt) }}</p>
+          </div>
+        </div>
+        <div class="order-card__foot">
+          <button class="order-card__btn" @click="goDetail(o)">查看藏品</button>
+        </div>
+      </div>
+    </div>
+
+    <AppEmpty v-if="isEmpty" description="暂无相关记录" />
   </div>
 </template>
 
@@ -186,5 +228,9 @@ async function onCancel(o) {
     border-color: $color-border; color: $color-text-secondary;
     &:disabled { opacity: 0.5; cursor: not-allowed; }
   }
+}
+
+.airdrop-card {
+  .order-card__price { display: none; }
 }
 </style>

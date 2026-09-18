@@ -710,6 +710,15 @@ export function airdropBlindBox({ id, phones, quantity, reason = '运营空投' 
   return post('/blind-boxes/airdrop', { id, users: phones, quantity: quantity || 1, reason })
 }
 
+/** 独立空投任务列表（藏品/盲盒详情页空投按钮产生的发放日志） */
+export function getAirdropTasks(params) {
+  return get('/marketing/airdrop-tasks', params)
+}
+/** 独立空投某任务的发放明细 */
+export function getAirdropTaskRecords(taskId, params) {
+  return get(`/marketing/airdrop-tasks/${taskId}/records`, params)
+}
+
 /** 盲盒销毁 */
 export function destroyBlindBox({ id, quantity, reason = '管理员销毁库存' }) {
   return post(`/blind-boxes/${id}/destroy`, { quantity, reason })

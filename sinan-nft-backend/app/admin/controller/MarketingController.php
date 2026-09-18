@@ -1704,4 +1704,110 @@ class MarketingController extends BaseController
         $ts = strtotime($value);
         return $ts !== false ? date('Y-m-d H:i:s', $ts) : null;
     }
+
+    // ============================================================
+    // 四、独立空投发放历史（airdrop_tasks / airdrop_records）
+    //   与 airdrop_activities（活动空投配置表）完全独立，是藏品/盲盒详情页
+    //   "独立空投"按钮触发时写入的发放日志。
+    // ============================================================
+
+    /**
+     * GET /admin/marketing/airdrop-tasks
+     * 独立空投任务列表
+     */
+    public function airdropTaskList()
+    {
+        [$page, $pageSize] = $this->pageParams();
+
+        $query = Db::name('airdrop_tasks');
+
+        $targetType = $this->request->param('target_type');
+        if ($targetType !== null && $targetType !== '') {
+            $query->where('target_type', (int) $targetType);
+        }
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->where(function ($q) use ($keyword) {
+                $q->whereLike('task_no', "%$keyword%")
+                    ->whereOr('target_name', 'like', "%$keyword%");
+            });
+        }
+        if ($range = $this->dateRange()) {
+            $query->whereBetween('created_at', $range);
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
+
+        $targetTypes = [1 => '藏品', 2 => '盲盒'];
+        $items = array_map(function ($r) use ($targetTypes) {
+            return [
+                'id'              => (int) $r['id'],
+                'taskNo'          => $r['task_no'],
+                'targetType'      => (int) $r['target_type'],
+                'targetTypeLabel' => $targetTypes[(int) $r['target_type']] ?? '未知',
+                'targetId'        => (int) $r['target_id'],
+                'targetName'      => $r['target_name'],
+                'totalQuantity'   => (int) $r['total_quantity'],
+                'userCount'       => (int) $r['user_count'],
+                'successCount'    => (int) $r['success_count'],
+                'failCount'       => (int) $r['fail_count'],
+                'adminName'       => $r['admin_name'],
+                'ip'              => $r['ip'],
+                'createdAt'       => $r['created_at'],
+            ];
+        }, $rows);
+
+        return $this->paginate($items, $total, $page, $pageSize);
+    }
+
+    /**
+     * GET /admin/marketing/airdrop-tasks/:id/records
+     * 某一次独立空投任务的发放明细（每个用户一行：手机号、数量、状态）
+     */
+    public function airdropTaskRecords(int $id)
+    {
+        $task = Db::name('airdrop_tasks')->where('id', $id)->find();
+        if (!$task) {
+            return $this->fail(4040, '空投任务不存在');
+        }
+
+        [$page, $pageSize] = $this->pageParams();
+
+        $total = Db::name('airdrop_records')->where('task_id', $id)->count();
+        $rows = Db::name('airdrop_records')->where('task_id', $id)
+            ->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
+
+        // 批量查用户信息
+        $uids = array_unique(array_filter(array_column($rows, 'user_id')));
+        $users = [];
+        if ($uids) {
+            $users = Db::name('users')->whereIn('id', $uids)
+                ->column('id,uid,username', 'id');
+        }
+        // 批量查藏品名
+        $cids = array_unique(array_column($rows, 'collectible_id'));
+        $names = [];
+        if ($cids) {
+            $names = Db::name('collectibles')->whereIn('id', $cids)->column('name', 'id');
+        }
+
+        $items = array_map(function ($r) use ($users, $names) {
+            $u = $users[$r['user_id']] ?? [];
+            return [
+                'id'                => (int) $r['id'],
+                'userId'            => (int) ($r['user_id'] ?? 0),
+                'phone'             => $r['phone'],
+                'uid'               => $u['uid'] ?? '',
+                'username'          => $u['username'] ?? '',
+                'collectibleId'     => (int) $r['collectible_id'],
+                'collectibleName'   => $names[$r['collectible_id']] ?? '-',
+                'quantity'          => (int) $r['quantity'],
+                'status'            => $r['status'],
+                'issuedAt'          => $r['issued_at'],
+            ];
+        }, $rows);
+
+        return $this->paginate($items, $total, $page, $pageSize);
+    }
 }

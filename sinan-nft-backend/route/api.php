@@ -87,6 +87,7 @@ Route::group('/api', function () {
         Route::post('orders/callback',        'Orders/callback');
         Route::post('orders/:orderNo/cancel', 'Orders/cancel');
         Route::get('orders',                  'Orders/myList');
+        Route::get('airdrops/mine',           'Orders/airdropMine');
 
         // 寄售
         Route::post('resale/listings',             'Resale/create');

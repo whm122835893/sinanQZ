@@ -201,6 +201,9 @@ Route::group('marketing', function () {
     Route::get('reward-records', 'MarketingController/rewardRecords');
     Route::get('reward-records/export', 'MarketingController/rewardRecordsExport');
     Route::post('reward-records/issue', 'MarketingController/rewardRecordsIssue')->middleware(AdminPermission::class, 'marketing:airdrop');
+    // 独立空投发放历史（任务列表 + 任务明细）—— 藏品/盲盒详情页的"独立空投"按钮产生的日志
+    Route::get('airdrop-tasks', 'MarketingController/airdropTaskList');
+    Route::get('airdrop-tasks/:id/records', 'MarketingController/airdropTaskRecords');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'marketing:priority:list');
 
 // ---------------------------------------------------------------------------
