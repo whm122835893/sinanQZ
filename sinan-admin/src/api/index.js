@@ -2041,6 +2041,34 @@ export function saveBanner(payload) {
 }
 
 // ============================================================
+// 协议管理（3 份：用户服务协议 / 隐私政策 / 数字藏品购买及持有须知）
+// 存储于 nft_site_settings，按 setting_key 区分：
+//   agreement_user    用户服务协议
+//   agreement_privacy 隐私政策
+//   agreement_digital 数字藏品购买及持有须知
+// ============================================================
+
+export async function getAgreements() {
+  const res = await get('/cms/agreements')
+  if (res.code !== 0) return res
+  return {
+    code: 0,
+    message: res.message,
+    data: (res.data || []).map((a) => ({
+      key: a.key,
+      name: a.name,
+      content: a.content || '',
+      exists: !!a.exists,
+      updatedAt: a.updated_at || a.updatedAt || null
+    }))
+  }
+}
+
+export function saveAgreement(key, content) {
+  return put(`/cms/agreements/${key}`, { content })
+}
+
+// ============================================================
 // 分类管理（scene=market 市场二级分类 / artifact 文物展览分类）
 // ============================================================
 

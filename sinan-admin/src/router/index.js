@@ -69,6 +69,7 @@ const routes = [
       { path: 'content/community', name: 'community', component: () => import('@/views/content/Community.vue'), meta: { title: '社区管理', perm: 'content' } },
       { path: 'content/artifacts', name: 'artifacts', component: () => import('@/views/content/Artifacts.vue'), meta: { title: '文物展馆', perm: 'content' } },
       { path: 'content/decoration', name: 'decoration', component: () => import('@/views/content/Decoration.vue'), meta: { title: '站点装修', perm: 'content' } },
+      { path: 'content/agreement', name: 'agreement', component: () => import('@/views/content/Agreements.vue'), meta: { title: '协议管理', perm: 'content' } },
 
       // ---- 区块链 ----
       { path: 'chain', name: 'chain', component: () => import('@/views/chain/Index.vue'), meta: { title: '链上交互', perm: 'chain' } },
