@@ -9,7 +9,6 @@ import AppTag from '@/components/AppTag.vue'
 const router = useRouter()
 const store = useNoticeStore()
 
-// MOCK_REPLACED: 原为内联 mock 公告，现从后端拉取（GET /api/announcements）
 onMounted(() => {
   store.fetchNotices().catch(() => {})
 })

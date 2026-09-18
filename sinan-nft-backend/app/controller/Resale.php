@@ -235,6 +235,156 @@ class Resale extends BaseController
     }
 
     /**
+     * GET /api/resale/batch-buy/config
+     * 当前用户批量购买配置（是否可用 + 单次最大数量）
+     */
+    public function batchBuyConfig()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $enabled = (string) Db::name('system_configs')->where('config_key', 'batch_buy_enabled')->value('config_value');
+        $scope   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_scope')->value('config_value');
+        $limit   = (int) Db::name('system_configs')->where('config_key', 'batch_buy_limit')->value('config_value');
+        $users   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_users')->value('config_value');
+
+        $available = false;
+        if ($enabled === '1' && $limit > 0) {
+            if ($scope === 'all') {
+                $available = true;
+            } elseif ($scope === 'specific') {
+                $phone = Db::name('users')->where('id', $userId)->value('phone');
+                $phoneSet = array_filter(array_map('trim', preg_split('/[\r\n]+/', $users)));
+                $available = in_array($phone, $phoneSet, true);
+            }
+        }
+
+        return $this->success([
+            'enabled' => $available,
+            'limit'   => $available ? $limit : 0,
+        ]);
+    }
+
+    /**
+     * POST /api/resale/batch-buy
+     * 批量购买：从当前地板价（最低价）起、按价格升序锁定最多 limit 份在售挂单，
+     * 生成一个市场批量订单（待支付）。实际锁定数量=min(限度, 可购挂单数)。
+     */
+    public function batchBuy()
+    {
+        $userId = $this->userId();
+        if (!$userId) return $this->fail(2001, '未登录');
+
+        $collectibleId = $this->intParam('collectibleId');
+        $quantity      = $this->intParam('quantity', 0);
+        if ($collectibleId <= 0 || $quantity <= 0) {
+            return $this->fail(1001, '参数错误');
+        }
+
+        // 实名前置（与下单一致）
+        $isRealname = Db::name('users')->where('id', $userId)->value('is_realname');
+        if ((int) $isRealname !== 1) return $this->fail(1001, '请先完成实名认证');
+
+        // 批量购买开关 + 限度（全体用户 / 指定用户）
+        $enabled = (string) Db::name('system_configs')->where('config_key', 'batch_buy_enabled')->value('config_value');
+        $scope   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_scope')->value('config_value');
+        $limit   = (int) Db::name('system_configs')->where('config_key', 'batch_buy_limit')->value('config_value');
+        $users   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_users')->value('config_value');
+
+        if ($enabled !== '1' || $limit <= 0) return $this->fail(1001, '批量购买未开启');
+        if ($scope === 'specific') {
+            $phone = Db::name('users')->where('id', $userId)->value('phone');
+            $phoneSet = array_filter(array_map('trim', preg_split('/[\r\n]+/', $users)));
+            if (!in_array($phone, $phoneSet, true)) return $this->fail(1001, '您无批量购买权限');
+        }
+        if ($quantity > $limit) $quantity = $limit;
+
+        Db::startTrans();
+        try {
+            $now = date('Y-m-d H:i:s.v');
+
+            // 从地板价起按价格升序锁定最多 quantity 份在售挂单（排除自己）
+            $listings = Db::name('resale_listings')
+                ->where('collectible_id', $collectibleId)
+                ->where('status', 'selling')
+                ->where('seller_id', '<>', $userId)
+                ->order('price', 'asc')
+                ->order('id', 'asc')
+                ->limit($quantity)
+                ->lock(true)
+                ->select()
+                ->toArray();
+
+            if (!$listings) {
+                Db::rollback();
+                return $this->fail(1002, '暂无可购买的挂单');
+            }
+
+            $listingIds = [];
+            $totalPrice = '0';
+            $floorPrice = null;
+            foreach ($listings as $l) {
+                // 资产校验：仍属卖家且寄售中
+                $uc = Db::name('user_collectibles')
+                    ->where('id', $l['user_collectible_id'])
+                    ->where('user_id', $l['seller_id'])
+                    ->where('status', 'consigned')
+                    ->lock(true)
+                    ->find();
+                if (!$uc) {
+                    Db::rollback();
+                    return $this->fail(3001, '部分藏品状态异常，请重试');
+                }
+                $listingIds[] = (int) $l['id'];
+                $totalPrice = bcadd($totalPrice, (string) $l['price'], 2);
+                if ($floorPrice === null) $floorPrice = (float) $l['price'];
+            }
+
+            $count = count($listingIds);
+            if ($count < 1) {
+                Db::rollback();
+                return $this->fail(1002, '暂无可购买的挂单');
+            }
+
+            // 锁定所有选中挂单（置 sold 防止被其他买家重复下单）
+            Db::name('resale_listings')
+                ->whereIn('id', $listingIds)
+                ->where('status', 'selling')
+                ->update(['status' => 'sold', 'updated_at' => $now]);
+
+            // 创建批量市场订单（source=market；batch_listing_ids 记录全部挂单）
+            $orderNo = gen_order_no();
+            Db::name('orders')->insert([
+                'order_no'           => $orderNo,
+                'user_id'            => $userId,
+                'collectible_id'     => $collectibleId,
+                'resale_listing_id'  => $listingIds[0],
+                'batch_listing_ids'  => implode(',', $listingIds),
+                'unit_price'         => $floorPrice,
+                'quantity'           => $count,
+                'total_price'        => $totalPrice,
+                'status'             => 'pending',
+                'source'             => 'market',
+                'created_at'         => $now,
+                'expires_at'         => date('Y-m-d H:i:s.v', time() + 300),
+                'updated_at'         => $now,
+            ]);
+
+            Db::commit();
+            return $this->success([
+                'orderNo'    => $orderNo,
+                'quantity'   => $count,
+                'floorPrice' => (float) $floorPrice,
+                'totalPrice' => (float) $totalPrice,
+                'expiresAt'  => date('Y-m-d H:i:s.v', time() + 300),
+            ]);
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5001, '批量下单失败：' . $e->getMessage());
+        }
+    }
+
+    /**
      * GET /api/resale/listings
      * 市场挂单池
      */

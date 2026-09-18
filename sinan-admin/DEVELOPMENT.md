@@ -19,7 +19,7 @@
 | 图表 | ECharts 6（`EChart.vue` 通用容器） | ^6.1.0 |
 | 日期 | dayjs | ^1.11.11 |
 | 金额 | decimal.js（金额字符串传输） | ^10.4.3 |
-| 请求 | axios（实例已建，联调启用） | ^1.7.2 |
+| 请求 | axios（实例已建，接入真实后端） | ^1.7.2 |
 | 样式 | SCSS（变量 + CSS 变量双层令牌） | ^1.77.4 |
 
 > v1.0 的 Vant 移动端风格已在 v2.0 全面迁移为 Element Plus 桌面端（Soybean Admin 式布局），`vant` 依赖已无引用，可在下次 `npm prune` 时移除。
@@ -34,8 +34,7 @@ sinan-admin/
 └── src/
     ├── main.js               # 注册 Element Plus / icons / Pinia / Router
     ├── App.vue               # 根容器（含登录页判断）
-    ├── api/index.js          # 全部 API（当前 Mock 实现，结构对齐后端 /admin/api/v1）
-    ├── mock/db.js            # 内存数据库（联调后整体移除）
+    ├── api/index.js          # 全部 API（真实联调，调用后端 /api/admin/** 并做字段适配）
     ├── router/
     │   ├── index.js          # 路由表 + 登录守卫 + 权限码校验（403 拦截）
     │   └── menu.js           # 侧边栏菜单配置（菜单即路由，perm 权限码）
@@ -48,7 +47,7 @@ sinan-admin/
     ├── components/           # 通用组件（见 §4.4）
     ├── directive/            # v-permission 按钮权限指令
     ├── utils/
-    │   ├── request.js        # http 实例 + mock() + queryList() + mockWrite()
+    │   ├── request.js        # axios 实例 + 响应归一 + 分页参数归一 + 兼容导出
     │   ├── maps.js           # 全部业务状态字典（30+ 字典）
     │   └── format.js         # 时间/金额/脱敏格式化 + stockPool/blindBoxPool 库存公式
     ├── styles/               # variables / mixins / global（设计令牌 + EP 变量覆盖）
@@ -64,23 +63,22 @@ npm run dev        # vite --host，默认 5173
 npm run build      # 产物 dist/
 ```
 
-演示账号：`admin / admin123`（见 `src/api/index.js` login 的 Mock 逻辑）。敏感操作密码验证 Mock 同为 `admin123`。
+演示账号：`admin / admin123`（超级管理员，登录页默认预填；真实账号以 `nft_admin_users` 为准）。敏感操作密码走后端 `/auth/verify-password` 校验。
 
 ---
 
 ## 2. 架构设计
 
-### 2.1 请求层（当前 Mock、预留联调）
+### 2.1 请求层（后端联调）
 
-`src/utils/request.js` 定义了三层结构：
+`src/utils/request.js` 已完全切换为真实后端：
 
-- `http`：axios 实例，`baseURL: '/api/admin'`，请求拦截器自动附加 `Authorization: Bearer <token>`（token 存于 `localStorage.sinan_admin_token`）。
-- `mock(handler, delay)` / `mockWrite(handler, delay)`：模拟响应，统一返回 `{ code, message, data }`，异常被捕获为 `code: 1`（写操作延迟更低）。
-- `queryList(list, params)`：通用列表查询 —— `keyword` 多字段模糊、其余字段等值过滤（`'all'/''` 跳过）、`page/size` 分页，返回 `{ list, total, page, size }`。
+- `http`：axios 实例，`baseURL: '/api/admin'`（vite 代理 → ThinkPHP admin 应用），请求拦截器自动附加 `Authorization: Bearer <token>`（token 存于 `localStorage.sinan_admin_token`）。
+- 响应归一：后端 `code === 200` → 前端 `{ code: 0 }`，视图层判定不变；401 清会话跳登录，业务错误统一弹出（`_silent` 请求除外）。
+- 分页参数归一：`size` → `pageSize`，自动剔除 `'all'/''/undefined/null` 占位值。
+- 便捷方法：`get/post/put/del/http` + `getSilent`（静默 GET）+ 兼容默认导出（axios 风格，剥 `/admin` 前缀并解包 `data`）。
 
 **响应约定**：`code === 0` 成功；页面层以 `res.code === 0` 判定后执行 `ElMessage.success` / 局部刷新。
-
-**联调切换**：`src/api/index.js` 中每个函数把 `mock(() => …)` 替换为 `http.get/post(...)` 即可，函数签名与返回结构保持不变；`mock/db.js` 届时整体删除。
 
 ### 2.2 路由与权限（5 角色体系）
 
@@ -259,7 +257,6 @@ cancelled(已取消)  refunding(退款中) ──审批──> refunded(已退�
 | `StatCard.vue` | 指标卡：icon + 数值 + 单位 + 环比趋势（tone 四色） |
 | `EChart.vue` | ECharts 通用容器：传入 option 自动渲染，窗口自适应 |
 | `StatusTag.vue` | 状态标签：`(value, map)` → el-tag plain |
-| `AdminListPage.vue` / `DetailSheet.vue` | v1.0 移动端遗留组件（已无引用，可清理） |
 
 ---
 
@@ -398,18 +395,17 @@ Step 3: 白名单 ∨ 持有资格藏品 ∨ 累计签到达标 ∨ 累计邀请
 
 - 全部敏感操作（空投/销毁/清库/强制回收/寄售开关关闭）二次确认 + 密码验证 + 审计日志。
 - 实名信息：列表脱敏（maskPhone/maskName/maskIdNo），完整查看需密码验证并记录审计。
-- 登录安全：失败计数自动锁定、2FA、IP 白名单（Mock 演示）。
+- 登录安全：失败计数自动锁定、2FA、IP 白名单。
 
 ---
 
-## 8. 联调指南（Mock → 真实后端）
+## 8. 后端对接（已完成）
 
-1. **替换 API**：`src/api/index.js` 中 `mock(...)` → `http.get/http.post`，路径约定 `/admin/api/v1/**`；`http` 实例与 Token 注入已就绪。
-2. **删除 Mock**：移除 `src/mock/db.js` 及 `request.js` 中 `mock/mockWrite/queryList/nextId`。
-3. **响应结构**：后端返回 `{ code, message, data }`，列表接口 `data = { list, total, page, size }`。
-4. **鉴权**：登录后 `adminStore.setSession({ token, admin })`；Admin JWT 与 C 端 JWT 完全隔离（不同密钥）。
-5. **动态菜单**：`router/menu.js` 可替换为后端下发 menus + permissions（权限树 key 已与路由对齐）。
-6. **强校验移交后端**：库存恒等式、盲盒/抽奖概率合计、资格购判定、退款资金流、审计日志落库。
+- API 层已全部切换为真实后端（`/api/admin/**`）；`src/mock/` 目录与 `mock/mockWrite/queryList/nextId` 已移除。
+- 响应结构：后端 `{ code, message, data }`；列表接口 `data = { list, total, page, size }`。
+- 鉴权：登录后 `adminStore.setSession({ token, admin })`；Admin JWT 与 C 端 JWT 完全隔离（不同密钥）。
+- 权限：`router/menu.js` 后端下发 menus + permissions（权限树 key 已与路由对齐）。
+- 强校验后置：库存恒等式、盲盒/抽奖概率合计、资格购判定、退款资金流、审计日志落库均由后端执行。
 
 ---
 
@@ -420,5 +416,5 @@ Step 3: 白名单 ∨ 持有资格藏品 ∨ 累计签到达标 ∨ 累计邀请
 - 危险操作（冻结/售罄/销毁/退款/下架/删除）必须 `ElMessageBox.confirm` 二次确认；涉及资产的加 `PasswordVerify`。
 - 金额展示统一 `fmtMoney`（千分位 + 2 位小数），数字 `fmtNumber`，空值显示 `-`；敏感个人信息用 `maskPhone/maskName/maskIdNo` 脱敏。
 - 组件命名：业务卡片用 `adm-card` + `__block` BEM 扩展；页面容器一律 `adm-page`。
-- 状态字段一律小写下划线（`realnameStatus` 等业务字段沿用 Mock 命名，联调时由后端转换层对齐）。
+- 状态字段一律小写下划线；后端 snake_case 字段在 `api/index.js` 适配层统一转 camelCase。
 - 图表：统一走 `EChart.vue` 容器，折线渐变填充、饼图明亮配色（主色/鎏金/蓝/绿/橙循环）。

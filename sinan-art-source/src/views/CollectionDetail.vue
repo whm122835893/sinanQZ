@@ -162,8 +162,6 @@ function onPwdKey(k) {
   if (payPwd.value.length === 6) setTimeout(pwdFlow.value === 'open' ? doOpenBlindbox : doConsign, 150)
 }
 
-// MOCK_REPLACED: 原为本地校验交易密码（123456）+ 本地锁定编号，
-// 现走后端 POST /api/resale/listings（校验交易密码，资产置 consigned 并生成挂单）
 async function doConsign() {
   consigning.value = true
   try {
@@ -193,8 +191,6 @@ const showOpenResult = ref(false)
 const revealItem = ref(null)
 const opening = ref(false)
 
-// MOCK_REPLACED: 原为本地 reveals 常量随机开盒，现走后端 POST /api/blind-boxes/open
-// （后端校验交易密码并以 random_int 加权抽取），此处先弹交易密码键盘
 function onOpenBlindbox() {
   if (opening.value) return
   if (!requireLogin(route.fullPath)) return
@@ -226,6 +222,62 @@ async function doOpenBlindbox() {
 function onOpenResultDone() {
   showOpenResult.value = false
   router.back()
+}
+
+/* ---------- 转赠流程 ---------- */
+const showTransfer = ref(false)
+const transferStep = ref('phone')   // phone 输入手机号 / pwd 输入交易密码
+const toPhone = ref('')
+const transferPwd = ref('')
+const transferring = ref(false)
+
+// 转赠开关（后端 is_transferable，关闭时隐藏入口）
+const transferEnabled = computed(() => !!(detail.value && detail.value.isTransferable))
+// 受赠方手机号是否合法
+const canSubmitTransferPhone = computed(() => /^1\d{10}$/.test(toPhone.value.trim()))
+
+function openTransfer() {
+  if (!requireLogin(route.fullPath)) return
+  if (isNoLockedNow.value) { showToast('该藏品正在寄售中，不可转赠'); return }
+  toPhone.value = ''
+  transferPwd.value = ''
+  transferStep.value = 'phone'
+  showTransfer.value = true
+}
+function closeTransfer() {
+  showTransfer.value = false
+  transferStep.value = 'phone'
+  transferPwd.value = ''
+}
+function onTransferNext() {
+  if (!canSubmitTransferPhone.value) { showToast('请输入正确的 11 位手机号'); return }
+  transferStep.value = 'pwd'
+  transferPwd.value = ''
+}
+function onTransferPwdKey(k) {
+  if (k === '') return
+  if (k === '⌫') { transferPwd.value = transferPwd.value.slice(0, -1); return }
+  if (transferPwd.value.length >= 6) return
+  transferPwd.value += k
+  if (transferPwd.value.length === 6) setTimeout(doTransfer, 150)
+}
+async function doTransfer() {
+  transferring.value = true
+  try {
+    await userStore.transfer({
+      userCollectibleId: userStore.findUserCollectibleId(route.params.id, serialNo.value),
+      toPhone: toPhone.value.trim(),
+      paymentPassword: transferPwd.value
+    })
+    showTransfer.value = false
+    showToast('转赠已发起，等待对方接收')
+  } catch (e) {
+    showToast(e.message || '转赠失败')
+    transferPwd.value = ''
+    transferStep.value = 'phone'
+  } finally {
+    transferring.value = false
+  }
 }
 
 /* ---------- 藏品分享海报（Canvas 生成） ---------- */
@@ -400,11 +452,12 @@ async function drawPosterFallback() {
       <button class="detail-buy__btn detail-buy__btn--disabled" disabled>立即寄售</button>
       <button class="detail-buy__btn" @click="onOpenBlindbox">{{ opening ? '开启中…' : '开启盲盒' }}</button>
     </div>
-    <!-- 仓库：普通藏品 → 已锁定(寄售中) / 冷却中 / 立即寄售 -->
+    <!-- 仓库：普通藏品 → 已锁定(寄售中) / 冷却中 / 立即寄售 + 转赠 -->
     <div class="detail-buy safe-bottom" v-else>
       <button v-if="isNoLockedNow" class="detail-buy__btn detail-buy__btn--disabled" disabled>寄售中·已锁定</button>
       <button v-else-if="cooldownRemain > 0" class="detail-buy__btn detail-buy__btn--disabled" disabled>冷却中 {{ cooldownRemain }}s 后可寄售</button>
       <button v-else class="detail-buy__btn" @click="openConsign">立即寄售</button>
+      <button v-if="transferEnabled && !isNoLockedNow" class="detail-buy__btn detail-buy__btn--transfer" @click="openTransfer">转赠</button>
     </div>
 
     <!-- 寄售弹窗 -->
@@ -474,6 +527,64 @@ async function drawPosterFallback() {
             >{{ k === '⌫' ? '⌫' : k }}</button>
           </div>
           <button class="consign__back" v-if="pwdFlow === 'consign'" @click="pwdStep = false">返回修改价格</button>
+        </template>
+      </div>
+    </van-popup>
+
+    <!-- 转赠弹窗 -->
+    <van-popup v-model:show="showTransfer" position="bottom" round :close-on-click-overlay="!transferring">
+      <div class="consign">
+        <div class="consign__head">
+          <p class="consign__title">{{ transferStep === 'pwd' ? '交易密码验证' : '藏品转赠' }}</p>
+          <span class="consign__close" @click="closeTransfer">✕</span>
+        </div>
+
+        <!-- 步骤一：受赠方手机号 -->
+        <template v-if="transferStep === 'phone'">
+          <div class="consign__item">
+            <img class="consign__cover" :src="detail.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
+            <div class="consign__info">
+              <p class="consign__name">{{ detail.title }}</p>
+              <p class="consign__no" v-if="serialNo">编号：{{ serialNo }}</p>
+            </div>
+          </div>
+
+          <div class="consign__field">
+            <label class="consign__label">受赠方手机号</label>
+            <div class="transfer-phone" :class="{ 'is-error': toPhone && !canSubmitTransferPhone }">
+              <input
+                class="transfer-phone__input"
+                type="tel"
+                inputmode="numeric"
+                maxlength="11"
+                v-model="toPhone"
+                placeholder="请输入对方注册手机号"
+              />
+            </div>
+            <p class="consign__error" v-if="toPhone && !canSubmitTransferPhone">请输入正确的 11 位手机号</p>
+          </div>
+
+          <p class="transfer-tip">转赠后藏品将暂时冻结，待对方接收后完成过户。</p>
+
+          <button class="consign__btn" :disabled="!canSubmitTransferPhone || transferring" @click="onTransferNext">下一步</button>
+        </template>
+
+        <!-- 步骤二：交易密码 -->
+        <template v-else>
+          <p class="consign__hint">请输入 6 位交易密码以确认转赠给 {{ toPhone }}</p>
+          <div class="consign__dots">
+            <i v-for="n in 6" :key="n" :class="{ filled: n <= transferPwd.length }"></i>
+          </div>
+          <div class="consign__keypad">
+            <button
+              v-for="(k, i) in keypad"
+              :key="i"
+              class="consign__key"
+              :class="{ empty: k === '' }"
+              @click="onTransferPwdKey(k)"
+            >{{ k === '⌫' ? '⌫' : k }}</button>
+          </div>
+          <button class="consign__back" @click="transferStep = 'phone'">返回修改手机号</button>
         </template>
       </div>
     </van-popup>
@@ -607,6 +718,7 @@ async function drawPosterFallback() {
     &:disabled { opacity: .6; }
     &.is-soldout { background: #cccccc; cursor: not-allowed; opacity: 1; }
     &--disabled { background: #cccccc; cursor: not-allowed; opacity: 1; color: #999; }
+    &--transfer { background: #e8e8e8; color: #333; }
   }
 }
 
@@ -716,6 +828,21 @@ async function drawPosterFallback() {
 .consign__back {
   width: 100%; margin-top: 14px; background: transparent; border: none; cursor: pointer;
   font-size: 13px; color: $color-text-tertiary;
+}
+
+/* 转赠：手机号输入 */
+.transfer-phone {
+  display: flex; align-items: center; height: 52px; background: $color-surface;
+  border-radius: $radius-md; padding: 0 14px; border: 1px solid transparent;
+  &__input {
+    flex: 1; height: 100%; border: none; outline: none; background: transparent;
+    font-size: 16px; color: $color-text-primary;
+    &::placeholder { color: $color-text-tertiary; }
+  }
+  &.is-error { border-color: $color-primary; }
+}
+.transfer-tip {
+  margin: 0 0 18px; font-size: 12px; color: $color-text-tertiary; line-height: 1.6;
 }
 
 /* ---------- 寄售成功 ---------- */

@@ -234,4 +234,72 @@ class MarketController extends BaseController
             ['fee_rate' => $feeRate]);
         return $this->success(null, '手续费配置已保存并实时生效');
     }
+
+    /**
+     * GET /admin/market/batch-config — 批量购买配置读取
+     */
+    public function batchConfig()
+    {
+        $enabled = (string) Db::name('system_configs')->where('config_key', 'batch_buy_enabled')->value('config_value');
+        $scope   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_scope')->value('config_value');
+        $limit   = (int) Db::name('system_configs')->where('config_key', 'batch_buy_limit')->value('config_value');
+        $users   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_users')->value('config_value');
+
+        return $this->success([
+            'enabled' => $enabled === '1',
+            'scope'   => $scope,
+            'limit'   => $limit,
+            'users'   => $users,
+        ]);
+    }
+
+    /**
+     * POST /admin/market/batch-config { enabled, scope, limit, users }
+     * 批量购买开关 + 适用范围（all 全体用户 / specific 指定用户）+ 单次最大数量 + 指定用户手机号（换行分隔）
+     */
+    public function batchSave()
+    {
+        $enabled = (int) $this->request->param('enabled', 0) === 1 ? '1' : '0';
+        $scope   = (string) $this->request->param('scope', 'all');
+        $limit   = (int) $this->request->param('limit', 0);
+        $users   = (string) $this->request->param('users', '');
+
+        if (!in_array($scope, ['all', 'specific'], true)) {
+            return $this->fail(4220, 'scope 仅允许 all / specific');
+        }
+        if ($limit < 1 || $limit > 100) {
+            return $this->fail(4220, '批量购买限度需在 1~100 之间');
+        }
+        if ($scope === 'specific') {
+            $phones = array_values(array_filter(array_map('trim', preg_split('/[\r\n]+/', $users))));
+            if (!$phones) {
+                return $this->fail(4220, '指定用户模式需至少填写一个手机号');
+            }
+            foreach ($phones as $p) {
+                if (!preg_match('/^1\d{10}$/', $p)) {
+                    return $this->fail(4220, '手机号格式错误：' . $p);
+                }
+            }
+            $users = implode("\n", $phones);
+        } else {
+            $users = '';
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $updates = [
+            'batch_buy_enabled' => $enabled,
+            'batch_buy_scope'   => $scope,
+            'batch_buy_limit'   => (string) $limit,
+            'batch_buy_users'   => $users,
+        ];
+        foreach ($updates as $key => $val) {
+            Db::name('system_configs')->where('config_key', $key)->update([
+                'config_value' => $val,
+                'updated_at'   => $now,
+            ]);
+        }
+
+        $this->audit('market', 'batch_config', '更新批量购买配置', $updates);
+        return $this->success(null, '批量购买配置已保存并实时生效');
+    }
 }

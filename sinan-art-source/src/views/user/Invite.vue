@@ -19,8 +19,6 @@ const activity = ref(null)
 const records = ref([])
 const loading = ref(false)
 
-// MOCK_REPLACED: 原为内联 mock 邀请码（jKet17636）与统计常量，
-// 现从后端拉取：GET /api/invite/info（邀请码/活动/人数）、GET /api/invite/records（名单）
 async function fetchInfo() {
   const res = await request.get('/invite/info')
   inviteCode.value = res.inviteCode || ''

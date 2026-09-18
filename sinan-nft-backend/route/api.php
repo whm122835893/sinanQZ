@@ -89,6 +89,8 @@ Route::group('/api', function () {
         Route::post('resale/listings',             'Resale/create');
         Route::post('resale/listings/:listingId/cancel', 'Resale/cancel');
         Route::get('resale/listings/mine',          'Resale/mine');
+        Route::get('resale/batch-buy/config',        'Resale/batchBuyConfig');
+        Route::post('resale/batch-buy',              'Resale/batchBuy');
 
         // 求购挂单
         Route::post('buy-requests',                 'BuyRequest/create');

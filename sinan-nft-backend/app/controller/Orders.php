@@ -286,7 +286,11 @@ class Orders extends BaseController
                     'created_at'     => $now,
                 ]);
             } else {
-                // Mock：第三方支付直接成功
+                // 第三方支付显式开关：PAY_MOCK=true 时 mock 成功；false 走真实收银台（当前未接入则拒绝）
+                if (!(bool) env('PAY_MOCK', true)) {
+                    Db::rollback();
+                    return $this->fail(5001, '第三方支付网关未接入，暂无法支付');
+                }
             }
 
             // 写支付记录
@@ -336,54 +340,68 @@ class Orders extends BaseController
                 }
             } else {
                 // ===== 市场模式：资产从卖家过户到买家 + 卖家结算 =====
-                $listing = Db::name('resale_listings')
-                    ->where('id', $order['resale_listing_id'])
-                    ->lock(true)
-                    ->find();
-                if (!$listing || $listing['status'] !== 'sold') {
+                // 批量单：batch_listing_ids 逗号分隔多份挂单；普通市场单：单份 resale_listing_id
+                $listingIds = [];
+                if (!empty($order['batch_listing_ids'])) {
+                    $listingIds = array_values(array_filter(array_map('intval', explode(',', $order['batch_listing_ids']))));
+                } elseif ($order['resale_listing_id']) {
+                    $listingIds = [(int) $order['resale_listing_id']];
+                }
+                if (!$listingIds) {
                     Db::rollback();
-                    return $this->fail(3001, '挂单状态异常');
+                    return $this->fail(3001, '挂单信息异常');
                 }
 
-                // 条件过户：仅当资产仍属卖家且为寄售状态（防并发/防篡改）
-                $moved = Db::name('user_collectibles')
-                    ->where('id', $listing['user_collectible_id'])
-                    ->where('user_id', $listing['seller_id'])
-                    ->where('status', 'consigned')
-                    ->update([
-                        'user_id'        => $userId,
-                        'status'        => 'held',
-                        'is_consigned'  => 0,
-                        'acquired_at'   => $now,
-                        'acquired_price'=> $listing['price'],
-                        'source'        => 'purchase',
-                        'updated_at'    => $now,
+                foreach ($listingIds as $lid) {
+                    $listing = Db::name('resale_listings')
+                        ->where('id', $lid)
+                        ->lock(true)
+                        ->find();
+                    if (!$listing || $listing['status'] !== 'sold') {
+                        Db::rollback();
+                        return $this->fail(3001, '挂单状态异常');
+                    }
+
+                    // 条件过户：仅当资产仍属卖家且为寄售状态（防并发/防篡改）
+                    $moved = Db::name('user_collectibles')
+                        ->where('id', $listing['user_collectible_id'])
+                        ->where('user_id', $listing['seller_id'])
+                        ->where('status', 'consigned')
+                        ->update([
+                            'user_id'        => $userId,
+                            'status'        => 'held',
+                            'is_consigned'  => 0,
+                            'acquired_at'   => $now,
+                            'acquired_price'=> $listing['price'],
+                            'source'        => 'purchase',
+                            'updated_at'    => $now,
+                        ]);
+                    if (!$moved) {
+                        Db::rollback();
+                        return $this->fail(3001, '藏品状态异常，请联系客服');
+                    }
+
+                    // 卖家结算：到账 = 挂单价 - 手续费
+                    $sellerWallet = Db::name('wallets')
+                        ->where('user_id', $listing['seller_id'])
+                        ->lock(true)
+                        ->find();
+                    Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
+                        'balance'    => Db::raw("balance + {$listing['actual_amount']}"),
+                        'available'  => Db::raw("available + {$listing['actual_amount']}"),
+                        'updated_at' => $now,
                     ]);
-                if (!$moved) {
-                    Db::rollback();
-                    return $this->fail(3001, '藏品状态异常，请联系客服');
+                    Db::name('wallet_transactions')->insert([
+                        'user_id'       => $listing['seller_id'],
+                        'trans_type'    => 'reward',
+                        'title'         => '寄售成交结算',
+                        'direction'     => 1,
+                        'amount'        => $listing['actual_amount'],
+                        'balance_after' => (float) $sellerWallet['balance'] + (float) $listing['actual_amount'],
+                        'biz_no'        => $orderNo,
+                        'created_at'    => $now,
+                    ]);
                 }
-
-                // 卖家结算：到账 = 挂单价 - 手续费
-                $sellerWallet = Db::name('wallets')
-                    ->where('user_id', $listing['seller_id'])
-                    ->lock(true)
-                    ->find();
-                Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
-                    'balance'    => Db::raw("balance + {$listing['actual_amount']}"),
-                    'available'  => Db::raw("available + {$listing['actual_amount']}"),
-                    'updated_at' => $now,
-                ]);
-                Db::name('wallet_transactions')->insert([
-                    'user_id'       => $listing['seller_id'],
-                    'trans_type'    => 'reward',
-                    'title'         => '寄售成交结算',
-                    'direction'     => 1,
-                    'amount'        => $listing['actual_amount'],
-                    'balance_after' => (float) $sellerWallet['balance'] + (float) $listing['actual_amount'],
-                    'biz_no'        => $orderNo,
-                    'created_at'    => $now,
-                ]);
             }
 
             // 更新订单状态
@@ -464,12 +482,21 @@ class Orders extends BaseController
                     Db::rollback();
                     return $this->fail(5001, '库存锁定量异常（可能已被并发释放），请联系管理员');
                 }
-            } elseif ($order['resale_listing_id']) {
+            } else {
                 // 市场单：资产从未过户（支付时才过户），仅需恢复挂单在售
-                Db::name('resale_listings')
-                    ->where('id', $order['resale_listing_id'])
-                    ->where('status', 'sold')
-                    ->update(['status' => 'selling', 'updated_at' => $now]);
+                // 批量单恢复 batch_listing_ids 内全部挂单；普通市场单仅恢复单份
+                $listingIds = [];
+                if (!empty($order['batch_listing_ids'])) {
+                    $listingIds = array_values(array_filter(array_map('intval', explode(',', $order['batch_listing_ids']))));
+                } elseif ($order['resale_listing_id']) {
+                    $listingIds = [(int) $order['resale_listing_id']];
+                }
+                foreach ($listingIds as $lid) {
+                    Db::name('resale_listings')
+                        ->where('id', $lid)
+                        ->where('status', 'sold')
+                        ->update(['status' => 'selling', 'updated_at' => $now]);
+                }
             }
 
             Db::commit();

@@ -3,9 +3,6 @@ import { ref } from 'vue'
 import request from '@/utils/request'
 
 // 活动中心：合成活动数据
-// MOCK_REPLACED: 原数据来自本文件内联 mock 合成活动列表，
-// 现已接入真实接口：GET /api/synthesis/activities（列表）、
-// GET /api/synthesis/activities/:id（详情，含材料与我持有数量）、POST /api/synthesis/submit（提交合成）
 export const useActivityStore = defineStore('activity', () => {
   // 合成活动列表
   const synthesisActivities = ref([])

@@ -37,7 +37,51 @@ const showPostModal = ref(false)
 const postForm = ref({ price: '', quantity: 1 })
 const posting = ref(false)
 
-onMounted(loadAll)
+// 批量购买（后台开关控制显隐 + 单次最大数量）
+const batchConfig = ref(null)
+const showBatchModal = ref(false)
+const batchQty = ref(1)
+const batchSubmitting = ref(false)
+const batchAvailable = computed(() => !!(batchConfig.value?.enabled && batchConfig.value.limit > 0))
+
+onMounted(() => { loadAll(); loadBatchConfig() })
+
+async function loadBatchConfig() {
+  try {
+    const res = await request.get('/resale/batch-buy/config')
+    batchConfig.value = { enabled: !!res.enabled, limit: Number(res.limit) || 0 }
+  } catch (e) {
+    batchConfig.value = { enabled: false, limit: 0 }
+  }
+}
+
+function openBatchBuy() {
+  if (!requireLogin(route.fullPath)) return
+  if (!batchConfig.value?.limit) return
+  batchQty.value = 1
+  showBatchModal.value = true
+}
+
+async function submitBatchBuy() {
+  const qty = parseInt(batchQty.value) || 0
+  const max = batchConfig.value?.limit || 0
+  if (qty < 1) { alert('请输入购买数量'); return }
+  if (qty > max) { alert(`单次最多批量购买 ${max} 件`); return }
+  batchSubmitting.value = true
+  try {
+    const res = await request.post('/resale/batch-buy', { collectibleId: route.params.id, quantity: qty })
+    showBatchModal.value = false
+    router.push({
+      name: 'pay',
+      params: { mode: 'batch', id: route.params.id, no: res.orderNo },
+      query: { quantity: res.quantity, totalPrice: res.totalPrice, floorPrice: res.floorPrice }
+    })
+  } catch (e) {
+    alert(e?.message || '批量购买失败')
+  } finally {
+    batchSubmitting.value = false
+  }
+}
 
 watch(activeTab, (tab) => {
   if (tab === 'buying' && buyRequests.value.length === 0)  loadBuyRequests()
@@ -263,6 +307,7 @@ async function submitPostBuy() {
     </section>
 
     <div class="resale-float safe-bottom" v-if="activeTab === 'onsale'">
+      <button class="resale-float__btn resale-float__btn--gray" v-if="batchAvailable" @click="openBatchBuy">批量购买</button>
       <button class="resale-float__btn" @click="onQuickBuy">快捷购买</button>
     </div>
     <div class="resale-float safe-bottom" v-else-if="activeTab === 'buying'">
@@ -284,6 +329,23 @@ async function submitPostBuy() {
           <button class="post-buy-cancel" @click="showPostModal = false">取消</button>
           <button class="post-buy-submit" :disabled="posting" @click="submitPostBuy">
             {{ posting ? '提交中...' : '确认发布' }}
+          </button>
+        </div>
+      </div>
+    </AppModal>
+
+    <!-- 批量购买弹窗 -->
+    <AppModal v-model:show="showBatchModal" title="批量购买">
+      <div class="post-buy-form">
+        <p class="batch-buy-tip">将按当前地板价（最低价）从低到高批量购买，单次最多 {{ batchConfig?.limit || 0 }} 件。</p>
+        <div class="post-buy-row">
+          <label>购买数量</label>
+          <input v-model="batchQty" type="number" min="1" :max="batchConfig?.limit || 0" placeholder="请输入数量" />
+        </div>
+        <div class="post-buy-actions">
+          <button class="post-buy-cancel" @click="showBatchModal = false">取消</button>
+          <button class="post-buy-submit" :disabled="batchSubmitting" @click="submitBatchBuy">
+            {{ batchSubmitting ? '提交中...' : '确认批量购买' }}
           </button>
         </div>
       </div>
@@ -339,9 +401,25 @@ async function submitPostBuy() {
 .resale-history__meta  { margin: 2px 0 0; font-size: 11px; color: $color-text-tertiary; }
 .resale-history__price { font-size: 15px; color: $color-primary; font-weight: 700; font-family: $font-price; }
 
+.resale-float {
+  position: fixed; left: 0; right: 0; bottom: 0; background: $color-card;
+  padding: 12px $page-padding; border-top: 1px solid $color-border; z-index: 50;
+  display: flex; align-items: center; gap: 12px;
+  &__btn {
+    flex: 1; height: 48px; border: none; cursor: pointer; color: #fff; font-size: 16px; font-weight: 500;
+    border-radius: $radius-pill; background: linear-gradient(135deg, #D00000, #B00000);
+    &:disabled { opacity: .6; }
+    &--gray { background: #cccccc; color: #666; }
+  }
+}
+
 .resale-float__btn--green {
   background: linear-gradient(135deg, #16a34a, #15803d);
   box-shadow: 0 6px 18px rgba(22, 163, 74, 0.3);
+}
+
+.batch-buy-tip {
+  margin: 0 0 16px; font-size: 13px; color: $color-text-tertiary; line-height: 1.5;
 }
 
 .post-buy-form {

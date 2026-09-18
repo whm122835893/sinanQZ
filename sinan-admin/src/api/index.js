@@ -941,6 +941,21 @@ export function resaleAction(id, action, reason = '') {
   return post(`/market/listings/${id}/manage`, { action: a, reason })
 }
 
+/** 批量购买配置读取（寄售市场 → 批量购买开关） */
+export function getBatchBuyConfig() {
+  return get('/market/batch-config')
+}
+
+/** 批量购买配置保存 { enabled, scope, limit, users } */
+export function saveBatchBuyConfig(payload) {
+  return post('/market/batch-config', {
+    enabled: payload.enabled ? 1 : 0,
+    scope: payload.scope,
+    limit: Number(payload.limit),
+    users: payload.users || ''
+  })
+}
+
 // 求购状态：后端数字（1求购中 2已接单 3已取消 4已成交 5已过期）→ 前端词汇
 const BUY_REQUEST_STATUS_MAP = { 1: 'active', 2: 'accepted', 3: 'cancelled', 4: 'sold', 5: 'expired' }
 

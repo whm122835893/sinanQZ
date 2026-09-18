@@ -11,8 +11,6 @@ const user = useUserStore()
 const tabs = ['数字藏品', '盲盒', '寄售中']
 const active = ref('数字藏品')
 
-// MOCK_REPLACED: 原为进入页面直接读本地内存库存，现从后端拉取
-// （GET /api/user/collections 聚合库存 + GET /api/resale/listings/mine 我的挂单）
 onMounted(() => {
   user.fetchInventory().catch(() => {})
   user.fetchConsignments().catch(() => {})
@@ -65,7 +63,6 @@ function onCancelConsign(c) {
     .then(async () => {
       canceling.value = true
       try {
-        // MOCK_REPLACED: 原为本地解除锁定，现走后端 POST /api/resale/listings/:listingId/cancel
         await user.cancelConsign(c.listingId)
         showToast('已取消寄售，3 分钟后可重新寄售')
       } catch (e) {
@@ -153,7 +150,7 @@ function onCancelConsign(c) {
     flex: 1; text-align: center; padding: 10px 0; font-size: 14px; cursor: pointer;
     border-radius: $radius-md; background: $color-surface; color: $color-text-secondary;
   }
-  &__item.active { background: #333333; color: #fff; font-weight: 600; }
+  &__item.active { background: $color-primary; color: #fff; font-weight: 600; }
 }
 
 /* 网格列表：两列 */

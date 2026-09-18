@@ -28,7 +28,6 @@ let timer = null
 onMounted(() => {
   // 未登录统一弹全局登录提示
   requireLogin(route.fullPath)
-  // MOCK_REPLACED: 原为本地内存订单，现从后端拉取（GET /api/orders）
   orderStore.fetchOrders().catch(() => {})
   timer = setInterval(() => {
     now.value = Date.now()

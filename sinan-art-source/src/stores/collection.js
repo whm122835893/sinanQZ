@@ -4,9 +4,6 @@ import request from '@/utils/request'
 import { useSiteStore } from './site'
 
 // 藏品状态：列表 / 详情 / 筛选
-// MOCK_REPLACED: 原数据来自本文件内联 mock 常量（featured/marketCollections/exhibits/resaleOrders），
-// 现已全部接入真实接口：/api/collections/featured、/api/market/collections、
-// /api/collections/:id、/api/resale/listings、/api/artifacts、/api/collections/:id/favorite
 export const useCollectionStore = defineStore('collection', () => {
   // 限购兜底与后端 perUserLimit 同源：purchase_limit_per_user 系统配置（/api/config）
   const site = useSiteStore()
@@ -173,6 +170,8 @@ export const useCollectionStore = defineStore('collection', () => {
       myOwned: d.myOwned || 0,
       saleLimit: d.saleLimit ?? site.purchaseLimitPerUser ?? 5,
       isBuyRequestEnabled: d.isBuyRequestEnabled !== false,
+      // 转赠开关（后端 is_transferable，控制「转赠」入口显隐）
+      isTransferable: !!d.isTransferable,
       raw: d
     }
     return detail.value

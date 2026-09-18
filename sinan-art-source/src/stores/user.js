@@ -3,9 +3,6 @@ import { ref, computed } from 'vue'
 import request from '@/utils/request'
 
 // 用户状态：token / userInfo / 登录态
-// MOCK_REPLACED: 原数据来自本文件内联 mock（inventory/consignments/payPassword/login 本地 token），
-// 现已接入真实接口：/api/auth/*、/api/user/profile、/api/user/collections、
-// /api/resale/listings(/mine)、/api/blind-boxes/open、/api/check-in、/api/user/verify-trade-password
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('jc_token') || '')
   // userInfo 也持久化，避免 SPA 路由切换 / 浏览器 reload / tel: 协议触发页面导航后丢失昵称
@@ -127,7 +124,6 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // ---- 交易密码（真实接口：POST /api/user/verify-trade-password）----
-  // MOCK_REPLACED: 原为本地常量 '123456' 比对，现走后端校验
   async function verifyPaymentPassword(pwd) {
     try {
       await request.post('/user/verify-trade-password', { password: String(pwd) })
@@ -202,7 +198,6 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // ---- 发起寄售（真实接口：POST /api/resale/listings，需交易密码）----
-  // MOCK_REPLACED: 原为本地锁定编号+内存挂单，现走后端（数据库状态机一致）
   async function consign(payload) {
     // payload: { userCollectibleId, price, paymentPassword }
     await request.post('/resale/listings', {
@@ -234,7 +229,6 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // ---- 开启盲盒（真实接口：POST /api/blind-boxes/open）----
-  // MOCK_REPLACED: 原为本地 reveals 常量随机，现由后端 random_int 加权抽取
   async function openBlindbox(userCollectibleId, paymentPassword) {
     const res = await request.post('/blind-boxes/open', {
       userCollectibleId,
@@ -242,6 +236,18 @@ export const useUserStore = defineStore('user', () => {
     })
     await fetchInventory()
     return res // { prize: { id, name, image, price } } 结构以实际返回为准
+  }
+
+  // ---- 发起转赠（真实接口：POST /api/transfers，需交易密码）----
+  async function transfer(payload) {
+    // payload: { userCollectibleId, toPhone, paymentPassword }
+    const res = await request.post('/transfers', {
+      userCollectibleId: payload.userCollectibleId,
+      toPhone: payload.toPhone,
+      paymentPassword: String(payload.paymentPassword || '')
+    })
+    await fetchInventory()
+    return res // { status: 'pending', toPhone }
   }
 
   // ---- 每日签到（真实接口：POST /api/check-in；记录 GET /api/check-in/records）----
@@ -286,6 +292,6 @@ export const useUserStore = defineStore('user', () => {
     setUserInfo, login, sendCode, register, logout, fetchUserInfo, updateNickname,
     verifyPaymentPassword, ownedCount, fetchInventory, findUserCollectibleId,
     fetchConsignments, consign, cancelConsign, isNoLocked, consignCooldownRemain,
-    openBlindbox, fetchSignCalendar, doSign
+    openBlindbox, transfer, fetchSignCalendar, doSign
   }
 })

@@ -149,6 +149,8 @@ Route::group('market', function () {
     Route::post('listings/:id/manage', 'MarketController/manage')->middleware(AdminPermission::class, 'market:manage');
     Route::get('config', 'MarketController/config');
     Route::post('config', 'MarketController/saveConfig')->middleware(AdminPermission::class, 'market:config');
+    Route::get('batch-config', 'MarketController/batchConfig');
+    Route::post('batch-config', 'MarketController/batchSave')->middleware(AdminPermission::class, 'market:config');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'market:list');
 
 // ---------------------------------------------------------------------------

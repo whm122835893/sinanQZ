@@ -20,9 +20,6 @@ const FALLBACK_IMG = {
 const prizes = ref([])
 const loading = ref(true)
 
-// MOCK_REPLACED: 原为内联 mock 六个奖品常量 + Math.random 本地抽取，
-// 现从后端拉取奖池：GET /api/lucky-draw/activity（nft_lucky_draw_prizes 按概率配置），
-// 抽奖走 POST /api/lucky-draw/draw（后端 random_int 加权 + 条件更新防超发）
 async function fetchActivity() {
   try {
     const res = await request.get('/lucky-draw/activity')

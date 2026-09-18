@@ -3,8 +3,6 @@ import { ref, computed } from 'vue'
 import request from '@/utils/request'
 
 // 公告状态：列表 / 分类 / 搜索
-// MOCK_REPLACED: 原数据来自本文件内联 mock 公告列表，
-// 现已接入真实接口：GET /api/announcements（列表）、GET /api/announcements/:id（详情）
 export const useNoticeStore = defineStore('notice', () => {
   const categories = ref([
     { key: 'all', label: '全部' },

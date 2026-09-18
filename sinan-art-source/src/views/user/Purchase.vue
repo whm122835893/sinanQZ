@@ -18,7 +18,6 @@ const tabs = [
 ]
 const active = ref('all')
 
-// MOCK_REPLACED: 原为写死空数组（“转赠功能暂未上线”），现接入真实接口 GET /api/transfers/mine
 onMounted(() => {
   requireLogin(route.fullPath)
   orderStore.fetchPurchaseOrders().catch(() => {})

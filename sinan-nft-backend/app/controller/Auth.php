@@ -67,7 +67,12 @@ class Auth extends BaseController
             return $this->fail(1001, '验证码发送过于频繁，请稍后再试');
         }
 
-        // Mock：生成6位明文验证码，不真发短信，直接存库（带bcrypt哈希）
+        // 短信网关显式开关：SMS_MOCK=true 本地 mock（不真发短信）；false 走真实网关（当前未接入则拒绝）
+        if (!(bool) env('SMS_MOCK', true)) {
+            return $this->fail(5001, '短信网关未接入，暂无法发送验证码');
+        }
+
+        // 生成 6 位验证码存库（bcrypt 哈希）
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $now  = date('Y-m-d H:i:s.v');
 
@@ -81,7 +86,7 @@ class Auth extends BaseController
             'created_at' => $now,
         ]);
 
-        // Mock 环境下直接把明文验证码返回（生产环境删除）
+        // 开发联调（APP_DEBUG=true）返回明文验证码；生产环境不返回
         return $this->success(['debugCode' => env('APP_DEBUG') ? $code : null]);
     }
 

@@ -24,8 +24,6 @@ const loading = ref(false)
 // 千分位格式化金额
 const fmt = (n) => Number(n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-// MOCK_REPLACED: 原为内联 mock 余额（12,860.00 等）与流水数组，
-// 现从后端拉取：GET /api/wallet（余额/可用/司南币）、GET /api/wallet/transactions（流水）
 async function fetchWallet() {
   wallet.value = await request.get('/wallet')
 }

@@ -16,9 +16,6 @@ const { requireLogin } = useLoginGate()
 // 仓库藏品来自用户库存
 const { inventory: userInventory } = storeToRefs(user)
 
-// MOCK_REPLACED: 原为本地 mock 活动数据 + 本地消耗/入库，
-// 现从后端拉取活动详情（GET /api/synthesis/activities/:id，含材料与我持有数量），
-// 提交走 POST /api/synthesis/submit（后端事务消耗材料并生成产物）。
 const act = ref(null)
 onMounted(async () => {
   act.value = await activityStore.fetchSynthesisDetail(route.params.id).catch(() => null)

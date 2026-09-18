@@ -13,8 +13,6 @@ const router = useRouter()
 const groups = ref([])
 const loading = ref(false)
 
-// MOCK_REPLACED: 原为内联 mock 社群数组（司南官方社群/玩家交流群），
-// 现从后端拉取：GET /api/community/groups（nft_community_groups 配置）
 async function fetchGroups() {
   loading.value = true
   try {

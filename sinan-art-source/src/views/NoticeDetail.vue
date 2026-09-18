@@ -10,7 +10,6 @@ const route = useRoute()
 const router = useRouter()
 const store = useNoticeStore()
 
-// MOCK_REPLACED: 原为从本地 mock 数组查找，现走后端详情接口（GET /api/announcements/:id）
 const notice = ref(null)
 const loading = ref(true)
 

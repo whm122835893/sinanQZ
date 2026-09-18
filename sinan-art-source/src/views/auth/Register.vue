@@ -39,7 +39,6 @@ const canSubmit = computed(
     !confirmError.value
 )
 
-// MOCK_REPLACED: 原为本地直接弹"验证码已发送"，现走后端 POST /api/auth/send-code
 async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
@@ -54,8 +53,6 @@ async function sendCode() {
   }
 }
 
-// MOCK_REPLACED: 原为本地直接弹"注册成功"，现走后端 POST /api/auth/register
-// （注册即登录返回 token；携带邀请码时后端写入 invite_records 绑定邀请关系）
 async function onSubmit() {
   if (!canSubmit.value) {
     if (confirmError.value) showToast(confirmError.value)

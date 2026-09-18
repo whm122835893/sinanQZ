@@ -3,9 +3,6 @@ import { ref } from 'vue'
 import request from '@/utils/request'
 
 // 订单状态：我的订单 / 申购订单
-// MOCK_REPLACED: 原为本地内存订单（genOrderNo/addOrder/addPendingOrder 本地状态机 + 本地库存锁定），
-// 现接入真实接口：POST /api/orders（创建，后端锁库存）、POST /api/orders/:orderNo/pay（支付）、
-// POST /api/orders/:orderNo/cancel（取消）、GET /api/orders（列表）。
 // 库存锁定/释放、限购校验、流通量更新均由后端事务保证，前端不再本地改库存。
 export const useOrderStore = defineStore('order', () => {
   const orders = ref([])          // 我的订单

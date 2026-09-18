@@ -1,7 +1,7 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getResaleList, resaleAction, getBuyRequests, delistBuyRequest } from '@/api'
+import { getResaleList, resaleAction, getBuyRequests, delistBuyRequest, getBatchBuyConfig, saveBatchBuyConfig } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { RESALE_STATUS, BUY_REQUEST_STATUS } from '@/utils/maps'
@@ -79,6 +79,53 @@ async function onDelistBuy(b) {
     ElMessage.success('已关闭')
   }
 }
+
+// ---- 批量购买配置 ----
+const batchLoading = ref(false)
+const batchSaving = ref(false)
+const batchForm = reactive({
+  enabled: false,
+  scope: 'all',       // all=全体用户 specific=指定用户
+  limit: 5,
+  users: ''           // 指定用户手机号（换行分隔）
+})
+
+async function loadBatchConfig() {
+  batchLoading.value = true
+  const res = await getBatchBuyConfig()
+  batchLoading.value = false
+  if (res.code === 0 && res.data) {
+    batchForm.enabled = !!res.data.enabled
+    batchForm.scope = res.data.scope === 'specific' ? 'specific' : 'all'
+    batchForm.limit = Number(res.data.limit) || 1
+    batchForm.users = res.data.users || ''
+  }
+}
+
+async function onSaveBatchConfig() {
+  if (!Number.isInteger(batchForm.limit) || batchForm.limit < 1 || batchForm.limit > 100) {
+    ElMessage.warning('批量限度需为 1~100 之间的整数')
+    return
+  }
+  if (batchForm.scope === 'specific' && !batchForm.users.trim()) {
+    ElMessage.warning('指定用户模式需至少填写一个手机号')
+    return
+  }
+  batchSaving.value = true
+  const res = await saveBatchBuyConfig({
+    enabled: batchForm.enabled,
+    scope: batchForm.scope,
+    limit: batchForm.limit,
+    users: batchForm.users
+  })
+  batchSaving.value = false
+  if (res.code === 0) {
+    ElMessage.success('批量购买配置已保存并实时生效')
+    loadBatchConfig()
+  }
+}
+
+onMounted(loadBatchConfig)
 </script>
 
 <template>
@@ -214,6 +261,46 @@ async function onDelistBuy(b) {
           历史成交价格走势与手续费统计见「数据统计」模块；平台手续费按比例或固定金额在站点配置中调整
         </div>
       </el-tab-pane>
+
+      <!-- 批量购买设置 -->
+      <el-tab-pane label="批量购买" name="batch" lazy>
+        <div class="rs__batch" v-loading="batchLoading">
+          <el-form label-width="140px" class="rs__batch-form">
+            <el-form-item label="批量购买开关">
+              <el-switch v-model="batchForm.enabled" active-text="开启" inactive-text="关闭" />
+            </el-form-item>
+            <el-form-item label="适用范围">
+              <el-radio-group v-model="batchForm.scope">
+                <el-radio value="all">全体用户</el-radio>
+                <el-radio value="specific">指定用户</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="批量限度">
+              <el-input-number v-model="batchForm.limit" :min="1" :max="100" :step="1" step-strictly />
+              <span class="rs__batch-unit">件 / 次</span>
+            </el-form-item>
+            <el-form-item v-if="batchForm.scope === 'specific'" label="指定用户手机号">
+              <el-input
+                v-model="batchForm.users"
+                type="textarea"
+                :rows="6"
+                class="rs__batch-users"
+                placeholder="多个用户手机号换行输入，例如：&#10;13800000000&#10;13900000000"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="batchSaving" @click="onSaveBatchConfig">保存配置</el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="批量购买说明：开启后 C 端藏品页显示「批量购买」按钮，按当前地板价（最低价）从低到高批量购买；实际购买数量 = min(批量限度, 市场可购数量)。选择「指定用户」时按手机号精确匹配，多个手机号换行输入。"
+          />
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <el-alert
@@ -256,5 +343,24 @@ async function onDelistBuy(b) {
 .rs__sold-tip {
   font-size: 12px;
   margin-top: 10px;
+}
+
+.rs__batch {
+  padding: 8px 0;
+}
+
+.rs__batch-form {
+  max-width: 560px;
+  margin-bottom: 16px;
+}
+
+.rs__batch-unit {
+  margin-left: 10px;
+  font-size: 13px;
+  color: $color-text-tertiary;
+}
+
+.rs__batch-users {
+  max-width: 420px;
 }
 </style>

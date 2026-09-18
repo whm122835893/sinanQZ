@@ -17,8 +17,9 @@ const user = useUserStore()
 const orderStore = useOrderStore()
 const { requireLogin } = useLoginGate()
 
-// 路由区分：发售支付(mode=release) / 挂单支付(mode=order) 单路由，按 mode 决定数据源与限购
+// 路由区分：发售支付(mode=release) / 挂单支付(mode=order) / 批量购买支付(mode=batch) 单路由
 const isRelease = computed(() => route.params.mode === 'release')
+const isBatch = computed(() => route.params.mode === 'batch')
 const id = route.params.id
 const no = route.params.no
 
@@ -26,13 +27,12 @@ const meta = ref(null)                  // { name, coverImage, issueCount, circu
 const unitPrice = ref('0')
 const orderNo = ref('')
 const listingId = ref(0)                // 挂单模式：寄售挂单 ID
+const batchTotal = ref(null)            // 批量模式：订单总额（不同地板价累加，非单价×数量）
 const payMethods = ['微信', '支付宝', '汇']
 const payMethod = ref('微信')
 // 支付方式展示名 → 后端 paymentMethod（balance/alipay/wechat）
 const methodMap = { 微信: 'wechat', 支付宝: 'alipay', 汇: 'balance' }
 
-// MOCK_REPLACED: 原为进入页面即本地锁库存+本地待支付订单，现由后端在“创建订单”时锁定库存
-// （POST /api/orders，5 分钟超时自动释放），前端仅负责展示与提交。
 onMounted(async () => {
   if (!requireLogin(route.fullPath)) {
     // 未登录：弹出全局登录提示并返回上一页
@@ -48,6 +48,19 @@ onMounted(async () => {
       circulationCount: d.circulationCount
     }
     unitPrice.value = d.price
+    payMethod.value = '微信'
+  } else if (isBatch.value) {
+    const d = await store.fetchDetail(id)
+    meta.value = {
+      name: d.title,
+      coverImage: d.coverImage,
+      issueCount: d.issueCount,
+      circulationCount: d.circulationCount
+    }
+    unitPrice.value = String(route.query.floorPrice ?? '0')
+    orderNo.value = no
+    qty.value = Number(route.query.quantity) || 1
+    batchTotal.value = Number(route.query.totalPrice) || 0
     payMethod.value = '微信'
   } else {
     const res = await store.fetchResale(id)
@@ -75,7 +88,10 @@ function inc() {
   else showToast(`每个藏品限购 ${MAX} 个`)
 }
 function dec() { if (qty.value > 1) qty.value-- }
-const total = computed(() => (parseFloat(unitPrice.value) * qty.value).toFixed(2))
+const total = computed(() => {
+  if (isBatch.value && batchTotal.value != null) return Number(batchTotal.value).toFixed(2)
+  return (parseFloat(unitPrice.value) * qty.value).toFixed(2)
+})
 
 // 倒计时 5 分钟（页面展示；后端订单自创建起 5 分钟过期）
 const { remain, start, stop } = useCountdown(300)
@@ -107,9 +123,6 @@ function onKey(k) {
   if (payPwd.value.length === 6) setTimeout(submit, 150)
 }
 
-// MOCK_REPLACED: 原为本地校验支付密码（123456）+ 本地库存/订单状态机，
-// 现走后端：POST /api/orders 创建订单（校验交易密码/实名/限购并锁库存）→
-// POST /api/orders/:orderNo/pay 支付（余额支付二次校验交易密码，成功后入库/过户）。
 async function submit() {
   if (!meta.value || expired.value || paying.value) return
   // 发售模式：累计限购校验（已持有 + 本次 ≤ 5，后端为最终校验）
@@ -120,16 +133,20 @@ async function submit() {
   }
   paying.value = true
   try {
-    const order = await orderStore.createOrder({
-      id,
-      name: meta.value.name,
-      coverImage: meta.value.coverImage,
-      price: unitPrice.value,
-      qty: qty.value,
-      no: orderNo.value,
-      resaleListingId: isRelease.value ? 0 : listingId.value
-    })
-    await orderStore.payOrder(order.id, {
+    let payNo = orderNo.value
+    if (!isBatch.value) {
+      const order = await orderStore.createOrder({
+        id,
+        name: meta.value.name,
+        coverImage: meta.value.coverImage,
+        price: unitPrice.value,
+        qty: qty.value,
+        no: orderNo.value,
+        resaleListingId: isRelease.value ? 0 : listingId.value
+      })
+      payNo = order.id
+    }
+    await orderStore.payOrder(payNo, {
       paymentMethod: methodMap[payMethod.value] || 'wechat',
       paymentPassword: payPwd.value
     })
@@ -174,7 +191,7 @@ function goHome() { router.replace('/') }
             <span>流通份数</span><b>{{ meta.circulationCount }}</b>
           </div>
           <div class="pay-card__row" v-if="orderNo">
-            <span>挂单编号</span><b>{{ orderNo }}</b>
+            <span>{{ isBatch ? '订单号' : '挂单编号' }}</span><b>{{ orderNo }}</b>
           </div>
         </div>
       </section>
@@ -189,6 +206,12 @@ function goHome() { router.replace('/') }
           <button class="pay-stepper__btn" :disabled="qty <= 1" @click="dec">−</button>
           <span class="pay-stepper__val">{{ qty }}</span>
           <button class="pay-stepper__btn" :disabled="qty >= maxAllowed" @click="inc">+</button>
+        </div>
+      </section>
+      <section class="pay-section" v-else-if="isBatch">
+        <div class="pay-section__head">
+          <span>购买数量</span>
+          <span class="pay-section__limit">{{ qty }} 件（批量购买）</span>
         </div>
       </section>
       <section class="pay-section" v-else>
