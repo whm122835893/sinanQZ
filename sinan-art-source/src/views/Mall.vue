@@ -124,8 +124,10 @@ onMounted(() => {
     -webkit-user-select: none; user-drag: none;
   }
   &__cat {
-    position: absolute; top: 8px; left: 8px; font-size: 11px; color: #f3e3c4;
-    background: rgba(176,141,85,0.45); padding: 2px 8px; border-radius: 10px; backdrop-filter: blur(6px);
+    position: absolute; top: 8px; left: 8px; z-index: 2;
+    font-size: 10px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, $color-primary, #8B0000);
+    padding: 2px 6px; border-radius: 4px;
   }
   &__body { padding: 10px 12px 12px; }
   &__name { font-size: 14px; font-weight: 700; color: $color-text-primary; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

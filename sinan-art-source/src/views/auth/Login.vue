@@ -15,7 +15,7 @@ const user = useUserStore()
 const site = useSiteStore()
 const { counting, remain, start } = useCountdown(60)
 
-const loginMode = ref('code') // 'password' | 'code'
+const loginMode = ref('password') // 'password' | 'code'
 const phone = ref('')
 const password = ref('')
 const code = ref('')

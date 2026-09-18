@@ -21,6 +21,8 @@ defineProps({
   justify-content: center;
   padding: 48px 0;
   width: 100%;
+  // 网格容器内占满整行，避免空状态落到第一列而靠左
+  grid-column: 1 / -1;
 }
 .app-empty__img {
   width: 120px;
