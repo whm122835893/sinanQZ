@@ -1,12 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 import { useOrderStore } from '@/stores/order'
 import { useLoginGate } from '@/utils/loginGate'
+import { showToast, showConfirmDialog } from 'vant'
 
-const route = useRoute()
 const orderStore = useOrderStore()
 const { requireLogin } = useLoginGate()
 
@@ -17,13 +16,13 @@ const tabs = [
   { key: 'rejected', label: '已拒绝' }
 ]
 const active = ref('all')
+const busyId = ref(null)
 
 onMounted(() => {
-  requireLogin(route.fullPath)
+  requireLogin(window.location.pathname)
   orderStore.fetchPurchaseOrders().catch(() => {})
 })
 
-// 转赠状态：pending待确认 / accepted已接受 / rejected已拒绝 / cancelled已取消
 const statusMeta = {
   pending: { text: '待确认', cls: 'pending' },
   accepted: { text: '已完成', cls: 'done' },
@@ -34,13 +33,61 @@ const statusMeta = {
 const list = computed(() =>
   active.value === 'all'
     ? orderStore.purchaseOrders
-    : orderStore.purchaseOrders.filter(o => o.status === active.value)
+    : orderStore.purchaseOrders.filter((o) => o.status === active.value)
 )
 
 const fmtTime = (ts) => {
   const d = new Date(ts)
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+function canHandle(o) {
+  return o.direction === 'received' && o.status === 'pending'
+}
+
+async function accept(o) {
+  try {
+    await showConfirmDialog({
+      title: '接收转赠',
+      message: `确认接收「${o.name}」吗？接收后藏品将进入您的库存。`,
+      confirmButtonText: '确认接收',
+      confirmButtonColor: '#d32f2f'
+    })
+  } catch {
+    return
+  }
+  busyId.value = o.id
+  try {
+    await orderStore.handleTransfer(o.id, 'accept')
+    showToast('已接收，藏品进入库存')
+  } catch (e) {
+    showToast(e?.message || '操作失败')
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function reject(o) {
+  try {
+    await showConfirmDialog({
+      title: '拒绝转赠',
+      message: `确认拒绝「${o.name}」吗？拒绝后藏品将退回给发起方。`,
+      confirmButtonText: '确认拒绝',
+      confirmButtonColor: '#999'
+    })
+  } catch {
+    return
+  }
+  busyId.value = o.id
+  try {
+    await orderStore.handleTransfer(o.id, 'reject')
+    showToast('已拒绝，藏品退回发起方')
+  } catch (e) {
+    showToast(e?.message || '操作失败')
+  } finally {
+    busyId.value = null
+  }
 }
 </script>
 
@@ -72,6 +119,18 @@ const fmtTime = (ts) => {
             <p class="transfer-card__time">{{ fmtTime(o.createdAt) }}</p>
           </div>
         </div>
+        <div v-if="canHandle(o)" class="transfer-card__actions">
+          <button
+            class="btn btn--ghost"
+            :disabled="busyId === o.id"
+            @click="reject(o)"
+          >拒绝</button>
+          <button
+            class="btn btn--primary"
+            :disabled="busyId === o.id"
+            @click="accept(o)"
+          >接收</button>
+        </div>
       </div>
     </div>
 
@@ -79,7 +138,7 @@ const fmtTime = (ts) => {
   </div>
 </template>
 
-<style scoped lang="scss">
+<style lang="scss" scoped>
 .purchase-tabs {
   display: flex; gap: 10px; padding: 14px $page-padding; background: $color-card; margin-bottom: 8px;
   &__item {
@@ -109,5 +168,16 @@ const fmtTime = (ts) => {
   &__name { margin: 0; font-size: 15px; font-weight: 600; color: $color-text-primary; @include ellipsis; }
   &__sub { margin: 0; font-size: 12px; color: $color-text-tertiary; }
   &__time { margin: 0; font-size: 11px; color: $color-text-tertiary; font-family: $font-price; }
+  &__actions {
+    display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; margin-top: 12px;
+    border-top: 1px solid $color-border;
+  }
+}
+
+.btn {
+  height: 32px; padding: 0 16px; border-radius: 8px; font-size: 13px;
+  border: 1px solid transparent; cursor: pointer;
+  &--primary { background: #d32f2f; color: #fff; &:disabled { opacity: 0.5; } }
+  &--ghost { background: transparent; border-color: #ddd; color: #666; &:disabled { opacity: 0.5; } }
 }
 </style>

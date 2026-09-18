@@ -1,20 +1,40 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppTabBar from '@/components/AppTabBar.vue'
 import AppLoginModal from '@/components/AppLoginModal.vue'
 import Splash from '@/components/Splash.vue'
+import InboxPopup from '@/components/InboxPopup.vue'
 import { useSiteStore } from '@/stores/site'
+import { useUserStore } from '@/stores/user'
+import { useInboxStore } from '@/stores/inbox'
 
 const route = useRoute()
 const refreshing = ref(false)
 const site = useSiteStore()
+const user = useUserStore()
+const inbox = useInboxStore()
 
 function onRefresh() {
   setTimeout(() => {
     refreshing.value = false
   }, 1000)
 }
+
+// 登录后轮询收件箱，登出时停
+watch(
+  () => user.isLoggedIn,
+  (logged) => {
+    if (logged) inbox.startPoll()
+    else inbox.stopPoll()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  if (user.isLoggedIn) inbox.startPoll()
+})
+onBeforeUnmount(() => inbox.stopPoll())
 </script>
 
 <template>
@@ -33,6 +53,9 @@ function onRefresh() {
 
   <!-- 全局登录提示弹窗 -->
   <AppLoginModal />
+
+  <!-- 收件箱弹窗（空投/转赠到达） -->
+  <InboxPopup />
 </template>
 
 <style lang="scss">

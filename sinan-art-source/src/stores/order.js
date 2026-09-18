@@ -95,5 +95,11 @@ export const useOrderStore = defineStore('order', () => {
     return m + ':' + s
   }
 
-  return { orders, purchaseOrders, createOrder, payOrder, cancelOrder, fetchOrders, fetchPurchaseOrders, remainText }
+  // 处理转赠（接收/拒绝）
+  async function handleTransfer(transferId, action) {
+    await request.post(`/transfers/${transferId}/handle`, { action })
+    await fetchPurchaseOrders()
+  }
+
+  return { orders, purchaseOrders, createOrder, payOrder, cancelOrder, fetchOrders, fetchPurchaseOrders, remainText, handleTransfer }
 })

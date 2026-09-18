@@ -830,6 +830,36 @@ class CollectibleController extends BaseController
                 'fail_list'     => $failList ? json_encode($failList, JSON_UNESCAPED_UNICODE) : null,
             ]);
 
+            // 收件箱通知：被空投用户弹窗"恭喜你收到空投藏品"
+            $successUserIds = [];
+            foreach ($validIds as $uid) {
+                if ($failList && in_array($uid, array_column($failList, 'user_id'))) continue;
+                $successUserIds[] = $uid;
+            }
+            $nowStr = $now;
+            $inboxRows = [];
+            foreach ($successUserIds as $uid) {
+                $inboxRows[] = [
+                    'user_id'        => (int) $uid,
+                    'type'           => 'airdrop',
+                    'ref_id'         => (int) $taskId,
+                    'title'          => '恭喜你收到空投藏品',
+                    'collectible_id' => (int) $id,
+                    'name'           => (string) $c['name'],
+                    'image'          => (string) ($c['image'] ?? ''),
+                    'extra'          => json_encode([
+                        'quantity'   => $quantity,
+                        'reason'     => $reason ?: '运营空投',
+                        'adminName'  => $this->adminName(),
+                    ], JSON_UNESCAPED_UNICODE),
+                    'status'         => 0,
+                    'created_at'     => $nowStr,
+                ];
+            }
+            if ($inboxRows) {
+                Db::name('inbox')->insertAll($inboxRows);
+            }
+
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();

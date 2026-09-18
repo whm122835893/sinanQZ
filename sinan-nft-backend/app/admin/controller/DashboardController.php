@@ -157,27 +157,4 @@ class DashboardController extends BaseController
         }
         return $this->success(['type' => $type, 'list' => camelize_keys($rows)]);
     }
-
-    /**
-     * GET /admin/dashboard/latest
-     * 最新动态：近 10 笔订单 + 近 10 位注册用户
-     */
-    public function latest()
-    {
-        $orders = Db::name('orders')->alias('o')
-            ->field('o.order_no, o.total_price, o.status, o.created_at, u.uid, u.username, c.name AS collectible_name')
-            ->join('users u', 'u.id = o.user_id', 'LEFT')
-            ->join('collectibles c', 'c.id = o.collectible_id', 'LEFT')
-            ->order('o.id', 'desc')->limit(10)->select()->toArray();
-
-        $users = Db::name('users')
-            ->field('id, uid, username, phone, is_realname, created_at')
-            ->whereNull('deleted_at')
-            ->order('id', 'desc')->limit(10)->select()->toArray();
-        foreach ($users as &$u) {
-            $u['phone'] = mask_phone((string) $u['phone']);
-        }
-
-        return $this->success(['orders' => camelize_keys($orders), 'users' => camelize_keys($users)]);
-    }
 }

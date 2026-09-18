@@ -565,15 +565,6 @@ class PermissionController extends BaseController
     }
 
     /**
-     * GET /admin/permission/log-modules（模块筛选项，前端下拉数据源）
-     */
-    public function logModules()
-    {
-        $modules = Db::name('admin_operation_logs')->distinct(true)->order('module')->column('module');
-        return $this->success(array_values(array_filter($modules)));
-    }
-
-    /**
      * GET /admin/permission/login-logs
      */
     public function loginLogs()

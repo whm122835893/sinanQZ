@@ -87,19 +87,6 @@ class AuthController extends BaseController
     }
 
     /**
-     * GET /admin/auth/profile
-     * 当前管理员信息（含权限码与菜单树，前端动态路由数据源）
-     */
-    public function profile()
-    {
-        $info = AdminAuthService::adminInfo($this->adminId());
-        if (!$info) {
-            return $this->fail(4003, '账号信息读取失败');
-        }
-        return $this->success($info);
-    }
-
-    /**
      * POST /admin/auth/verify-password { password }
      * 敏感操作二次验证：校验当前管理员登录密码（平台清库/大额审批等前置）
      * 每次验证均写审计日志（无论成败）

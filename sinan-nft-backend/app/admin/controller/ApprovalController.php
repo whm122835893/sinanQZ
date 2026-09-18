@@ -93,28 +93,6 @@ class ApprovalController extends BaseController
     }
 
     /**
-     * GET /admin/approvals/stats
-     * 审批中心统计（待办/已通过/已驳回 + 按类型分布，供仪表盘卡片）
-     */
-    public function stats()
-    {
-        $byType = [];
-        foreach (array_keys(self::TYPES) as $type) {
-            $byType[$type] = [
-                'name'    => self::TYPES[$type],
-                'pending' => Db::name('approval_requests')->where('type', $type)->where('status', 1)->count(),
-                'total'   => Db::name('approval_requests')->where('type', $type)->count(),
-            ];
-        }
-        return $this->success([
-            'pending'  => Db::name('approval_requests')->where('status', 1)->count(),
-            'approved' => Db::name('approval_requests')->where('status', 2)->count(),
-            'rejected' => Db::name('approval_requests')->where('status', 3)->count(),
-            'byType'   => $byType,
-        ]);
-    }
-
-    /**
      * POST /admin/approvals/:id/handle { action(approve/reject), reason }
      */
     public function handle(int $id)

@@ -72,6 +72,23 @@ class Transfers extends BaseController
                 'status'     => 'frozen',
                 'updated_at' => $now,
             ]);
+            // 收件箱通知：受赠人弹窗提示"恭喜你收到转赠藏品"
+            $transferId = (int) Db::name('transfers')->where('to_user_id', $toUser['id'])
+                ->order('id', 'desc')->value('id');
+            Db::name('inbox')->insert([
+                'user_id'        => (int) $toUser['id'],
+                'type'           => 'transfer',
+                'ref_id'         => $transferId,
+                'title'          => '恭喜你收到转赠藏品',
+                'collectible_id' => (int) $uc['collectible_id'],
+                'name'           => (string) $collectible['name'],
+                'image'          => (string) ($collectible['image'] ?? ''),
+                'extra'          => json_encode([
+                    'fromNickname' => (string) (Db::name('users')->where('id', $userId)->value('username') ?? ''),
+                ], JSON_UNESCAPED_UNICODE),
+                'status'         => 0,
+                'created_at'     => $now,
+            ]);
             Db::commit();
             return $this->success(['status' => 'pending', 'toPhone' => mask_phone($toPhone)]);
         } catch (\Throwable $e) {

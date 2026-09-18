@@ -104,6 +104,10 @@ Route::group('/api', function () {
         Route::post('transfers/:transferId/handle', 'Transfers/handle');
         Route::get('transfers/mine',            'Transfers/mine');
 
+        // 收件箱（空投/转赠到达弹窗数据源）
+        Route::get('inbox/pending',             'Inbox/pending');
+        Route::post('inbox/:id/read',           'Inbox/read');
+
         // 盲盒
         Route::post('blind-boxes/open',         'BlindBoxes/open');
 

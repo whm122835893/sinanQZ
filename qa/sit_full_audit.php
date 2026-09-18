@@ -124,7 +124,7 @@ echo "\n========== 3. 管理端全菜单接口（只读面） ==========\n";
 // 巡检用真实存在的用户 id（审计脚本多次执行后自增 id 不再从 1 开始）
 $probeUid=(int)v('SELECT id FROM nft_users ORDER BY id LIMIT 1') ?: 1;
 $adminRead=[
-  '/admin/dashboard/overview','/admin/dashboard/trend','/admin/dashboard/rank','/admin/dashboard/latest',
+  '/admin/dashboard/overview','/admin/dashboard/trend','/admin/dashboard/rank',
   "/admin/users","/admin/users/$probeUid","/admin/users/assets/$probeUid",
   '/admin/realname/users','/admin/realname/stats',
   '/admin/collectibles','/admin/collectibles/audit','/admin/collectibles/qualifications','/admin/collectibles/9001',
@@ -139,13 +139,13 @@ $adminRead=[
   '/admin/wallet/stats','/admin/wallet/transactions','/admin/wallet/recharge','/admin/wallet/fee','/admin/wallet/audit','/admin/wallet/abnormal',
   '/admin/cms/banners','/admin/cms/categories','/admin/cms/announcements','/admin/cms/agreements','/admin/cms/artifacts','/admin/cms/community','/admin/cms/decoration',
   '/admin/system/configs','/admin/system/payment-channels','/admin/system/sms-config','/admin/system/security-config',
-  '/admin/permission/admins','/admin/permission/roles','/admin/permission/tree','/admin/permission/operation-logs','/admin/permission/log-modules','/admin/permission/login-logs',
+  '/admin/permission/admins','/admin/permission/roles','/admin/permission/tree','/admin/permission/operation-logs','/admin/permission/login-logs',
   '/admin/security/blacklist','/admin/security/risk-alerts','/admin/security/events',
   '/admin/tickets',
   '/admin/reports/sales','/admin/reports/users','/admin/reports/collectibles','/admin/reports/blindbox','/admin/reports/finance',
   '/admin/snapshots/holdings','/admin/snapshots/trades','/admin/snapshots/dates',
   '/admin/chain/networks','/admin/chain/contracts','/admin/chain/transactions',
-  '/admin/approvals','/admin/approvals/stats',
+  '/admin/approvals',
   '/admin/platform/cleanup-logs','/admin/platform/cleanup-preview',
   '/admin/raffle','/admin/raffle/registrations','/admin/raffle/codes','/admin/raffle/winners','/admin/raffle/logs',
   '/admin/buy-request','/admin/swap/plans',

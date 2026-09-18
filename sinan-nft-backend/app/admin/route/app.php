@@ -24,7 +24,6 @@ Route::get('site-brand', 'CmsController/siteBrand');
 // 认证路由（仅需登录）
 // ---------------------------------------------------------------------------
 Route::group('auth', function () {
-    Route::get('profile', 'AuthController/profile');
     Route::post('logout', 'AuthController/logout');
     Route::post('change-password', 'AuthController/changePassword');
     Route::post('verify-password', 'AuthController/verifyPassword');
@@ -42,7 +41,6 @@ Route::group('dashboard', function () {
     Route::get('overview', 'DashboardController/overview');
     Route::get('trend', 'DashboardController/trend');
     Route::get('rank', 'DashboardController/rank');
-    Route::get('latest', 'DashboardController/latest');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'dashboard:view');
 
 // ---------------------------------------------------------------------------
@@ -295,7 +293,6 @@ Route::group('permission', function () {
     Route::delete('roles/:id', 'PermissionController/roleDelete');
     // 日志
     Route::get('operation-logs', 'PermissionController/operationLogs');
-    Route::get('log-modules', 'PermissionController/logModules');
     Route::get('login-logs', 'PermissionController/loginLogs');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'permission:admin');
 
@@ -373,7 +370,6 @@ Route::group('chain', function () {
 // ---------------------------------------------------------------------------
 Route::group('approvals', function () {
     Route::get('', 'ApprovalController/list');
-    Route::get('stats', 'ApprovalController/stats');
     Route::get(':id', 'ApprovalController/detail');
     Route::post(':id/handle', 'ApprovalController/handle')->middleware(AdminPermission::class, 'approval:manage');
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'approval:list');
