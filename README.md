@@ -9,12 +9,23 @@ sinanQZ/
 ├── sinan-art-source/      # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
 ├── sinan-admin/           # 管理后台（融合版，Vue 3 + Vite 5 + Pinia + Element Plus + ECharts）
 ├── sinan-nft-backend/     # 后端（ThinkPHP 8 多应用：api = C 端 / admin = 管理端）
-└── database/              # 数据库脚本
-    ├── init.sql               # 基础建库：33 表 / 56 外键 / 16 CHECK（幂等可重复执行）
-    ├── admin_init.sql          # 管理端扩展表：管理员/角色/权限/操作日志/审批/链网络/链合约
-    ├── fusion_upgrade.sql      # 融合升级迁移：三链字段、审批流、社区、资格购白名单等（幂等）
-    ├── fusion_final_upgrade.sql# 融合终版迁移（幂等）
-    └── seed-dev.sql            # 开发联调种子数据（生产环境勿执行）
+└── database/              # 数据库脚本（共 21 个，79 张存活表）
+    ├── init.sql                        # 基础建库：33 表 / 56 外键 / 16 CHECK
+    ├── admin_init.sql                   # 管理端扩展：22 表（管理员/角色/权限/操作日志/风控/工单/支付渠道等）
+    ├── fusion_upgrade.sql              # 融合升级：3 表（chain_networks/chain_contracts/approval_requests）+ ALTER 三链字段
+    ├── fusion_final_upgrade.sql         # 融合终版：实名审核 ALTER + 权限种子 + 收件箱表 nft_inbox（原仓库漏建，在此补入）
+    ├── full_feature_upgrade.sql         # 全特性：6 表（raffle/buy_request/decompose 三件套）
+    ├── swap_plan_upgrade.sql            # 统一置换：4 表
+    ├── activity_reward_upgrade.sql      # 活动奖励：5 表（register/priority_sales/lucky_draw_chances/activity_reward_records）
+    ├── rbac_snapshot_upgrade.sql        # 审计快照：2 表（holdings_snapshots/trade_snapshots）
+    ├── raffle_admin_upgrade.sql         # 抽奖运营：1 表（raffle_operation_logs）+ 废弃 raffle_whitelists
+    ├── raffle_purchase_upgrade.sql      # 抽签购限购：ALTER raffle_registrations 加 purchased_quantity
+    ├── marketing_activity_upgrade.sql   # 营销活动：1 表（lucky_draw_activities）
+    ├── raffle_draw_code_system_upgrade.sql # 抽卡密系统：1 表（user_draw_codes）
+    ├── swap_c2c_removal.sql             # 移除 C2C 置换：DROP swap_records/swap_offers
+    ├── full_schema_all.sql              # 合并版：79 表 CREATE + ALTER + DROP（空库首部署用）
+    ├── merge_schema.py                  # 合并生成脚本（python3 merge_schema.py）
+    └── dev-only/seed-dev.sql            # 开发联调种子数据（生产严禁执行）
 ```
 
 ## 系统架构
@@ -25,7 +36,7 @@ sinanQZ/
 │ (sinan)     │   JWT-user   │  ├─ app/api    （C 端业务）     │
 └─────────────┘               │  ├─ app/admin （管理端业务）    │      ┌──────────┐
 ┌─────────────┐   /api/admin  │  ├─ 中间件：AdminAuth(JWT)     │ ──▶  │ MySQL 8  │
-│  管理后台    │ ───────────▶ │  │         AdminPermission(RBAC)│      │ 58 张表   │
+│  管理后台    │ ───────────▶ │  │         AdminPermission(RBAC)│      │ 79 张表   │
 │ (sinan-admin)│   JWT-admin  │  └─ Service：ChainService 等     │      └──────────┘
 └─────────────┘               └──────────────────────────────┘
 ```
@@ -42,14 +53,45 @@ sinanQZ/
 ### 1. 数据库
 
 ```bash
-mysql -uroot -p < database/init.sql              # 基础库 + C 端种子
-mysql -uroot -p < database/admin_init.sql        # 管理端表 + 角色/权限种子
-mysql -uroot -p < database/fusion_upgrade.sql    # 融合升级（三链/审批/社区/资格购）
-mysql -uroot -p < database/fusion_final_upgrade.sql
-mysql -uroot -p < database/dev-only/seed-dev.sql # 可选：联调种子数据（生产严禁执行）
+mysql -uroot -p < database/init.sql                        # 基础建库：33 表
+mysql -uroot -p < database/admin_init.sql                   # 管理端扩展：22 表
+mysql -uroot -p < database/fusion_upgrade.sql              # 三链 / 审批：3 表 + ALTER 三链字段
+mysql -uroot -p < database/full_feature_upgrade.sql         # 全特性：raffle / buy_request / decompose
+mysql -uroot -p < database/swap_plan_upgrade.sql            # 统一置换
+mysql -uroot -p < database/rbac_snapshot_upgrade.sql        # 审计快照（holdings/trade）
+mysql -uroot -p < database/marketing_activity_upgrade.sql   # 营销活动
+mysql -uroot -p < database/activity_reward_upgrade.sql      # 活动奖励 / 优先购 / 抽卡密
+mysql -uroot -p < database/raffle_draw_code_system_upgrade.sql # 抽卡密系统
+mysql -uroot -p < database/raffle_purchase_upgrade.sql      # 抽签购限购字段（purchased_quantity，须先于 raffle_admin）
+mysql -uroot -p < database/raffle_admin_upgrade.sql         # 抽奖运营日志 + 报名/抽签码字段（含 DROP raffle_whitelists）
+mysql -uroot -p < database/admin_sms_scene_upgrade.sql      # 短信场景字段
+mysql -uroot -p < database/batch_buy_upgrade.sql            # 批量购买字段
+mysql -uroot -p < database/category_scene_upgrade.sql       # 分类场景字段
+mysql -uroot -p < database/collectible_recover_upgrade.sql  # 藏品回收字段
+mysql -uroot -p < database/fusion_final_upgrade.sql        # 融合终版：实名审核 + 权限种子 + 收件箱表 nft_inbox
+mysql -uroot -p < database/payment_yeepay_upgrade.sql       # 易宝支付字段
+mysql -uroot -p < database/swap_c2c_removal.sql            # 移除 C2C 置换（DROP swap_records/swap_offers）
+mysql -uroot -p < database/dev-only/seed-dev.sql            # 可选：联调种子数据（生产严禁执行）
 ```
 
-以上脚本均幂等，可重复执行。
+以上脚本均幂等，可重复执行。建议按上述顺序依次执行以获得完整 79 张表。
+嫌麻烦可直接跑合并版：`mysql -uroot -p < database/full_schema_all.sql`（仅限空库首部署）。
+
+#### 两套脚本并存
+
+| 方案 | 文件 | 适用场景 |
+|------|------|---------|
+| **合并版** | `database/full_schema_all.sql`（137KB，单文件） | 新环境首部署、CI/CD 自动化 |
+| **拆分版** | `database/*.sql`（22 个文件） | 开发迭代、增量迁移、追溯字段演进 |
+
+合并版把所有 CREATE / ALTER / DROP 拼成一份，一条 `mysql < full_schema_all.sql` 搞定。
+拆分版保留了每个升级脚本的独立语义（哪个功能加了哪些字段一目了然），支持从任意版本增量升级。
+
+> ⚠️ 合并版从拆分版提取 ALTER 时，原脚本的动态 SQL 幂等包装被剥去了。
+> 如果目标列已存在（比如后续版本在 CREATE TABLE 里直接加了这个列），裸 ALTER 会报 `Duplicate column`。
+> 合并版仅用于**空库**，已有库增量迁移请用拆分版。
+
+重新生成合并版：`python3 database/merge_schema.py`
 
 ### 2. 后端（sinan-nft-backend）
 
