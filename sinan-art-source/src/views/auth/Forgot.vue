@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useCaptcha } from '@/utils/useCaptcha'
 import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
@@ -12,6 +13,9 @@ import { showToast } from 'vant'
 const router = useRouter()
 const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
+
+// 图形验证码（场景 auth_forgot：发送找回密码短信前置）
+const captcha = useCaptcha('auth_forgot')
 
 const phone = ref('')
 const code = ref('')
@@ -24,14 +28,23 @@ async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
   try {
-    const res = await user.sendCode(phone.value, 'reset_password')
+    // 图形码前置（场景 auth_forgot）
+    const payload = captcha.inject({ phone: phone.value, scene: 'reset_password' })
+    const res = await user.sendCode(payload.phone, payload.scene, payload.captcha_id, payload.captcha_code)
     start()
     showToast('验证码已发送')
     if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+    await captcha.refresh()
   } catch (e) {
+    if (e.message?.includes('图形验证码')) {
+      captcha.code.value = ''
+      await captcha.refresh()
+    }
     showToast(e.message || '验证码发送失败')
   }
 }
+
+onMounted(() => { captcha.refresh() })
 
 async function onSubmit() {
   if (!canSubmit.value) return
@@ -59,6 +72,12 @@ async function onSubmit() {
 
     <div class="auth-form">
       <AppInput v-model="phone" label="手机号" type="tel" maxlength="11" placeholder="请输入手机号" />
+      <!-- 图形验证码（发送找回密码短信前置，后端场景开关关闭时不显示） -->
+      <AppInput v-if="captcha.enabled" v-model="captcha.code" label="图形验证码" type="tel" maxlength="4" placeholder="请输入验证码">
+        <template #suffix>
+          <img :src="captcha.image" class="captcha-img" alt="验证码" @click="captcha.refresh" />
+        </template>
+      </AppInput>
       <AppInput v-model="code" label="验证码" type="tel" maxlength="6" placeholder="请输入验证码">
         <template #suffix>
           <button class="code-btn" :class="{ disabled: counting }" @click="sendCode">
@@ -79,5 +98,11 @@ async function onSubmit() {
   border: none; cursor: pointer; background: $color-primary; color: #fff; font-size: 13px;
   height: 32px; padding: 0 12px; border-radius: $radius-md; flex-shrink: 0; margin-left: 10px;
   &.disabled { background: #cccccc; cursor: not-allowed; }
+}
+
+.captcha-img {
+  height: 32px; width: auto; cursor: pointer; border-radius: 4px;
+  border: 1px solid $color-border; display: block; flex-shrink: 0; margin-left: 10px;
+  &:active { opacity: 0.7; }
 }
 </style>

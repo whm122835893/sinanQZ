@@ -7,6 +7,11 @@ Route::group('/api', function () {
 
     // ========== 公开接口 ==========
 
+    // 图形验证码（公开，无需登录）
+    Route::get('captcha/image',   'Captcha/image');
+    Route::post('captcha/verify', 'Captcha/verify');
+    Route::get('captcha/enabled', 'Captcha/enabled');
+
     // 认证（无需登录）
     Route::post('auth/send-code',   'Auth/sendCode');
     Route::post('auth/register',    'Auth/register');

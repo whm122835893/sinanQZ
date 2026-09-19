@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use app\admin\service\SmsService;
+use app\service\CaptchaService;
+use think\facade\Cache;
 use think\facade\Db;
 
 /**
@@ -333,6 +335,8 @@ class SystemController extends BaseController
 
     /** 安全策略参数白名单（键 => [中文名, 校验类型, min, max]） */
     private const SECURITY_KEYS = [
+        'captcha.enable'          => ['图形验证码总开关（1=开启 0=关闭，关闭后所有场景均关闭）', 'bool', 0, 1],
+        'captcha.scenes'          => ['图形验证码场景开关（JSON：场景key→0/1）', 'json', 0, 1],
         'admin_login_fail_limit'  => ['管理后台登录失败锁定阈值（次）', 'int', 1, 20],
         'admin_lock_minutes'      => ['账号锁定时长（分钟）', 'int', 1, 1440],
         'large_recharge_alert'    => ['大额充值风控告警阈值（元）', 'int', 1, 10000000],
@@ -351,11 +355,30 @@ class SystemController extends BaseController
 
         $list = [];
         foreach (self::SECURITY_KEYS as $key => [$name, , $min, $max]) {
+            // captcha.scenes 由下方 captchaScenes 场景表单独渲染，不进普通参数列表
+            if ($key === 'captcha.scenes') {
+                continue;
+            }
+            // captcha.enable 未配置时默认开启（与 CaptchaService::isEnabled 缺省值一致）
+            $default = $key === 'captcha.enable' ? '1' : '0';
             $list[] = [
                 'key'         => $key,
                 'name'        => $name,
-                'value'       => $map[$key] ?? '0',
+                'value'       => $map[$key] ?? $default,
                 'description' => $name,
+            ];
+        }
+
+        // 附带图形码场景表（供前端渲染场景级开关）
+        $scenesRaw = $map['captcha.scenes'] ?? '';
+        $scenesMap = $scenesRaw !== '' ? (json_decode($scenesRaw, true) ?: []) : [];
+        $captchaScenes = [];
+        foreach (CaptchaService::SCENES as $scene => $sceneName) {
+            $captchaScenes[] = [
+                'key'     => $scene,
+                'name'    => $sceneName,
+                // 未配置默认 '1'（开启）
+                'value'   => (string) ($scenesMap[$scene] ?? '1'),
             ];
         }
 
@@ -372,6 +395,8 @@ class SystemController extends BaseController
 
         return $this->success([
             'configs' => $list,
+            'captchaScenes' => $captchaScenes,
+            'captchaEnabled' => CaptchaService::isEnabled(),
             'overview' => [
                 'adminTotal'    => $adminTotal,
                 'adminLocked'   => $adminLocked,
@@ -398,6 +423,26 @@ class SystemController extends BaseController
             if (!in_array($value, ['0', '1'], true)) {
                 return $this->fail(4220, '参数 ' . $key . ' 仅允许 0/1');
             }
+        } elseif ($type === 'json') {
+            // captcha.scenes：JSON 对象，key 必须在场景表内，值仅允许 '0'/'1'
+            $map = json_decode($value, true);
+            if (!is_array($map)) {
+                return $this->fail(4220, '参数 ' . $key . ' 需为合法 JSON 对象');
+            }
+            foreach ($map as $scene => $v) {
+                if (!isset(CaptchaService::SCENES[$scene])) {
+                    return $this->fail(4220, '未知图形码场景：' . $scene);
+                }
+                if (!in_array((string) $v, ['0', '1'], true)) {
+                    return $this->fail(4220, '场景 ' . $scene . ' 仅允许 0/1');
+                }
+            }
+            // 归一化：补齐缺失场景（默认 '1'），按键排序保证可读
+            $normalized = [];
+            foreach (CaptchaService::SCENES as $scene => $name) {
+                $normalized[$scene] = (string) ($map[$scene] ?? '1');
+            }
+            $value = json_encode($normalized, JSON_UNESCAPED_UNICODE);
         } else {
             if (!ctype_digit($value) || (int) $value < $min || (int) $value > $max) {
                 return $this->fail(4220, '参数 ' . $key . ' 需为 ' . $min . '~' . $max . ' 的整数');
@@ -419,6 +464,9 @@ class SystemController extends BaseController
                 'updated_at'   => date('Y-m-d H:i:s'),
             ]);
         }
+
+        // 清理 CaptchaService 的配置缓存（cfg_*，10s TTL），保证保存后立即生效
+        Cache::delete('cfg_' . $key);
 
         $this->audit('system', 'security_save', '更新安全策略「' . $name . '」= ' . $value, ['key' => $key, 'value' => $value]);
         return $this->success(null, '安全策略已更新并实时生效');

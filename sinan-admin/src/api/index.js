@@ -31,9 +31,22 @@ const s = (v) => (v === null || v === undefined ? '' : String(v))
 // 认证
 // ============================================================
 
-export function login({ username, password }) {
+export function login({ username, password, captcha_id = '', captcha_code = '' }) {
   // silent：登录页自行处理错误提示，避免双重弹窗
-  return post('/auth/login', { username, password }, { silent: true })
+  const body = { username, password }
+  if (captcha_id) body.captcha_id = captcha_id
+  if (captcha_code) body.captcha_code = captcha_code
+  return post('/auth/login', body, { silent: true })
+}
+
+/** 图形验证码开关探测（scene 默认 admin_login，登录页初始化调用一次） */
+export function getCaptchaEnabled(scene = 'admin_login') {
+  return get(`/captcha/enabled?scene=${encodeURIComponent(scene)}`, {}, { silent: true })
+}
+
+/** 拉取图形验证码图片（data URI + captcha_id） */
+export function getCaptchaImage(scene = 'admin_login') {
+  return get(`/captcha/image?scene=${encodeURIComponent(scene)}`, {}, { silent: true })
 }
 
 export async function logout() {

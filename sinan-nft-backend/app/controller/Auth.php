@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
+use app\service\CaptchaService;
 use app\service\DrawCodeService;
 use app\service\JwtService;
 use app\service\SmsService;
@@ -43,6 +44,37 @@ class Auth extends BaseController
     }
 
     /**
+     * 图形码前置校验（支持场景级开关）。开关关闭时直接通过。
+     * 校验成功后立即消费（consume=true），防重放。
+     *
+     * @param string|null $scene 图形码场景 key（null 时只看总开关）
+     * @return \think\Response|void 校验失败返回响应，成功继续执行
+     */
+    private function requireCaptcha(?string $scene = null)
+    {
+        if (!CaptchaService::isEnabled($scene)) {
+            return;
+        }
+        $captchaId   = trim((string) $this->request->post('captcha_id', ''));
+        $captchaCode = trim((string) $this->request->post('captcha_code', ''));
+        if ($captchaId === '' || $captchaCode === '') {
+            return $this->fail(1001, '请先完成图形验证码');
+        }
+        if (!(new CaptchaService())->verify($captchaId, $captchaCode, true)) {
+            return $this->fail(1001, '图形验证码错误或已过期，请刷新重试');
+        }
+    }
+
+    /**
+     * 短信场景 → 图形码场景映射（/auth/send-code 三个场景）
+     */
+    private const SMS_SCENE_TO_CAPTCHA = [
+        'register'       => 'auth_register',
+        'login'          => 'auth_login_sms',
+        'reset_password' => 'auth_forgot',
+    ];
+
+    /**
      * POST /api/auth/send-code
      * 发送短信验证码
      */
@@ -56,6 +88,12 @@ class Auth extends BaseController
         }
         if (!in_array($scene, ['register', 'login', 'reset_password'])) {
             return $this->fail(1001, '场景参数错误');
+        }
+
+        // 图形码前置（按场景）：挡机器人刷短信
+        $captchaFail = $this->requireCaptcha(self::SMS_SCENE_TO_CAPTCHA[$scene]);
+        if ($captchaFail !== null) {
+            return $captchaFail;
         }
 
         // 60秒内同手机号+场景禁止重发
@@ -258,6 +296,11 @@ class Auth extends BaseController
 
         // 密码登录分支（携带 password 时走密码校验，否则短信验证码）
         if ($password !== '') {
+            // 密码登录需图形码前置（挡撞库爆破，场景级开关）
+            $captchaFail = $this->requireCaptcha('auth_login_password');
+            if ($captchaFail !== null) {
+                return $captchaFail;
+            }
             return $this->loginByPassword($phone, $password);
         }
 

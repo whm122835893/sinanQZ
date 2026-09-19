@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
+use app\service\CaptchaService;
 use app\service\SmsService;
 use think\facade\Db;
 
@@ -149,7 +150,10 @@ class User extends BaseController
 
     /**
      * POST /api/user/send-code
-     * 已登录用户发送验证码（发送至本人手机号，场景：resert_password 改密/cancel 注销）
+     * 已登录用户发送验证码（发送至本人手机号，场景：reset_password 改密/cancel 注销）
+     *
+     * 图形码场景：通过 captcha_scene 参数细分（user_change_pwd 改密 / user_op_pwd 支付密码 / user_cancel 注销），
+     * 与后台「安全策略」场景级开关联动；未传时按短信 scene 兜底映射。
      */
     public function sendCode()
     {
@@ -164,6 +168,28 @@ class User extends BaseController
             return $this->fail(1001, '场景参数错误');
         }
         $phone = $user['phone'];
+
+        // 图形码场景：前端显式传 captcha_scene（user_op_pwd/user_change_pwd/user_cancel），
+        // 未传时按短信 scene 兜底（reset_password→user_change_pwd，cancel→user_cancel）
+        $captchaScene = trim((string) $this->request->post('captcha_scene', ''));
+        if ($captchaScene === '') {
+            $captchaScene = $scene === 'cancel' ? 'user_cancel' : 'user_change_pwd';
+        }
+        if (!in_array($captchaScene, ['user_change_pwd', 'user_op_pwd', 'user_cancel'], true)) {
+            return $this->fail(1001, '图形码场景参数错误');
+        }
+
+        // 图形码前置（按场景，开关关闭直接通过）
+        if (CaptchaService::isEnabled($captchaScene)) {
+            $captchaId   = trim((string) $this->request->post('captcha_id', ''));
+            $captchaCode = trim((string) $this->request->post('captcha_code', ''));
+            if ($captchaId === '' || $captchaCode === '') {
+                return $this->fail(1001, '请先完成图形验证码');
+            }
+            if (!(new CaptchaService())->verify($captchaId, $captchaCode, true)) {
+                return $this->fail(1001, '图形验证码错误或已过期，请刷新重试');
+            }
+        }
 
         // 60 秒内同手机号+场景禁止重发
         $recent = Db::name('verification_codes')

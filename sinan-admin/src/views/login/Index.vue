@@ -2,8 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock } from '@element-plus/icons-vue'
-import { login } from '@/api'
+import { User, Lock, Key } from '@element-plus/icons-vue'
+import { login, getCaptchaEnabled, getCaptchaImage } from '@/api'
 import { useAdminStore } from '@/stores/admin'
 import { useSiteStore } from '@/stores/site'
 
@@ -17,21 +17,60 @@ const form = ref({ username: 'admin', password: 'admin123' })
 const submitting = ref(false)
 const year = new Date().getFullYear()
 
+// 图形验证码
+const captchaEnabled = ref(false)
+const captchaId = ref('')
+const captchaImage = ref('')
+const captchaCode = ref('')
+
 const rules = {
   username: [{ required: true, message: '请输入管理员账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (adminStore.isLogged) router.replace('/dashboard')
+  await refreshCaptcha()
 })
+
+async function refreshCaptcha() {
+  try {
+    // 探测开关
+    const enabledRes = await getCaptchaEnabled()
+    captchaEnabled.value = enabledRes?.code === 0 && !!enabledRes.data?.enabled
+    if (!captchaEnabled.value) return
+    // 拉图片
+    const imgRes = await getCaptchaImage()
+    if (imgRes?.code === 0) {
+      captchaId.value = imgRes.data?.captcha_id || ''
+      captchaImage.value = imgRes.data?.image || ''
+      captchaCode.value = ''
+    }
+  } catch (e) {
+    // 4004 关闭或网络异常 → 降级为不显示
+    captchaEnabled.value = false
+    captchaImage.value = ''
+  }
+}
 
 async function onSubmit() {
   await formRef.value.validate()
   submitting.value = true
   try {
-    const res = await login({ username: form.value.username, password: form.value.password })
-    if (res.code !== 0) throw new Error(res.message)
+    const res = await login({
+      username: form.value.username,
+      password: form.value.password,
+      captcha_id: captchaEnabled.value ? captchaId.value : '',
+      captcha_code: captchaEnabled.value ? captchaCode.value : ''
+    })
+    if (res.code !== 0) {
+      // 图形码错误时自动刷新
+      if (res.message?.includes('图形验证码')) {
+        captchaCode.value = ''
+        await refreshCaptcha()
+      }
+      throw new Error(res.message)
+    }
     adminStore.setSession(res.data)
     ElMessage.success('登录成功')
     router.replace(route.query.redirect || '/dashboard')
@@ -80,6 +119,26 @@ async function onSubmit() {
             show-password
             @keyup.enter="onSubmit"
           />
+        </el-form-item>
+        <!-- 图形验证码（后端开关关闭时不展示） -->
+        <el-form-item v-if="captchaEnabled">
+          <div class="captcha-inline">
+            <el-input
+              v-model="captchaCode"
+              maxlength="4"
+              placeholder="请输入图形验证码"
+              :prefix-icon="Key"
+              @keyup.enter="onSubmit"
+              class="captcha-inline__input"
+            />
+            <img
+              :src="captchaImage"
+              class="captcha-inline__img"
+              alt="验证码"
+              title="点击刷新"
+              @click="refreshCaptcha"
+            />
+          </div>
         </el-form-item>
         <el-button
           type="primary"
@@ -204,5 +263,25 @@ async function onSubmit() {
   font-size: 11px;
   color: $color-text-tertiary;
   letter-spacing: 1px;
+}
+
+// 图形验证码行
+.captcha-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.captcha-inline__input {
+  flex: 1;
+}
+.captcha-inline__img {
+  height: 40px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  display: block;
+  flex-shrink: 0;
+  &:hover { opacity: 0.85; }
 }
 </style>

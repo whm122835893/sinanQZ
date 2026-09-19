@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use app\admin\service\AdminAuthService;
+use app\service\CaptchaService;
 use think\facade\Db;
 
 /**
@@ -29,6 +30,18 @@ class AuthController extends BaseController
 
         if (mb_strlen($username) > 50 || mb_strlen($password) > 100) {
             return $this->fail(4220, '账号或密码格式不正确');
+        }
+
+        // 图形码前置（挡后台撞库爆破，场景级开关：admin_login）
+        if (CaptchaService::isEnabled('admin_login')) {
+            $captchaId   = trim((string) $this->request->param('captcha_id', ''));
+            $captchaCode = trim((string) $this->request->param('captcha_code', ''));
+            if ($captchaId === '' || $captchaCode === '') {
+                return $this->fail(4220, '请先完成图形验证码');
+            }
+            if (!(new CaptchaService())->verify($captchaId, $captchaCode, true)) {
+                return $this->fail(4220, '图形验证码错误或已过期，请刷新重试');
+            }
         }
 
         return AdminAuthService::login(

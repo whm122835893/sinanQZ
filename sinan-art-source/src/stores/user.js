@@ -31,11 +31,15 @@ export const useUserStore = defineStore('user', () => {
 
   // ---- 登录/注册（真实接口：POST /api/auth/login，验证码/密码双模式）----
   async function login(payload) {
-    const res = await request.post('/auth/login', {
+    const body = {
       phone: payload.phone,
       code: payload.code || '',
       password: payload.password || ''
-    })
+    }
+    // 图形验证码参数（密码登录/短信发送均需前置）
+    if (payload.captcha_id) body.captcha_id = payload.captcha_id
+    if (payload.captcha_code) body.captcha_code = payload.captcha_code
+    const res = await request.post('/auth/login', body)
     setToken(res.token)
     setUserInfo({
       nickname: res.userInfo.username,
@@ -49,8 +53,12 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // ---- 发送验证码（真实接口：POST /api/auth/send-code；开发环境返回 debugCode）----
-  async function sendCode(phone, scene = 'login') {
-    const res = await request.post('/auth/send-code', { phone, scene })
+  // 图形码参数可选：captcha_id + captcha_code（开关关闭时不校验）
+  async function sendCode(phone, scene = 'login', captchaId = '', captchaCode = '') {
+    const body = { phone, scene }
+    if (captchaId) body.captcha_id = captchaId
+    if (captchaCode) body.captcha_code = captchaCode
+    const res = await request.post('/auth/send-code', body)
     return res // { debugCode?: '123456' }
   }
 

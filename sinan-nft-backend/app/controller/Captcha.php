@@ -1,0 +1,69 @@
+<?php
+declare(strict_types=1);
+
+namespace app\controller;
+
+use app\BaseController;
+use app\service\CaptchaService;
+
+/**
+ * 图形验证码（C 端，公开接口，无需登录）
+ *
+ * GET  /api/captcha/image?scene=xxx     生成并返回 data URI 图片 + captcha_id（按场景判断是否需要）
+ * POST /api/captcha/verify              校验（consume=false，仅前端预校验）
+ * GET  /api/captcha/enabled?scene=xxx   探测指定场景是否开启图形码
+ *
+ * 场景表见 CaptchaService::SCENES（与后台「安全策略」场景级开关联动）
+ */
+class Captcha extends BaseController
+{
+    /**
+     * GET /api/captcha/image
+     */
+    public function image()
+    {
+        $scene = trim((string) $this->request->param('scene', ''));
+        if ($scene !== '' && !isset(CaptchaService::SCENES[$scene])) {
+            return $this->fail(4004, '未知验证码场景：' . $scene);
+        }
+        if (!CaptchaService::isEnabled($scene !== '' ? $scene : null)) {
+            return $this->fail(4004, '该场景图形验证码已关闭');
+        }
+        $result = (new CaptchaService())->build();
+        return $this->success($result);
+    }
+
+    /**
+     * POST /api/captcha/verify
+     * 业务入口校验会直接调用 CaptchaService::verify()，
+     * 此路由仅用于前端预校验（可选），不消费验证码（consume=false）。
+     */
+    public function verify()
+    {
+        $id   = (string) $this->request->post('captcha_id', '');
+        $code = (string) $this->request->post('captcha_code', '');
+
+        if (!CaptchaService::isEnabled()) {
+            return $this->success(['ok' => true, 'skipped' => true]);
+        }
+        $svc = new CaptchaService();
+        $ok  = $svc->verify($id, $code, false);
+        return $this->success(['ok' => $ok, 'expired' => !$ok && !$svc->exists($id)]);
+    }
+
+    /**
+     * GET /api/captcha/enabled?scene=xxx
+     * 不传 scene 时只反映总开关；传 scene 时反映「总开关 && 场景开关」。
+     */
+    public function enabled()
+    {
+        $scene = trim((string) $this->request->param('scene', ''));
+        if ($scene !== '' && !isset(CaptchaService::SCENES[$scene])) {
+            return $this->fail(4004, '未知验证码场景：' . $scene);
+        }
+        return $this->success([
+            'enabled' => CaptchaService::isEnabled($scene !== '' ? $scene : null),
+            'scene'   => $scene,
+        ]);
+    }
+}

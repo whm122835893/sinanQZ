@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { useCaptcha } from '@/utils/useCaptcha'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -13,6 +14,9 @@ const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
 const { counting, remain, start } = useCountdown(60)
+
+// 图形验证码（场景 auth_register：发送注册短信前置）
+const captcha = useCaptcha('auth_register')
 
 const phone = ref('')
 const nickname = ref('')
@@ -43,15 +47,25 @@ async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
   try {
-    const res = await user.sendCode(phone.value, 'register')
+    // 图形码前置（场景 auth_register）
+    const payload = captcha.inject({ phone: phone.value, scene: 'register' })
+    const res = await user.sendCode(payload.phone, payload.scene, payload.captcha_id, payload.captcha_code)
     start()
     showToast('验证码已发送')
     // 开发环境后端直接回传验证码，便于联调
     if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
+    // 图形码已消费，刷新下一张
+    await captcha.refresh()
   } catch (e) {
+    if (e.message?.includes('图形验证码')) {
+      captcha.code.value = ''
+      await captcha.refresh()
+    }
     showToast(e.message || '验证码发送失败')
   }
 }
+
+onMounted(() => { captcha.refresh() })
 
 async function onSubmit() {
   if (!canSubmit.value) {
@@ -93,6 +107,12 @@ function goAgreement(name) {
 
     <div class="auth-form">
       <AppInput v-model="phone" label="手机号" type="tel" maxlength="11" placeholder="请输入手机号" />
+      <!-- 图形验证码（发送注册短信前置，后端场景开关关闭时不显示） -->
+      <AppInput v-if="captcha.enabled" v-model="captcha.code" label="图形验证码" type="tel" maxlength="4" placeholder="请输入验证码">
+        <template #suffix>
+          <img :src="captcha.image" class="captcha-img" alt="验证码" @click="captcha.refresh" />
+        </template>
+      </AppInput>
       <AppInput v-model="code" label="验证码" type="tel" maxlength="6" placeholder="请输入验证码">
         <template #suffix>
           <button class="code-btn" :class="{ disabled: counting }" @click="sendCode">
@@ -126,6 +146,12 @@ function goAgreement(name) {
   border: none; cursor: pointer; background: $color-primary; color: #fff; font-size: 13px;
   height: 32px; padding: 0 12px; border-radius: $radius-md; flex-shrink: 0; margin-left: 10px;
   &.disabled { background: #cccccc; cursor: not-allowed; }
+}
+
+.captcha-img {
+  height: 32px; width: auto; cursor: pointer; border-radius: 4px;
+  border: 1px solid $color-border; display: block; flex-shrink: 0; margin-left: 10px;
+  &:active { opacity: 0.7; }
 }
 
 .auth-agree { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
