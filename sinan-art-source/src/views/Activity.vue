@@ -220,7 +220,9 @@ function statusOf(a) {
         </div>
         <span class="act-card__arrow">›</span>
       </div>
-      <p v-if="!synthesisActivities.length" class="act-empty">暂无活动</p>
+      <p v-if="!synthesisActivities.length" class="act-empty">
+        {{ activityStore.synthesisEnabled ? '暂无活动' : '合成功能暂未开放' }}
+      </p>
     </div>
 
     <!-- 分解 -->

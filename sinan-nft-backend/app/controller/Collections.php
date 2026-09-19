@@ -76,9 +76,10 @@ class Collections extends BaseController
                 'status'    => $c['status'],
                 'stock'     => max(0, $edition - $sold - $locked),
                 'isBlindBox' => isset($blindBoxSet[$cid]),
+                // 资格购角标优先于优先购（资格购开启时优先购不生效，公售才有优先购）
                 'saleType'   => isset($blindBoxSet[$cid]) ? 'blindbox'
-                    : (isset($prioritySet[$cid]) ? 'priority'
-                        : (isset($eligibilitySet[$cid]) ? 'eligibility' : 'normal')),
+                    : (isset($eligibilitySet[$cid]) ? 'eligibility'
+                        : (isset($prioritySet[$cid]) ? 'priority' : 'normal')),
             ];
         }, $list);
 
@@ -113,8 +114,11 @@ class Collections extends BaseController
         $saleLimit = \app\service\PurchaseQualifyService::perUserLimit($c);
 
         // 联动点 10.1：资格购状态（开启/本人是否具备/提示文案）+ 本人优先购资格标识
+        // 优先购只作用于公售：资格购开启的藏品不返回优先购资格
         $eligibility = \app\service\PurchaseQualifyService::checkEligibility((int) $userId, $c);
-        $priority    = $userId ? \app\service\PurchaseQualifyService::priorityQualification($userId, (int) $c['id']) : null;
+        $priority    = ($userId && !$eligibility['enabled'])
+            ? \app\service\PurchaseQualifyService::priorityQualification($userId, (int) $c['id'])
+            : null;
         $priorityData = $priority ? [
             'saleId'       => (int) $priority['sale_id'],
             'saleName'     => (string) $priority['sale_name'],

@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getSynthesisList, toggleSynthesis, saveSynthesis, getCollectibleList, getSynthesisRecords, recoverUserCollectible } from '@/api'
+import { getSynthesisList, toggleSynthesis, saveSynthesis, getCollectibleList, getSynthesisRecords, recoverUserCollectible, getFeatureSwitches, saveFeatureSwitch, deleteSynthesisActivity } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import EligibilityEditor from '@/components/EligibilityEditor.vue'
 import { ACTIVITY_STATUS } from '@/utils/maps'
@@ -10,6 +10,42 @@ import { fmtNumber } from '@/utils/format'
 
 const loading = ref(true)
 const list = ref([])
+
+// ---- 合成模块开关（synthesis_enabled） ----
+const synthesisEnabled = ref(true)
+
+async function loadSwitches() {
+  const res = await getFeatureSwitches()
+  if (res.code === 0) synthesisEnabled.value = res.data.synthesis !== false
+}
+
+async function onToggleModule(val) {
+  const enabling = !!val
+  await ElMessageBox.confirm(
+    enabling ? '确认开启合成模块？C 端将展示合成页。' : '确认关闭合成模块？C 端合成页将变为空状态。',
+    '合成模块开关',
+    { type: 'warning' }
+  )
+  const res = await saveFeatureSwitch('synthesis', enabling)
+  if (res.code === 0) {
+    synthesisEnabled.value = enabling
+    ElMessage.success(enabling ? '已开启合成模块' : '已关闭合成模块')
+  }
+}
+
+// ---- 删除合成活动（软删除：已结束活动 C 端默认仍展示，删除后不再展示） ----
+async function onRemove(a) {
+  await ElMessageBox.confirm(
+    `确认删除合成活动「${a.title}」？删除后 C 端不再展示该活动（含已结束活动），历史合成记录保留。`,
+    '删除合成活动',
+    { type: 'warning' }
+  )
+  const res = await deleteSynthesisActivity(a.id)
+  if (res.code === 0) {
+    ElMessage.success('合成活动已删除')
+    load()
+  }
+}
 
 // ---- 藏品下拉（材料/产物选择）----
 const collectibles = ref([])
@@ -36,6 +72,7 @@ const form = ref({
 
 onMounted(async () => {
   await load()
+  loadSwitches()
   // 藏品下拉（失败不阻断列表展示）
   const col = await getCollectibleList({ page: 1, pageSize: 200 })
   if (col.code === 0) collectibles.value = col.data.list || []
@@ -246,6 +283,19 @@ async function onSave() {
   <div class="adm-page sy">
     <el-skeleton v-if="loading" :rows="8" animated style="padding: 20px" />
     <template v-else>
+      <!-- 合成模块开关 -->
+      <div class="adm-card">
+        <div class="sy__module-toggle">
+          <div>
+            <div class="sy__module-label">合成模块</div>
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
+              关闭后 C 端合成页为空状态；开启后已结束的活动仍会展示，可对单个活动执行删除
+            </div>
+          </div>
+          <el-switch :model-value="synthesisEnabled" @change="onToggleModule" />
+        </div>
+      </div>
+
       <div class="sy__toolbar">
         <div class="t-tertiary" style="font-size: 12px">
           合成材料从用户仓库扣除，产物实时校验库存；建议新活动创建后先停用观察再开启
@@ -269,6 +319,7 @@ async function onSave() {
           </div>
           <div class="sy__head-ops">
             <el-button link type="primary" size="small" @click="openEdit(a)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="onRemove(a)">删除</el-button>
             <el-switch :model-value="a.status === 'enabled'" @change="onToggle(a)" />
           </div>
         </div>
@@ -516,6 +567,18 @@ async function onSave() {
 </template>
 
 <style scoped lang="scss">
+.sy__module-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: $color-primary-bg;
+}
+
+.sy__module-label { font-size: 14px; font-weight: 600; color: $color-text-primary; }
+
 .sy__toolbar {
   display: flex;
   justify-content: space-between;

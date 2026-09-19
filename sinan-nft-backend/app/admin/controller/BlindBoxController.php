@@ -382,7 +382,12 @@ class BlindBoxController extends BaseController
     }
 
     /**
-     * POST /admin/blindbox/release { id, status(upcoming/onsale), onsale_at? }
+     * POST /admin/blindbox/release { id, status(upcoming/onsale), release_quantity?, onsale_at? }
+     *
+     * 分批发售（release_quantity）：挂在关联的 collectibles 行上，与普通藏品共享同一逻辑。
+     *   - 传 N  → 当前只卖 N 份（盲盒资产 + 盲盒内奖品总量均受此约束）
+     *   - 传 0 / NULL / 不传 → 全部上架
+     *   - 不能小于已售出数量 sold，不能超过 edition
      */
     public function release()
     {
@@ -410,17 +415,37 @@ class BlindBoxController extends BaseController
             return $this->fail(4220, '发售状态仅允许 upcoming / onsale');
         }
 
-        // 发售数量防呆校验（信息性上限，实际可售以库存池为准）
-        $saleQuantity = $this->request->param('sale_quantity');
-        if ($saleQuantity !== null && $saleQuantity !== '') {
-            $saleQuantity = (int) $saleQuantity;
-            $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
-                  - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
-            if ($saleQuantity < 1) {
-                return $this->fail(4220, '发售数量至少为 1');
-            }
-            if ($status === 'onsale' && $saleQuantity > $pool) {
-                return $this->fail(4220, '发售数量不可超过当前盲盒库存池（' . $pool . ' 份）');
+        $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
+              - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
+        if ($status === 'onsale' && $pool <= 0) {
+            return $this->fail(4220, '盲盒资产库存池为空，无法上架');
+        }
+
+        // ─── 分批发售：上架份数（release_quantity） ───
+        $updateReleaseQty = false;
+        $newReleaseQty = null;
+        $rqParam = $this->request->param('release_quantity');
+        if ($rqParam !== null && $rqParam !== '') {
+            $rqParam = (int) $rqParam;
+            if ($rqParam === 0) {
+                $newReleaseQty = null;
+                $updateReleaseQty = true;
+            } else {
+                if ($rqParam < 1) {
+                    return $this->fail(4220, '上架份数至少为 1（或传 0 表示全部上架）');
+                }
+                if ($rqParam > (int) $c['edition']) {
+                    return $this->fail(4220, '上架份数不能超过盲盒资产总发行量（' . $c['edition'] . '）');
+                }
+                $minAllowed = (int) $c['sold'];
+                if ($rqParam < $minAllowed) {
+                    return $this->fail(4220, '上架份数不能小于已售出数量（' . $minAllowed . '）');
+                }
+                if ($status === 'onsale' && ($rqParam - $minAllowed) > $pool) {
+                    return $this->fail(4220, '本次可卖 ' . ($rqParam - $minAllowed) . ' 份，超过当前盲盒资产库存池（' . $pool . ' 份）');
+                }
+                $newReleaseQty = $rqParam;
+                $updateReleaseQty = true;
             }
         }
 
@@ -440,12 +465,17 @@ class BlindBoxController extends BaseController
 
         $now = date('Y-m-d H:i:s');
         $update = ['status' => $status, 'is_release' => 1, 'updated_at' => $now];
+        if ($updateReleaseQty) {
+            $update['release_quantity'] = $newReleaseQty;
+        }
         if ($status === 'onsale') {
             $update['onsale_at'] = date('Y-m-d H:i:s', strtotime((string) ($this->request->param('onsale_at') ?: 'now')));
         }
         Db::name('collectibles')->where('id', $bb['collectible_id'])->update(array_merge($update, $cUpdate));
 
-        $this->audit('blindbox', 'release', '盲盒发售配置「' . $c['name'] . '」→ ' . $status, array_merge($update, $cUpdate), 'blind_box', $id);
+        $this->audit('blindbox', 'release', '盲盒发售配置「' . $c['name'] . '」→ ' . $status
+            . ($updateReleaseQty ? '（上架 ' . ($newReleaseQty === null ? '全部' : $newReleaseQty) . ' 份）' : ''),
+            array_merge($update, $cUpdate), 'blind_box', $id);
         return $this->success(null, '发售配置已生效');
     }
 

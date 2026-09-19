@@ -7,6 +7,8 @@ import {
   toggleLuckyDraw,
   saveLuckyActivity,
   saveLuckyPrizes,
+  getFeatureSwitches,
+  saveFeatureSwitch,
   getCollectibleList,
   getPrioritySales,
   uploadImage
@@ -20,6 +22,28 @@ import { fmtNumber } from '@/utils/format'
 const loading = ref(true)
 const activities = ref([])
 const activeTab = ref('')
+
+// ---- 抽奖模块开关（lucky_enabled） ----
+const luckyEnabled = ref(true)
+
+async function loadSwitches() {
+  const res = await getFeatureSwitches()
+  if (res.code === 0) luckyEnabled.value = res.data.lucky !== false
+}
+
+async function onToggleModule(val) {
+  const enabling = !!val
+  await ElMessageBox.confirm(
+    enabling ? '确认开启抽奖模块？C 端将展示抽奖页。' : '确认关闭抽奖模块？C 端抽奖页将变为空状态。',
+    '抽奖模块开关',
+    { type: 'warning' }
+  )
+  const res = await saveFeatureSwitch('lucky', enabling)
+  if (res.code === 0) {
+    luckyEnabled.value = enabling
+    ElMessage.success(enabling ? '已开启抽奖模块' : '已关闭抽奖模块')
+  }
+}
 
 // ---- 下拉数据源 ----
 const collectibles = ref([])
@@ -62,6 +86,7 @@ const PRIZE_TYPES = {
 
 onMounted(async () => {
   load()
+  loadSwitches()
   const [col, pri] = await Promise.all([
     getCollectibleList({ page: 1, pageSize: 200 }),
     getPrioritySales()
@@ -289,6 +314,19 @@ async function onUploadPrizeImage({ file }) {
   <div class="adm-page ld">
     <el-skeleton v-if="loading" :rows="8" animated style="padding: 20px" />
     <template v-else>
+      <!-- 抽奖模块开关 -->
+      <div class="adm-card">
+        <div class="ld__module-toggle">
+          <div>
+            <div class="ld__module-label">抽奖模块</div>
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
+              关闭后 C 端抽奖页为空状态；开启后展示当前进行中的活动（未配置活动时不显示数据）
+            </div>
+          </div>
+          <el-switch :model-value="luckyEnabled" @change="onToggleModule" />
+        </div>
+      </div>
+
       <div class="ld__toolbar">
         <div class="t-tertiary" style="font-size: 12px">
           抽奖活动支持多期并存；新活动创建后需在奖项池配置完整奖品（概率合计=100%）方可启用
@@ -559,6 +597,18 @@ async function onUploadPrizeImage({ file }) {
 </template>
 
 <style scoped lang="scss">
+.ld__module-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: $color-primary-bg;
+}
+
+.ld__module-label { font-size: 14px; font-weight: 600; color: $color-text-primary; }
+
 .ld__toolbar {
   display: flex;
   justify-content: space-between;

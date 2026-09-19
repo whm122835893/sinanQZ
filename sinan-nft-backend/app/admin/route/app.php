@@ -176,9 +176,16 @@ Route::group('marketing', function () {
     // 签到
     Route::get('checkin', 'MarketingController/checkinConfig');
     Route::post('checkin', 'MarketingController/checkinSave')->middleware(AdminPermission::class, 'marketing:checkin:config');
+    // 签到活动（新建活动模式：列表/新建/编辑/删除）
+    Route::get('checkin-activities', 'MarketingController/checkinActivityList');
+    Route::post('checkin-activity', 'MarketingController/checkinActivitySave')->middleware(AdminPermission::class, 'marketing:checkin:config');
+    Route::post('checkin-activity-delete', 'MarketingController/checkinActivityDelete')->middleware(AdminPermission::class, 'marketing:checkin:config');
     // 邀请
     Route::get('invite', 'MarketingController/inviteList');
     Route::post('invite', 'MarketingController/inviteSave')->middleware(AdminPermission::class, 'marketing:invite:config');
+    // 模块功能开关（签到/抽奖/合成，C端关闭时空状态）
+    Route::get('feature-switches', 'MarketingController/featureSwitches');
+    Route::post('feature-switches', 'MarketingController/featureSwitchSave')->middleware(AdminPermission::class, 'marketing:checkin:config');
     // 抽奖
     Route::get('lucky', 'MarketingController/luckyList');
     Route::post('lucky', 'MarketingController/luckySave')->middleware(AdminPermission::class, 'marketing:lucky:manage');
@@ -187,6 +194,8 @@ Route::group('marketing', function () {
     // 合成
     Route::get('synthesis', 'MarketingController/synthesisList');
     Route::post('synthesis', 'MarketingController/synthesisSave')->middleware(AdminPermission::class, 'marketing:synthesis:manage');
+    // 合成活动删除（软删除，已结束活动C端仍展示）
+    Route::post('synthesis-delete', 'MarketingController/synthesisDelete')->middleware(AdminPermission::class, 'marketing:synthesis:manage');
     // 合成记录（多合/错合定位与对账）
     Route::get('synthesis-records', 'MarketingController/synthesisRecords');
     // 活动空投

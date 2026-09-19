@@ -6,6 +6,7 @@ import { useLoginGate } from '@/utils/loginGate'
 import { useUserStore } from '@/stores/user'
 import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
+import AppEmpty from '@/components/AppEmpty.vue'
 
 const route = useRoute()
 const user = useUserStore()
@@ -19,10 +20,12 @@ const FALLBACK_IMG = {
 
 const prizes = ref([])
 const loading = ref(true)
+const moduleEnabled = ref(true) // 抽奖模块开关（lucky_enabled）
 
 async function fetchActivity() {
   try {
     const res = await request.get('/lucky-draw/activity')
+    moduleEnabled.value = res?.enabled !== false
     prizes.value = (res.items || []).map((p) => ({
       prizeId: p.prizeId,
       name: p.name || p.tierName,
@@ -31,6 +34,7 @@ async function fetchActivity() {
       left: p.total === null ? null : Math.max(0, (p.total || 0) - (p.won || 0))
     }))
   } catch (e) {
+    moduleEnabled.value = false
     showToast(e.message || '奖池加载失败')
   } finally {
     loading.value = false
@@ -149,6 +153,12 @@ const canDraw = computed(() => !loading.value && prizes.value.length > 0)
   <div class="lottery page--no-tabbar">
     <AppNavBar title="幸运抽奖" @click-left="$router.back()" />
 
+    <!-- 空状态：抽奖模块关闭 -->
+    <div v-if="!loading && !moduleEnabled" class="lottery__module-empty">
+      <AppEmpty description="抽奖功能暂未开放" />
+    </div>
+
+    <template v-else>
     <div class="lottery__hero">
       <p class="lottery__tip">免费抽奖 · 转出专属好礼</p>
     </div>
@@ -176,6 +186,11 @@ const canDraw = computed(() => !loading.value && prizes.value.length > 0)
       <button v-show="!showResult" class="wheel-go" :disabled="spinning || !canDraw" @click="drawTimes(1)">
         {{ spinning ? '抽奖中' : '抽奖' }}
       </button>
+    </div>
+
+    <!-- 管理员未配置活动：无奖品空态 -->
+    <div v-if="!loading && moduleEnabled && !prizes.length" class="lottery__pool-empty">
+      <AppEmpty description="暂无进行中的抽奖活动" />
     </div>
 
     <!-- 抽奖次数按钮 -->
@@ -216,6 +231,7 @@ const canDraw = computed(() => !loading.value && prizes.value.length > 0)
         </div>
       </div>
     </van-overlay>
+    </template>
   </div>
 </template>
 
@@ -229,6 +245,9 @@ const canDraw = computed(() => !loading.value && prizes.value.length > 0)
 
 .lottery__hero { padding: 18px $page-padding 4px; text-align: center; }
 .lottery__tip { margin: 0; font-size: 13px; color: $color-text-tertiary; }
+
+.lottery__module-empty { padding-top: 20vh; }
+.lottery__pool-empty { padding: 12px 0 4px; }
 
 .wheel-wrap {
   position: relative;

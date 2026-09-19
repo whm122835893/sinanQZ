@@ -170,7 +170,7 @@ class RealnameController extends BaseController
                 'realname_status' => 2,
                 'is_realname'     => 1,
                 'realname_verified_at' => $now,
-                'realname_reject_reason' => null,
+                'realname_reject_reason' => '',
                 'updated_at'      => $now,
             ]);
             $this->audit('realname', 'audit_approve',

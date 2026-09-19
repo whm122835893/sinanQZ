@@ -48,8 +48,19 @@ function unpick(s) {
 const synthesizing = ref(false)
 const showSuccess = ref(false)
 
+// 已结束活动：仍展示详情，但禁止合成
+const ended = computed(() => !!act.value?.ended)
+// 不符合参与资格（登录后后端返回 eligible=false）
+const ineligibilityReason = computed(() =>
+  act.value?.eligibility && act.value.eligibility.eligible === false
+    ? (act.value.eligibility.reason || '不符合活动参与资格')
+    : ''
+)
+
 async function startSynthesis() {
   if (synthesizing.value || !selected.value.length || !act.value) return
+  if (ended.value) { showToast('活动已结束'); return }
+  if (ineligibilityReason.value) { showToast(ineligibilityReason.value); return }
   if (!requireLogin(route.fullPath)) return
   // 材料充足性前置校验（后端事务内为最终校验）
   const missing = (act.value.materials || []).find((m) => (m.myAvailable || 0) < m.count)
@@ -82,8 +93,12 @@ function closeSuccess() {
     <template v-if="act">
       <!-- 活动信息 -->
       <header class="syn-head">
-        <h1 class="syn-head__title">{{ act.title }}</h1>
+        <h1 class="syn-head__title">
+          {{ act.title }}
+          <span v-if="ended" class="syn-head__ended">已结束</span>
+        </h1>
         <p class="syn-head__time">开始：{{ act.startTime }}　结束：{{ act.endTime }}</p>
+        <p v-if="ineligibilityReason" class="syn-head__ineligible">{{ ineligibilityReason }}</p>
         <p class="syn-desc">{{ act.desc }}</p>
       </header>
 
@@ -117,8 +132,8 @@ function closeSuccess() {
       </div>
 
       <div class="syn-actions">
-        <AppButton :disabled="!selected.length || synthesizing" @click="startSynthesis">
-          {{ synthesizing ? '合成中…' : '立即合成' }}
+        <AppButton :disabled="ended || !!ineligibilityReason || !selected.length || synthesizing" @click="startSynthesis">
+          {{ ended ? '活动已结束' : ineligibilityReason ? '不符合参与资格' : synthesizing ? '合成中…' : '立即合成' }}
         </AppButton>
       </div>
     </template>
@@ -176,7 +191,16 @@ function closeSuccess() {
 
 .syn-head { margin: 14px $page-padding 0; padding: 16px; background: $color-card; border-radius: $radius-lg; }
 .syn-head__title { margin: 0 0 8px; font-size: 18px; font-weight: 700; color: $color-text-primary; }
+.syn-head__ended {
+  display: inline-block; vertical-align: middle; margin-left: 8px;
+  font-size: 11px; font-weight: 500; color: $color-text-tertiary;
+  background: $color-surface; border-radius: $radius-pill; padding: 2px 8px;
+}
 .syn-head__time { margin: 0 0 8px; font-size: 13px; color: $color-text-tertiary; }
+.syn-head__ineligible {
+  margin: 0 0 8px; font-size: 12px; color: $color-primary;
+  background: $color-surface; border-radius: $radius-sm; padding: 6px 10px;
+}
 .syn-desc { margin: 0; font-size: 13px; color: $color-text-secondary; line-height: 1.7; text-align: justify; }
 
 /* 合成结果（上方） */

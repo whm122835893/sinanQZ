@@ -479,10 +479,15 @@ export async function toggleCollectibleStatus(id, action) {
   return res.code === 0 ? { ...res, data: act === 'soldout' ? 'soldout' : 'offline' } : res
 }
 
-/** 发售配置（上架时间/发售数量） */
-export function releaseCollectible({ id, saleQuantity, price, perUserLimit }) {
+/** 发售配置（上架时间/发售数量/分批发售） */
+export function releaseCollectible({ id, saleQuantity, price, perUserLimit, releaseQuantity }) {
   return post(`/collectibles/${id}/release`, {
     status: 'onsale',
+    // release_quantity：分批发售上架份数
+    // 传整数 N → 上架 N 份；传 0 / 空 / 不传 → 全部上架（NULL）
+    ...(releaseQuantity !== undefined && releaseQuantity !== null && releaseQuantity !== ''
+        ? { release_quantity: Number(releaseQuantity) }
+        : {}),
     ...(saleQuantity ? { sale_quantity: saleQuantity } : {}),
     ...(price ? { price } : {}),
     ...(perUserLimit ? { per_user_limit: perUserLimit } : {})
@@ -724,10 +729,14 @@ export function destroyBlindBox({ id, quantity, reason = '管理员销毁库存'
   return post(`/blind-boxes/${id}/destroy`, { quantity, reason })
 }
 
-/** 盲盒发售 */
-export function releaseBlindBox({ id, saleQuantity, price, perUserLimit }) {
+/** 盲盒发售（含分批发售 release_quantity） */
+export function releaseBlindBox({ id, saleQuantity, price, perUserLimit, releaseQuantity }) {
   return post(`/blind-boxes/${id}/release`, {
     status: 'onsale',
+    // release_quantity：分批发售上架份数（挂在关联的 collectibles 行上）
+    ...(releaseQuantity !== undefined && releaseQuantity !== null && releaseQuantity !== ''
+        ? { release_quantity: Number(releaseQuantity) }
+        : {}),
     ...(saleQuantity ? { sale_quantity: saleQuantity } : {}),
     ...(price ? { price } : {}),
     ...(perUserLimit !== undefined && perUserLimit !== null ? { per_user_limit: perUserLimit } : {})
@@ -1125,6 +1134,79 @@ export function saveCheckinRules(rules) {
     if (Array.isArray(r.rewards) && r.rewards.length) rewardConfig[r.day] = r.rewards
   })
   return post('/marketing/checkin', { reward_config: rewardConfig })
+}
+
+// ---- 签到活动（新建活动模式：多活动列表 + 新建/编辑/删除） ----
+
+/** 签到活动列表（多条活动，C端取最新一条生效中的） */
+export async function getCheckinActivities() {
+  const res = await get('/marketing/checkin-activities')
+  if (res.code !== 0) return res
+  const d = res.data || {}
+  return {
+    code: 0,
+    message: res.message,
+    data: {
+      list: (d.list || []).map((a) => ({
+        id: n(a.id),
+        name: s(a.name),
+        status: s(a.status) === 'enabled' ? 'enabled' : 'disabled',
+        startTime: s(a.start_time || a.startTime),
+        endTime: s(a.end_time || a.endTime),
+        started: !!a.started,
+        ended: !!a.ended,
+        signinCount: n(a.signin_count || a.signinCount),
+        rewardDays: n(a.reward_days || a.rewardDays),
+        rewardConfig: a.reward_config || a.rewardConfig || {},
+        eligibility: { type: s(a.eligibility_type || a.eligibilityType) || 'all', config: a.eligibility_config || a.eligibilityConfig || {} },
+        grantMode: s(a.grant_mode || a.grantMode) || 'realtime'
+      })),
+      total: n(d.total)
+    }
+  }
+}
+
+/** 新建/编辑签到活动（id 为空即新建；rewardRules: [{day, rewards}]） */
+export function saveCheckinActivityV2(payload) {
+  const rewardConfig = {}
+  ;(payload.rewardRules || []).forEach((r) => {
+    if (Array.isArray(r.rewards) && r.rewards.length) rewardConfig[r.day] = r.rewards
+  })
+  return post('/marketing/checkin-activity', {
+    id: payload.id || undefined,
+    name: payload.name,
+    status: payload.status || 'enabled',
+    start_time: payload.startTime,
+    end_time: payload.endTime || '',
+    reward_config: rewardConfig,
+    eligibility_type: payload.eligibility?.type || 'all',
+    eligibility_config: payload.eligibility?.config || {},
+    grant_mode: payload.grantMode || 'realtime'
+  })
+}
+
+/** 删除签到活动（软删除，历史签到记录保留） */
+export function deleteCheckinActivity(id) {
+  return post('/marketing/checkin-activity-delete', { id })
+}
+
+// ---- 模块功能开关（签到/抽奖/合成，关闭时 C 端空状态） ----
+
+/** 模块开关状态 { checkin, lucky, synthesis } */
+export async function getFeatureSwitches() {
+  const res = await get('/marketing/feature-switches')
+  if (res.code !== 0) return res
+  return { code: 0, message: res.message, data: res.data || {} }
+}
+
+/** 设置模块开关（module: checkin/lucky/synthesis） */
+export function saveFeatureSwitch(module, enabled) {
+  return post('/marketing/feature-switches', { module, enabled: enabled ? 1 : 0 })
+}
+
+/** 删除合成活动（软删除：已结束活动 C 端默认仍展示，删除后不再展示） */
+export function deleteSynthesisActivity(id) {
+  return post('/marketing/synthesis-delete', { id })
 }
 
 /** 抽奖活动列表（多活动：名称/状态/起止时间/参与资格/发放方式/奖池） */
@@ -1549,6 +1631,19 @@ export function issueRewardRecords({ activityType, activityId, recordIds }) {
   })
 }
 
+/** 新建/编辑优先购活动（一物一活动，后端自动 upsert + C 端镜像同步） */
+export function savePriority(payload) {
+  return post('/marketing/priority', {
+    ...(payload.id ? { id: payload.id } : {}),
+    collectible_id: payload.collectibleId,
+    name: payload.name,
+    status: payload.status || 'enabled',
+    start_time: payload.startTime || '',
+    end_time: payload.endTime || '',
+    remark: payload.remark || ''
+  })
+}
+
 /** 优先购活动列表 */
 export async function getPrioritySales() {
   const res = await get('/marketing/priority', { page: 1, pageSize: 50 })
@@ -1604,6 +1699,16 @@ export function addWhitelist({ saleId, phone, quantity, expiresAt }) {
     phone,
     max_quantity: quantity,
     expires_at: expiresAt || ''
+  })
+}
+
+/** 批量导入优先购白名单（phones 支持换行字符串或数组） */
+export function importPriorityWhitelist({ saleId, phones, maxQuantity = 1, expiresAt = '' }) {
+  return post('/marketing/priority-whitelist', {
+    activity_id: saleId,
+    phones,
+    max_quantity: maxQuantity,
+    expires_at: expiresAt
   })
 }
 
@@ -2554,13 +2659,13 @@ export async function getAdmins(params) {
       list: (d.list || []).map((a) => ({
         id: a.id,
         username: s(a.username),
-        name: s(a.realName),
-        role: s(a.roleCode),
+        name: s(a.real_name ?? a.realName),
+        role: s(a.role_code ?? a.roleCode),
         avatar: '',
         status: n(a.status) === 1 ? 'enabled' : 'disabled',
-        lastLoginTime: s(a.lastLoginAt),
+        lastLoginTime: s(a.last_login_at ?? a.lastLoginAt),
         phone: s(a.phone),
-        isLocked: !!a.isLocked
+        isLocked: !!n(a.is_locked ?? a.isLocked)
       })),
       total: n(d.total)
     }
@@ -2582,12 +2687,25 @@ export async function getRoles() {
         key: s(r.code),
         name: s(r.name),
         desc: s(r.description),
-        members: n(r.adminCount),
+        members: n(r.admin_count ?? r.adminCount),
         permissions: []
       })),
-      tree: (tree.data || []).map((p) => ({ label: s(p.name), key: s(p.code), children: (p.children || []).map((c) => ({ label: s(c.name), key: s(c.code) })) }))
+      tree: (tree.data || []).map((p) => ({
+        id: n(p.id),
+        label: s(p.name),
+        key: s(p.code),
+        children: (p.children || []).map((c) => ({ id: n(c.id), label: s(c.name), key: s(c.code) }))
+      }))
     }
   }
+}
+
+// 角色详情（含 permission_ids，权限明细弹窗数据源）
+export async function getRoleDetail(id) {
+  const res = await getSilentSafe(`/permission/roles/${id}`)
+  if (res.code !== 0) return res
+  const d = res.data || {}
+  return { code: 0, message: 'ok', data: { id: n(d.id), name: s(d.name), desc: s(d.description), permissionIds: (d.permission_ids || []).map((i) => n(i)) } }
 }
 
 export async function getLoginLogs(params) {

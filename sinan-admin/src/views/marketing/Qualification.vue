@@ -35,6 +35,7 @@ function exportWl(q) {
 const editShow = ref(false)
 const editing = ref(null)
 const form = ref({
+  collectibleId: null,
   isEnabled: 1,
   conditionType: 1,
   enabledConditions: [],     // UI 视图层：启用了哪些条件类型（collectible/checkin/invite/register）
@@ -56,8 +57,9 @@ async function load() {
   loading.value = true
   const [q, c] = await Promise.all([getQualifications(), getCollectibleList({ page: 1, size: 100 })])
   list.value = q.data
+  // 资格购可针对在售中 + 待上架的藏品先配置好，只排除售罄/已下架
   collectibles.length = 0
-  collectibles.push(...(c.data.list || []).filter((x) => x.circulate > 0))
+  collectibles.push(...(c.data.list || []).filter((x) => x.status !== 'soldout' && x.status !== 'off'))
   loading.value = false
   // 白名单明细单独拉取（列表接口只给 whitelistCount，whitelist 恒为空数组）
   await Promise.all(
@@ -102,6 +104,22 @@ async function onToggle(q, val) {
 // ---- 条件编辑 ----
 function openEdit(q) {
   editing.value = q
+  if (!q) {
+    // 新建：空表单等用户选藏品
+    form.value = {
+      collectibleId: null,
+      isEnabled: 1,
+      conditionType: 1,
+      enabledConditions: [],
+      requiredCollectibleIds: [],
+      requiredCheckinDays: 0,
+      requiredInviteCount: 0,
+      validStartAt: '',
+      validEndAt: ''
+    }
+    editShow.value = true
+    return
+  }
   // 从后端三个字段反向推导 UI 的 enabledConditions
   const ids = q.requiredCollectibles.map((c) => c.collectibleId)
   const enabled = []
@@ -110,6 +128,7 @@ function openEdit(q) {
   if (q.requiredInviteCount > 0) enabled.push('invite')
 
   form.value = {
+    collectibleId: q.collectibleId,
     isEnabled: q.isEnabled,
     conditionType: q.conditionType,
     enabledConditions: enabled,
@@ -126,15 +145,16 @@ const conditionCount = computed(() => form.value.enabledConditions.length)
 
 async function onSave() {
   const f = form.value
-  if (!conditionCount.value) return ElMessage.warning('请至少启用 1 个条件类型')
+  if (!editing.value && !f.collectibleId) return ElMessage.warning('请选择要开启资格购的藏品')
+  if (!conditionCount.value) return ElMessage.warning('请至少启用 1 个条件类型（或直接导入白名单）')
   if (f.conditionType === 2 && conditionCount.value < 2) {
     return ElMessage.warning('「满足全部」需至少启用 2 个条件类型')
   }
   // UI → 后端字段：未启用的条件类型强制清空（避免残留旧值）
   const enabled = new Set(f.enabledConditions)
   const payload = {
-    id: editing.value.id,
-    collectibleId: editing.value.collectibleId,
+    id: editing.value?.id,
+    collectibleId: editing.value?.collectibleId || f.collectibleId,
     isEnabled: f.isEnabled,
     conditionType: f.conditionType,
     requiredCollectibleIds: enabled.has('collectible') ? f.requiredCollectibleIds : [],
@@ -211,6 +231,16 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
         class="ql__intro"
         title="资格购 = 购买门槛/条件限制（可完全不对公售），与优先购（时间优先通道）完全独立、可同时配置。优先购资格可绕过资格购限制；资格购不冻结库存、不占用配额，仅作购买门槛"
       />
+
+      <div class="ql__header-actions" style="margin-bottom: 12px">
+        <el-button type="primary" :icon="User" @click="openEdit(null)">新建资格购配置</el-button>
+      </div>
+
+      <el-empty v-if="!list.length" description="暂无资格购配置" class="adm-empty">
+        <template #default>
+          <el-button type="primary" :icon="User" @click="openEdit(null)">立即创建</el-button>
+        </template>
+      </el-empty>
 
       <div v-for="q in list" :key="q.id" class="adm-card ql__card">
         <div class="ql__head">
@@ -289,8 +319,28 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
       </div>
 
       <!-- 条件配置弹窗 -->
-      <el-dialog v-model="editShow" :title="`资格购条件配置 · ${editing?.collectibleName || ''}`" width="520px" :close-on-click-modal="false">
+      <el-dialog v-model="editShow" :title="editing ? `编辑资格购 · ${editing.collectibleName}` : '新建资格购配置'" width="520px" :close-on-click-modal="false">
         <el-form label-width="110px">
+          <el-form-item v-if="!editing" label="目标藏品" required>
+            <el-select
+              v-model="form.collectibleId"
+              filterable
+              placeholder="选择要开启资格购的藏品"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="c in collectibles"
+                :key="c.id"
+                :label="c.name"
+                :value="c.id"
+              >
+                <div style="display: flex; justify-content: space-between">
+                  <span>{{ c.name }}</span>
+                  <span class="t-tertiary">价格 ¥{{ c.price || '0.00' }}</span>
+                </div>
+              </el-option>
+            </el-select>
+          </el-form-item>
           <el-form-item label="资格购开关">
             <el-switch v-model="form.isEnabled" :active-value="1" :inactive-value="0" />
           </el-form-item>

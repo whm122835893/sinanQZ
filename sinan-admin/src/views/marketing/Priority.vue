@@ -1,17 +1,93 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Download } from '@element-plus/icons-vue'
+import { Plus, Delete, Download, Edit, Upload } from '@element-plus/icons-vue'
 import {
   getPrioritySales,
   getPriorityWhitelist,
   addWhitelist,
   removePriorityWhitelist,
-  cleanExpiredPriority
+  cleanExpiredPriority,
+  savePriority,
+  getCollectibleList,
+  importPriorityWhitelist
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import { ACTIVITY_STATUS } from '@/utils/maps'
 import { downloadCsv } from '@/utils/csv'
+
+// ---- 可选藏品下拉（新建活动时选择） ----
+const collectibles = ref([])
+const editShow = ref(false)
+const editing = ref(null)
+const editLoadingWl = ref(false)
+const editWhitelists = ref([])       // 编辑模式下当前白名单只读展示
+const editSyncWhitelist = ref(false) // 是否在保存时覆盖白名单（默认 false → 只改活动信息，不动名单）
+const editForm = ref({
+  collectibleId: null,
+  name: '',
+  status: 'enabled',
+  startTime: '',
+  endTime: '',
+  remark: ''
+})
+
+async function openEdit(s) {
+  editing.value = s || null
+  if (s) {
+    editForm.value = {
+      collectibleId: s.collectibleId,
+      name: s.name,
+      status: s.status,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      remark: s.remark || ''
+    }
+    // 拉取当前白名单只读展示
+    editLoadingWl.value = true
+    editWhitelists.value = (s.whitelists && s.whitelists.length) ? s.whitelists : []
+    try {
+      const w = await getPriorityWhitelist(s.id)
+      if (w.code === 0) editWhitelists.value = w.data
+    } finally {
+      editLoadingWl.value = false
+    }
+    // 编辑模式默认不覆盖白名单，避免误操作
+    editSyncWhitelist.value = false
+  } else {
+    editForm.value = { collectibleId: null, name: '', status: 'enabled', startTime: '', endTime: '', remark: '' }
+    editWhitelists.value = []
+    editSyncWhitelist.value = true // 新建时没有名单可保留
+  }
+  editShow.value = true
+}
+
+async function onSaveEdit() {
+  const f = editForm.value
+  if (!f.collectibleId) return ElMessage.warning('请选择藏品')
+  if (!f.name?.trim()) return ElMessage.warning('请填写活动名称')
+  const payload = {
+    id: editing.value?.id,
+    collectibleId: f.collectibleId,
+    name: f.name.trim(),
+    status: f.status,
+    startTime: f.startTime,
+    endTime: f.endTime,
+    remark: f.remark
+  }
+  // 只有显式勾选「同步白名单」才覆盖传值（后端 has('whitelist') 判定）
+  if (editSyncWhitelist.value) {
+    payload.whitelist = editWhitelists.value.map((w) => w.userId)
+  }
+  const res = await savePriority(payload)
+  if (res.code === 0) {
+    ElMessage.success(editing.value ? '优先购活动已更新' : '优先购活动已创建（后端自动同步白名单镜像）')
+    editShow.value = false
+    load()
+  } else {
+    ElMessage.error(res.message)
+  }
+}
 
 const loading = ref(true)
 const sales = ref([])
@@ -37,7 +113,56 @@ const addShow = ref(false)
 const currentSale = ref(null)
 const form = ref({ phone: '', quantity: 1, expiresAt: '' })
 
-onMounted(load)
+// ---- 批量导入白名单 ----
+const importShow = ref(false)
+const importTarget = ref(null) // 目标优先购活动
+const importForm = ref({ phones: '', maxQuantity: 2, expiresAt: '' })
+
+function openImport(s) {
+  importTarget.value = s
+  importForm.value = { phones: '', maxQuantity: 2, expiresAt: s.endTime || '' }
+  importShow.value = true
+}
+
+async function onImport() {
+  const f = importForm.value
+  const phones = (f.phones || '').split(/[\s,，]+/).filter(Boolean)
+  if (!phones.length) return ElMessage.warning('请至少输入一个手机号')
+  if (phones.length > 500) return ElMessage.warning('单次最多导入 500 人')
+
+  const res = await importPriorityWhitelist({
+    saleId: importTarget.value.id,
+    phones: phones.join('\n'),
+    maxQuantity: f.maxQuantity,
+    expiresAt: f.expiresAt
+  })
+
+  // 后端统一返回 code:0 成功，data.imported 实际导入数；即使全部已存在/无效也返回 code:0
+  if (res.code === 0) {
+    const d = res.data || {}
+    const msg = d.imported === 0
+      ? `全部已存在或无效，未新增任何成员`
+      : `已导入 ${d.imported} 人`
+    ElMessage.success(msg)
+    importShow.value = false
+    load()
+  } else {
+    ElMessage.error(res.message)
+  }
+}
+
+onMounted(async () => {
+  await Promise.all([
+    load(),
+    (async () => {
+      // 优先购需要：在售中 + 有库存池 + 未下架（盲盒也可以做优先购）
+      const c = await getCollectibleList({ page: 1, pageSize: 200 })
+      collectibles.value = (c.data?.list || []).filter(
+        (x) => x.status !== 'soldout' && x.status !== 'off' && x.availablePool > 0
+      )
+    })()
+  ])
+})
 
 async function load() {
   loading.value = true
@@ -116,6 +241,18 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
   <div class="adm-page pr">
     <el-skeleton v-if="loading" :rows="8" animated style="padding: 20px" />
     <template v-else>
+      <div class="adm-page-header">
+        <div class="adm-page-title">优先购管理</div>
+        <div class="adm-page-sub">为藏品配置「时间优先」购买通道，白名单用户可在正式开售前提前买入</div>
+        <el-button type="primary" :icon="Plus" @click="openEdit(null)">新建优先购活动</el-button>
+      </div>
+
+      <el-empty v-if="!sales.length" description="暂无优先购活动" class="adm-empty">
+        <template #default>
+          <el-button type="primary" :icon="Plus" @click="openEdit(null)">立即创建</el-button>
+        </template>
+      </el-empty>
+
       <div v-for="s in sales" :key="s.id" class="adm-card pr__card">
         <div class="pr__head">
           <img class="pr__cover" :src="s.cover" :alt="s.collectibleName" />
@@ -129,7 +266,9 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
             <div class="pr__desc t-tertiary">{{ s.startTime }} ~ {{ s.endTime }}</div>
           </div>
           <div class="pr__head-ops">
+            <el-button size="small" :icon="Edit" @click="openEdit(s)">编辑</el-button>
             <el-button type="primary" size="small" :icon="Plus" @click="openAdd(s)">加白名单</el-button>
+            <el-button size="small" :icon="Upload" @click="openImport(s)">导入名单</el-button>
             <el-button size="small" :icon="Download" @click="exportWl(s)">导出名单</el-button>
             <el-button size="small" :icon="Delete" @click="onClean(s)">清理过期</el-button>
           </div>
@@ -203,6 +342,146 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
           <el-button type="primary" @click="onAdd">确认添加</el-button>
         </template>
       </el-dialog>
+
+      <!-- 批量导入白名单弹窗 -->
+      <el-dialog
+        v-model="importShow"
+        :title="`批量导入白名单 · ${importTarget?.name || ''}`"
+        width="520px"
+        :close-on-click-modal="false"
+      >
+        <el-form label-width="110px">
+          <el-form-item label="手机号列表" required>
+            <el-input
+              v-model="importForm.phones"
+              type="textarea"
+              :rows="6"
+              placeholder="批量手机号，换行分隔，每行一个；也支持逗号、空格分隔。格式错误 / 非注册用户自动拦截，已存在自动跳过"
+            />
+            <div class="pr__import-tip">
+              支持 Ctrl+V 从 Excel / TXT 直接粘贴；单次最多 500 人
+            </div>
+          </el-form-item>
+          <el-form-item label="统一限购份数">
+            <el-input-number v-model="importForm.maxQuantity" :min="1" :max="999" style="width: 180px" />
+            <div class="pr__import-tip">同一活动不同用户限购一致，如需差异化请使用「加白名单」逐个配置</div>
+          </el-form-item>
+          <el-form-item label="有效期至">
+            <el-input v-model="importForm.expiresAt" placeholder="YYYY-MM-DD HH:mm:ss（可选，留空跟随活动窗口）" />
+          </el-form-item>
+        </el-form>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="后端幂等处理：已存在的用户自动跳过、格式错误和非注册用户拦截不影响有效名单导入；导入操作写入审计日志并同步 C 端镜像表"
+        />
+        <template #footer>
+          <el-button @click="importShow = false">取消</el-button>
+          <el-button type="primary" @click="onImport">确认导入</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 新建/编辑优先购活动弹窗 -->
+      <el-dialog
+        v-model="editShow"
+        :title="editing ? `编辑优先购活动 · ${editing.name}` : '新建优先购活动'"
+        width="640px"
+        :close-on-click-modal="false"
+      >
+        <el-form label-width="110px">
+          <el-form-item label="目标藏品" required>
+            <el-select
+              v-model="editForm.collectibleId"
+              filterable
+              :disabled="!!editing"
+              placeholder="选择要开启优先购的藏品"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="c in collectibles"
+                :key="c.id"
+                :label="c.name"
+                :value="c.id"
+              >
+                <div style="display: flex; justify-content: space-between">
+                  <span>{{ c.name }}</span>
+                  <span class="t-tertiary">价格 ¥{{ c.price || '0.00' }}</span>
+                </div>
+              </el-option>
+            </el-select>
+            <div v-if="editing" class="t-tertiary" style="font-size: 12px; margin-top: 4px">
+              藏品已绑定，优先购活动一物一藏品不允许更换
+            </div>
+          </el-form-item>
+          <el-form-item label="活动名称" required>
+            <el-input v-model="editForm.name" placeholder="如：藏品首发优先购通道" maxlength="100" />
+          </el-form-item>
+          <el-form-item label="活动状态">
+            <el-select v-model="editForm.status" style="width: 160px">
+              <el-option label="启用" value="enabled" />
+              <el-option label="已停用" value="disabled" />
+              <el-option label="已结束" value="ended" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="开始时间">
+            <el-input v-model="editForm.startTime" placeholder="YYYY-MM-DD HH:mm:ss（可选）" />
+          </el-form-item>
+          <el-form-item label="结束时间">
+            <el-input v-model="editForm.endTime" placeholder="YYYY-MM-DD HH:mm:ss（可选）" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="editForm.remark" type="textarea" :rows="2" maxlength="255" placeholder="可选，内部说明" />
+          </el-form-item>
+        </el-form>
+
+        <!-- 编辑模式：白名单只读展示 + 同步开关 -->
+        <template v-if="editing">
+          <div class="pr__edit-wl-head">
+            <div class="pr__edit-wl-title">
+              当前白名单 <span class="t-tertiary">（{{ editWhitelists.length }} 人）</span>
+            </div>
+            <el-switch
+              v-model="editSyncWhitelist"
+              active-text="保存时同步"
+              inactive-text="保存时保留"
+              inline-prompt
+            />
+          </div>
+          <div
+            v-if="editSyncWhitelist"
+            class="pr__edit-wl-tip"
+          >
+            ⚠️ 已开启同步：本次保存将用下方列表覆盖白名单（清空或增删）。建议先在活动卡片上用「加白名单 / 移除」操作，再回来保存活动信息。
+          </div>
+          <div class="pr__edit-wl-table">
+            <el-table
+              v-loading="editLoadingWl"
+              :data="editWhitelists"
+              size="small"
+              empty-text="当前活动暂无白名单"
+            >
+              <el-table-column label="用户" prop="nickname" width="100" />
+              <el-table-column label="手机号" prop="phone" width="140" />
+              <el-table-column label="最大购买量" prop="maxQuantity" width="90" />
+              <el-table-column label="已用" prop="usedQuantity" width="70" />
+              <el-table-column label="有效期" prop="expiresAt" min-width="140" />
+            </el-table>
+          </div>
+        </template>
+
+        <el-alert
+          v-if="!editing"
+          type="info"
+          :closable="false"
+          show-icon
+          title="保存后自动同步到 C 端镜像表（priority_sales），一物一活动；如需加白名单请在活动卡片上点击「加白名单」"
+        />
+        <template #footer>
+          <el-button @click="editShow = false">取消</el-button>
+          <el-button type="primary" @click="onSaveEdit">{{ editing ? '保存修改' : '创建活动' }}</el-button>
+        </template>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -253,4 +532,31 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
 }
 
 .pr__tip { margin-top: 10px; }
+
+.pr__edit-wl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+
+.pr__edit-wl-title { font-weight: 600; font-size: 13px; }
+
+.pr__edit-wl-tip {
+  font-size: 12px;
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.pr__edit-wl-table {
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+}
 </style>

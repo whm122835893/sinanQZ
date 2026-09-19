@@ -373,8 +373,14 @@ class CollectibleController extends BaseController
     }
 
     /**
-     * POST /admin/collectible/release { id, status, onsale_at?, off_sale_at?, price?, per_user_limit?, sale_quantity? }
+     * POST /admin/collectible/release { id, status, release_quantity?, onsale_at?, off_sale_at?, price?, per_user_limit? }
      * 发售配置：上架（upcoming→onsale）/重新上架/调整开售时间/发售价格与每人限购
+     *
+     * 分批发售（release_quantity）：
+     *   - 填整数 N → 当前只卖 N 份，卖完后再 release 把 release_quantity 改大或清零
+     *   - 填 0 或 NULL / 不传 → 全部上架（release_quantity 字段置 NULL，按 edition 卖）
+     *   - 不能小于已售出数量 sold（避免已卖出的份被"收回"）
+     *   - 不能超过 edition
      */
     public function release()
     {
@@ -399,15 +405,35 @@ class CollectibleController extends BaseController
             }
         }
 
-        // 发售数量防呆校验（信息性上限，实际可售以库存池为准）
-        $saleQuantity = $this->request->param('sale_quantity');
-        if ($saleQuantity !== null && $saleQuantity !== '') {
-            $saleQuantity = (int) $saleQuantity;
-            if ($saleQuantity < 1) {
-                return $this->fail(4220, '发售数量至少为 1');
-            }
-            if ($status === 'onsale' && $saleQuantity > $pool) {
-                return $this->fail(4220, '发售数量不可超过当前库存池（' . $pool . ' 份）');
+        // ─── 分批发售：上架份数（release_quantity） ───
+        // 前端传整数 → 写入；传 0 / 空 / undefined → 全部上架（置 NULL）
+        $updateReleaseQty = false;
+        $newReleaseQty = null;
+        $rqParam = $this->request->param('release_quantity');
+        if ($rqParam !== null && $rqParam !== '') {
+            $rqParam = (int) $rqParam;
+            if ($rqParam === 0) {
+                // 显式传 0 = 全部上架
+                $newReleaseQty = null;
+                $updateReleaseQty = true;
+            } else {
+                if ($rqParam < 1) {
+                    return $this->fail(4220, '上架份数至少为 1（或传 0 表示全部上架）');
+                }
+                if ($rqParam > (int) $c['edition']) {
+                    return $this->fail(4220, '上架份数不能超过总发行量（' . $c['edition'] . '）');
+                }
+                // 上架份数 = 已售 + 当前可卖上限，不能把已售出的份"收回"
+                $minAllowed = (int) $c['sold'];
+                if ($rqParam < $minAllowed) {
+                    return $this->fail(4220, '上架份数不能小于已售出数量（' . $minAllowed . '）');
+                }
+                // 上架份数不能让可卖部分超过当前库存池
+                if ($status === 'onsale' && ($rqParam - $minAllowed) > $pool) {
+                    return $this->fail(4220, '本次可卖 ' . ($rqParam - $minAllowed) . ' 份，超过当前库存池（' . $pool . ' 份）');
+                }
+                $newReleaseQty = $rqParam;
+                $updateReleaseQty = true;
             }
         }
 
@@ -430,6 +456,9 @@ class CollectibleController extends BaseController
             'is_release'  => 1,
             'updated_at' => date('Y-m-d H:i:s'),
         ];
+        if ($updateReleaseQty) {
+            $update['release_quantity'] = $newReleaseQty;
+        }
         foreach (['onsale_at', 'off_sale_at', 'release_date'] as $field) {
             $value = $this->optionalDate($field);
             if ($value !== null) {
@@ -442,7 +471,9 @@ class CollectibleController extends BaseController
 
         Db::name('collectibles')->where('id', $id)->update(array_merge($update, $cUpdate));
 
-        $this->audit('collectible', 'release', '发售配置「' . $c['name'] . '」→ ' . $status, array_merge($update, $cUpdate), 'collectible', $id);
+        $this->audit('collectible', 'release', '发售配置「' . $c['name'] . '」→ ' . $status
+            . ($updateReleaseQty ? '（上架 ' . ($newReleaseQty === null ? '全部' : $newReleaseQty) . ' 份）' : ''),
+            array_merge($update, $cUpdate), 'collectible', $id);
         return $this->success(null, '发售配置已生效');
     }
 

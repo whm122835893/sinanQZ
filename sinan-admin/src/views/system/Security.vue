@@ -27,7 +27,10 @@ async function load() {
   loading.value = true
   const res = await getSecurityConfig()
   if (res.code === 0 && res.data) {
-    configs.value = res.data.configs || []
+    // 数值型参数转 Number（el-input-number 的 modelValue 须为数字，避免类型警告）
+    configs.value = (res.data.configs || []).map((c) =>
+      c.key === 'cleanup_sms_required' ? c : { ...c, value: Number(c.value) || 0 }
+    )
     overview.value = res.data.overview || null
   }
   loading.value = false

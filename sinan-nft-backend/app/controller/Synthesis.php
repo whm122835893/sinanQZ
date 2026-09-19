@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 use app\BaseController;
+use app\service\ActivityRewardService;
 
 use think\facade\Db;
 
@@ -17,19 +18,27 @@ class Synthesis extends BaseController
      */
     public function activities()
     {
-        // 显式字段并加别名：a.id/a.name 与 c.id/c.name 同名，SELECT * 会列覆盖取错值
+        // 模块开关 synthesis_enabled：关闭 → C端空状态
+        $enabled = (int) Db::name('system_configs')->where('config_key', 'synthesis_enabled')->value('config_value') === 1;
+
+        if (!$enabled) {
+            return $this->success(['enabled' => false, 'list' => []]);
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        // 已结束的活动仍展示（后台未删除即可见），deleted_at 软删除后不可见；status=0 停用不展示
         $list = Db::name('synthesis_activities')->alias('a')
             ->join('collectibles c', 'c.id = a.result_collectible_id')
-            ->where(function ($q) {
-                $q->where('a.end_time', '>=', date('Y-m-d H:i:s'))
-                  ->whereOr('a.type', 'permanent');
-            })
+            ->whereNull('a.deleted_at')
+            ->where('a.status', 1)
             ->order('a.start_time', 'desc')
             ->field('a.id, a.type, a.title, a.rules, a.start_time, a.end_time, a.result_collectible_id, a.result_quantity, a.per_user_limit, a.total_limit, a.used_count, a.image, c.name as c_name, c.image as c_image')
             ->select()
             ->toArray();
 
         return $this->success([
+            'enabled' => true,
             'list' => array_map(fn ($a) => [
                 'activityId'       => (int) $a['id'],
                 'type'             => $a['type'],
@@ -37,6 +46,7 @@ class Synthesis extends BaseController
                 'rules'            => $a['rules'],
                 'startTime'        => $a['start_time'],
                 'endTime'          => $a['end_time'],
+                'ended'            => $a['type'] === 'limit' && $a['end_time'] !== null && strtotime((string) $a['end_time']) < strtotime($now),
                 'resultCollectible'=> ['id' => (int) $a['result_collectible_id'], 'name' => $a['c_name'], 'image' => $a['c_image']],
                 'resultQuantity'   => (int) ($a['result_quantity'] ?? 1),
                 'image'            => $a['image'],
@@ -55,7 +65,7 @@ class Synthesis extends BaseController
     {
         $userId = $this->userId();
         $id     = $this->intParam('id');
-        $act    = Db::name('synthesis_activities')->where('id', $id)->find();
+        $act    = Db::name('synthesis_activities')->where('id', $id)->whereNull('deleted_at')->find();
         if (!$act) return $this->fail(1002, '活动不存在');
 
         $result = Db::name('collectibles')->where('id', $act['result_collectible_id'])->find();
@@ -68,7 +78,15 @@ class Synthesis extends BaseController
 
         $myCount = 0;
         $myAvailable = [];
+        $eligibility = null;
         if ($userId) {
+            // 参与资格（与签到/抽奖一致：all/realname/checkin/invite/hold/checkin_rank）
+            $check = ActivityRewardService::checkEligibility(
+                $userId,
+                (string) ($act['eligibility_type'] ?? 'all'),
+                ActivityRewardService::parseJson($act['eligibility_config'] ?? null)
+            );
+            $eligibility = ['eligible' => $check['eligible'], 'reason' => $check['reason']];
             $myCount = Db::name('synthesis_records')->where('activity_id', $id)->where('user_id', $userId)->count();
             // 单条分组查询替代循环逐个 count，避免 N+1
             $matIds = array_column($materials, 'collectible_id');
@@ -109,6 +127,7 @@ class Synthesis extends BaseController
                 ];
             }, $materials),
             'myCount' => $myCount,
+            'eligibility' => $eligibility,
         ]);
     }
 
@@ -122,13 +141,34 @@ class Synthesis extends BaseController
         $activityId = $this->intParam('activityId');
         if (!$userId) return $this->fail(2001, '未登录');
 
+        // 模块开关 synthesis_enabled：关闭 → 拦截合成
+        if ((int) Db::name('system_configs')->where('config_key', 'synthesis_enabled')->value('config_value') !== 1) {
+            return $this->fail(4003, '合成功能暂未开放');
+        }
+
         Db::startTrans();
         try {
             $act = Db::name('synthesis_activities')
                 ->where('id', $activityId)
+                ->whereNull('deleted_at')
                 ->lock(true)
                 ->find();
-            if (!$act) { Db::rollback(); return $this->fail(1002, '活动不存在'); }
+            if (!$act) { Db::rollback(); return $this->fail(1002, '活动不存在或已删除'); }
+
+            // 停用活动拦截
+            if (isset($act['status']) && (int) $act['status'] !== 1) {
+                Db::rollback(); return $this->fail(1001, '活动已停用');
+            }
+
+            // 参与资格（与签到/抽奖一致）
+            $eligibility = ActivityRewardService::checkEligibility(
+                $userId,
+                (string) ($act['eligibility_type'] ?? 'all'),
+                ActivityRewardService::parseJson($act['eligibility_config'] ?? null)
+            );
+            if (!$eligibility['eligible']) {
+                Db::rollback(); return $this->fail(3002, $eligibility['reason'] ?: '不符合活动参与资格');
+            }
 
             // 时间窗
             if ($act['type'] === 'limit') {

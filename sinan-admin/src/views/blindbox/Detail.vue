@@ -38,7 +38,8 @@ const destroyPwdShow = ref(false)
 
 // ---- 发售配置 ----
 const releaseShow = ref(false)
-const releaseForm = ref({ saleQuantity: 100, price: 99, perUserLimit: 5 })
+// releaseQuantity: ''=全部上架（NULL），填整数 N=上架 N 份，填 0=全部上架
+const releaseForm = ref({ saleQuantity: 100, price: 99, perUserLimit: 5, releaseQuantity: '' })
 
 // ---- 子藏品新增 / 编辑 ----
 const prizeShow = ref(false)
@@ -49,10 +50,13 @@ async function load() {
   loading.value = true
   const res = await getBlindBoxDetail(id)
   detail.value = res.data
+  const rq = detail.value.release_quantity
   releaseForm.value = {
     saleQuantity: Math.min(detail.value.audit.pool, detail.value.edition),
     price: detail.value.price,
-    perUserLimit: detail.value.perUserLimit || 5
+    perUserLimit: detail.value.perUserLimit || 5,
+    // 回填：NULL/undefined→''（全部上架）；否则→数字
+    releaseQuantity: (rq === null || rq === undefined || rq === 0) ? '' : Number(rq)
   }
   loading.value = false
 }
@@ -185,12 +189,25 @@ async function onReleaseSubmit() {
   if (f.saleQuantity > blindBoxPool(detail.value)) {
     return ElMessage.warning(`发售数量不可超过当前盲盒库存池（${blindBoxPool(detail.value)}）`)
   }
-  await ElMessageBox.confirm(
-    `确认发布发售配置：发售 ${f.saleQuantity} 份 × ¥${fmtMoney(f.price)}，每人限购 ${f.perUserLimit} 份？`,
-    '发售配置',
-    { type: 'warning' }
-  )
-  const res = await releaseBlindBox({ id, ...f })
+  // 上架份数合法性校验
+  const rq = f.releaseQuantity
+  if (rq !== '' && rq !== null && rq !== undefined && Number(rq) > 0) {
+    const rqNum = Number(rq)
+    if (rqNum < detail.value.sold) {
+      return ElMessage.warning(`上架份数不能小于已售出数量（${detail.value.sold}）`)
+    }
+    if (rqNum > detail.value.edition) {
+      return ElMessage.warning(`上架份数不能超过盲盒资产总发行量（${detail.value.edition}）`)
+    }
+  }
+  const confirmText = rq !== '' && rq !== null && rq !== undefined && Number(rq) > 0
+    ? `确认发布发售配置：盲盒上架 ${Number(rq)} 份（本轮可售 ${Math.min(Number(rq) - detail.value.sold, blindBoxPool(detail.value))} 份），¥${fmtMoney(f.price)}，每人限购 ${f.perUserLimit} 份？`
+    : `确认发布发售配置：发售 ${f.saleQuantity} 份 × ¥${fmtMoney(f.price)}，每人限购 ${f.perUserLimit} 份（全部上架）？`
+  await ElMessageBox.confirm(confirmText, '发售配置', { type: 'warning' })
+  const payload = { id, ...f }
+  // 空字符串 → 传 null，让后端识别为"全部上架"
+  if (payload.releaseQuantity === '') payload.releaseQuantity = null
+  const res = await releaseBlindBox(payload)
   if (res.code === 0) {
     ElMessage.success('发售配置已生效，盲盒进入发售中')
     releaseShow.value = false
@@ -400,6 +417,19 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
           </el-form-item>
           <el-form-item label="发售数量">
             <el-input-number v-model="releaseForm.saleQuantity" :min="1" :max="Math.max(1, blindBoxPool(detail))" />
+          </el-form-item>
+          <el-form-item label="上架份数">
+            <el-input-number
+              v-model="releaseForm.releaseQuantity"
+              :min="0"
+              :max="detail.edition"
+              controls-position="right"
+              placeholder="不填=全部上架"
+              style="width: 100%"
+            />
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">
+              分批发发售用：填整数 N = 当前只卖 N 份；填 0 或留空 = 全部上架。
+            </div>
           </el-form-item>
           <el-form-item label="发售价格（元）">
             <el-input-number v-model="releaseForm.price" :min="0.01" :precision="2" :step="10" />

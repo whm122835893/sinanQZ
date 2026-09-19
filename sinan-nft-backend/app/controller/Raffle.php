@@ -431,18 +431,29 @@ class Raffle extends BaseController
                 return $this->fail(3003, "中签可购 {$quota} 件（中签 {$winCount} 签 × 每签限购 {$saleQuantity} 件）");
             }
 
-            // 库存锁定（原子操作，受 CHECK sold+locked<=edition 兜底；即时成交直接占 sold）
+            // 库存锁定（原子操作，三重保险：edition 总量 + release_quantity 上架份额 + 条件更新互斥）
+            // 中签即时成交直接占 sold（不走 pending→paid 两阶段）
+            $cForStock = Db::name('collectibles')->where('id', $act['collectible_id'])->lock(true)->find();
+            $rq = $cForStock && !empty($cForStock['release_quantity']) ? (int) $cForStock['release_quantity'] : 0;
+            $useReleaseQty = $rq > 0;
+            $quotaUpper = $useReleaseQty ? $rq : (int) ($cForStock['edition'] ?? 0);
+
             $unitPrice  = (float) $act['sale_price'];
             $totalPrice = round($unitPrice * $qty, 2);
             $affected = Db::name('collectibles')
                 ->where('id', $act['collectible_id'])
-                ->whereRaw('sold + locked_quantity + ' . $qty . ' <= edition')
+                ->whereRaw('sold + locked_quantity + ' . $qty . ' <= ' . (int) $quotaUpper)
                 ->update([
                     'sold'       => Db::raw('sold + ' . $qty),
                     'circulate'  => Db::raw('circulate + ' . $qty),
                     'updated_at' => $now,
                 ]);
-            if (!$affected) { Db::rollback(); return $this->fail(3001, '库存不足'); }
+            if (!$affected) {
+                Db::rollback();
+                return $this->fail(3001, $useReleaseQty
+                    ? '本轮上架 ' . $rq . ' 份已发完，请等下次上架'
+                    : '库存不足');
+            }
 
             // 买家余额校验 + 扣款
             $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
@@ -480,7 +491,7 @@ class Raffle extends BaseController
                 'quantity'          => $qty,
                 'total_price'       => $totalPrice,
                 'status'            => 'completed',
-                'source'            => 'release',
+                'source'            => 'raffle',
                 'created_at'        => $nowV,
                 'paid_at'           => $nowV,
                 'completed_at'      => $nowV,

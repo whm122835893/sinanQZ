@@ -1,23 +1,40 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useLoginGate } from '@/utils/loginGate'
 import { showToast } from 'vant'
+import request from '@/utils/request'
 import AppNavBar from '@/components/AppNavBar.vue'
+import AppEmpty from '@/components/AppEmpty.vue'
 
 const route = useRoute()
 const store = useUserStore()
 const { requireLogin } = useLoginGate()
 
+// ---- 签到模块状态（后台开关 + 当前生效活动）----
+// enabled=false → C端空状态；enabled=true 但无活动 → 未配置空状态
+const moduleState = ref({ loading: true, enabled: false, activity: null })
+
+onMounted(async () => {
+  try {
+    const res = await request.get('/check-in/activity')
+    moduleState.value = {
+      loading: false,
+      enabled: !!res?.enabled,
+      activity: res?.activity || null
+    }
+  } catch (e) {
+    moduleState.value = { loading: false, enabled: false, activity: null }
+  }
+  if (moduleState.value.enabled) {
+    store.fetchSignCalendar().catch(() => {})
+  }
+})
+
 const signed = computed(() => store.todaySigned)
 const records = computed(() => store.signState.records)
 const signedSet = computed(() => new Set(store.signState.records.map(r => r.date)))
-
-// 页面进入时拉取签到日历（后端返回当月已签到日期列表 + 连续天数）
-onMounted(() => {
-  store.fetchSignCalendar().catch(() => {})
-})
 
 const weekMap = ['日', '一', '二', '三', '四', '五', '六']
 function fmtDateCN(dateStr) {
@@ -66,61 +83,71 @@ function onSign() {
   <div class="sign page--no-tabbar">
     <AppNavBar title="每日签到" @click-left="$router.back()" />
 
-    <!-- 顶部签到卡 -->
-    <section class="sign-hero">
-      <p class="sign-hero__date">{{ new Date().getFullYear() }} 年 {{ new Date().getMonth() + 1 }} 月 {{ new Date().getDate() }} 日</p>
-      <p class="sign-hero__title">{{ signed ? '今日已签到' : '今日尚未签到' }}</p>
-      <div class="sign-hero__streak">
-        <span class="sign-hero__num">{{ store.signState.day }}</span>
-        <span class="sign-hero__unit">已连续签到 天</span>
+    <!-- 空状态：模块关闭 / 未配置活动 -->
+    <template v-if="!moduleState.loading && (!moduleState.enabled || !moduleState.activity)">
+      <div class="sign-empty">
+        <AppEmpty :description="moduleState.enabled ? '暂无进行中的签到活动' : '签到功能暂未开放'" />
       </div>
-      <p class="sign-hero__tip">坚持每日签到，奖励由平台发放</p>
-    </section>
+    </template>
 
-    <!-- 签到日历 -->
-    <section class="sign-cal">
-      <div class="sign-cal__head">
-        <span>签到日历</span>
-        <span class="sign-cal__month">{{ calYear }} 年 {{ calMonth }} 月</span>
-      </div>
-      <div class="sign-cal__weeks">
-        <span v-for="(w, i) in weekMap" :key="i">{{ w }}</span>
-      </div>
-      <div class="sign-cal__grid">
-        <span
-          v-for="(cell, i) in calendar"
-          :key="i"
-          class="sign-cal__cell"
-          :class="{ empty: !cell, counted: cell && isCounted(cell.dateStr), today: cell && isToday(cell.dateStr) }"
-        >{{ cell ? cell.d : '' }}</span>
-      </div>
-      <div class="sign-cal__legend">
-        <span><i class="dot dot--counted"></i>已签到</span>
-        <span><i class="dot dot--today"></i>今日</span>
-      </div>
-    </section>
-
-    <!-- 签到按钮 -->
-    <button class="sign-btn" :class="{ 'is-signed': signed }" :disabled="signed" @click="onSign">
-      {{ signed ? '今日已签到' : '立即签到' }}
-    </button>
-    <p class="sign-btn__hint" v-if="!signed">每日 00:00 后可再次签到</p>
-
-    <!-- 签到记录 -->
-    <section class="sign-records">
-      <div class="sign-records__head">
-        <span>签到记录</span>
-      </div>
-      <div v-if="records.length" class="sign-records__list">
-        <div v-for="(r, i) in records" :key="i" class="sign-record">
-          <span class="sign-record__dot"></span>
-          <span class="sign-record__date">{{ fmtDateCN(r.date) }}</span>
+    <!-- 签到页 -->
+    <template v-else-if="!moduleState.loading">
+      <!-- 顶部签到卡 -->
+      <section class="sign-hero">
+        <p class="sign-hero__date">{{ new Date().getFullYear() }} 年 {{ new Date().getMonth() + 1 }} 月 {{ new Date().getDate() }} 日</p>
+        <p class="sign-hero__title">{{ signed ? '今日已签到' : '今日尚未签到' }}</p>
+        <div class="sign-hero__streak">
+          <span class="sign-hero__num">{{ store.signState.day }}</span>
+          <span class="sign-hero__unit">已连续签到 天</span>
         </div>
-      </div>
-      <p v-else class="sign-records__empty">暂无签到记录，今天开始打卡吧～</p>
-    </section>
+        <p class="sign-hero__tip">{{ moduleState.activity?.name || '坚持每日签到，奖励由平台发放' }}</p>
+      </section>
 
-    <p class="sign-rule">签到规则：每天可签到 1 次，连续签到天数次日清零重计；签到奖励由平台管理员后台统一配置后发放。</p>
+      <!-- 签到日历 -->
+      <section class="sign-cal">
+        <div class="sign-cal__head">
+          <span>签到日历</span>
+          <span class="sign-cal__month">{{ calYear }} 年 {{ calMonth }} 月</span>
+        </div>
+        <div class="sign-cal__weeks">
+          <span v-for="(w, i) in weekMap" :key="i">{{ w }}</span>
+        </div>
+        <div class="sign-cal__grid">
+          <span
+            v-for="(cell, i) in calendar"
+            :key="i"
+            class="sign-cal__cell"
+            :class="{ empty: !cell, counted: cell && isCounted(cell.dateStr), today: cell && isToday(cell.dateStr) }"
+          >{{ cell ? cell.d : '' }}</span>
+        </div>
+        <div class="sign-cal__legend">
+          <span><i class="dot dot--counted"></i>已签到</span>
+          <span><i class="dot dot--today"></i>今日</span>
+        </div>
+      </section>
+
+      <!-- 签到按钮 -->
+      <button class="sign-btn" :class="{ 'is-signed': signed }" :disabled="signed" @click="onSign">
+        {{ signed ? '今日已签到' : '立即签到' }}
+      </button>
+      <p class="sign-btn__hint" v-if="!signed">每日 00:00 后可再次签到</p>
+
+      <!-- 签到记录 -->
+      <section class="sign-records">
+        <div class="sign-records__head">
+          <span>签到记录</span>
+        </div>
+        <div v-if="records.length" class="sign-records__list">
+          <div v-for="(r, i) in records" :key="i" class="sign-record">
+            <span class="sign-record__dot"></span>
+            <span class="sign-record__date">{{ fmtDateCN(r.date) }}</span>
+          </div>
+        </div>
+        <p v-else class="sign-records__empty">暂无签到记录，今天开始打卡吧～</p>
+      </section>
+
+      <p class="sign-rule">签到规则：每天可签到 1 次，连续签到天数次日清零重计；签到奖励由平台管理员后台统一配置后发放。</p>
+    </template>
   </div>
 </template>
 
@@ -130,6 +157,10 @@ function onSign() {
   background:
     radial-gradient(120% 50% at 50% 0%, rgba(192, 0, 0, 0.12), rgba(192, 0, 0, 0) 60%),
     $color-bg;
+}
+
+.sign-empty {
+  padding-top: 20vh;
 }
 
 /* 顶部签到卡 */

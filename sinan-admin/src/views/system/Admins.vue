@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getAdmins, getRoles } from '@/api'
+import { getAdmins, getRoles, getRoleDetail } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import { ROLE_MAP } from '@/utils/maps'
 import { fmtNumber } from '@/utils/format'
@@ -11,22 +11,37 @@ const rolesData = ref({ roles: [], tree: [] })
 
 // ---- 角色权限明细 ----
 const roleShow = ref(false)
+const roleLoading = ref(false)
 const currentRole = ref(null)
 const checked = ref([])
+const isSuperRole = ref(false)
 
 onMounted(async () => {
   const [a, r] = await Promise.all([getAdmins(), getRoles()])
-  admins.value = a.data
-  rolesData.value = r.data
+  admins.value = a.data?.list || []
+  rolesData.value = r.data || { roles: [], tree: [] }
   loading.value = false
 })
 
-function openRole(role) {
+async function openRole(role) {
   currentRole.value = role
-  checked.value = role.permissions.includes('*')
-    ? rolesData.value.tree.map((t) => t.key)
-    : [...role.permissions]
+  checked.value = []
+  isSuperRole.value = false
   roleShow.value = true
+  // 拉取角色详情（permission_ids → 权限码标签）
+  roleLoading.value = true
+  const res = await getRoleDetail(role.id)
+  roleLoading.value = false
+  if (res.code === 0 && currentRole.value === role) {
+    const idSet = new Set(res.data.permissionIds)
+    const allNodes = [
+      ...rolesData.value.tree,
+      ...rolesData.value.tree.flatMap((t) => t.children || [])
+    ]
+    const codes = allNodes.filter((t) => idSet.has(t.id)).map((t) => t.key)
+    isSuperRole.value = role.key === 'super_admin'
+    checked.value = isSuperRole.value ? allNodes.map((t) => t.key) : codes
+  }
 }
 </script>
 
@@ -115,14 +130,18 @@ function openRole(role) {
     <el-dialog v-model="roleShow" :title="currentRole ? `权限配置 · ${currentRole.name}` : ''" width="480px">
       <template v-if="currentRole">
         <div class="ad__perm-desc t-secondary">{{ currentRole.desc }}</div>
-        <div class="ad__perms">
-          <el-tag v-for="k in checked" :key="k" effect="plain" size="small" class="ad__perm">
-            {{ rolesData.tree.find((t) => t.key === k)?.label || k }}
-          </el-tag>
-        </div>
-        <div v-if="currentRole.permissions.includes('*')" class="t-tertiary" style="font-size: 12px; margin-top: 10px">
-          * 超级管理员拥有全部权限（含平台清库、完整实名查看）
-        </div>
+        <el-skeleton v-if="roleLoading" :rows="3" animated />
+        <template v-else>
+          <div class="ad__perms">
+            <el-tag v-for="k in checked" :key="k" effect="plain" size="small" class="ad__perm">
+              {{ rolesData.tree.find((t) => t.key === k)?.label || k }}
+            </el-tag>
+            <span v-if="!checked.length" class="t-tertiary" style="font-size: 12px">该角色暂未分配权限</span>
+          </div>
+          <div v-if="isSuperRole" class="t-tertiary" style="font-size: 12px; margin-top: 10px">
+            * 超级管理员拥有全部权限（含平台清库、完整实名查看）
+          </div>
+        </template>
       </template>
     </el-dialog>
   </div>

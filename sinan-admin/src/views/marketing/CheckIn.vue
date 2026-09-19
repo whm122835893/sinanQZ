@@ -3,11 +3,11 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
-  getCheckinConfig,
-  saveCheckinRules,
-  saveCheckinActivity,
-  saveCheckinSettings,
-  toggleCheckin,
+  getCheckinActivities,
+  saveCheckinActivityV2,
+  deleteCheckinActivity,
+  getFeatureSwitches,
+  saveFeatureSwitch,
   getCollectibleList,
   getPrioritySales
 } from '@/api'
@@ -18,21 +18,12 @@ import { ACTIVITY_STATUS } from '@/utils/maps'
 import { fmtNumber } from '@/utils/format'
 
 const loading = ref(true)
-const config = ref(null)
+const list = ref([])
+const checkinEnabled = ref(true) // 签到模块开关（checkin_enabled）
 
 // ---- 下拉数据源 ----
 const collectibles = ref([])
 const prioritySales = ref([])
-
-// ---- 规则编辑 ----
-const editShow = ref(false)
-const editingRule = ref(null)
-const ruleForm = ref({ day: 1, rewards: [] })
-
-// ---- 活动信息编辑（名称/起止时间 + 参与资格 + 发放方式） ----
-const infoShow = ref(false)
-const infoForm = ref({ name: '', startTime: '', endTime: '' })
-const setForm = ref({ eligibility: { type: 'all', config: {} }, grantMode: 'realtime' })
 
 const REWARD_TYPES = {
   points: { label: '司南币', tag: 'warning' },
@@ -46,6 +37,7 @@ const REWARD_TYPES = {
 
 onMounted(async () => {
   load()
+  loadSwitches()
   // 下拉数据源（失败不阻断）
   const [col, pri] = await Promise.all([
     getCollectibleList({ page: 1, pageSize: 200 }),
@@ -57,9 +49,29 @@ onMounted(async () => {
 
 async function load() {
   loading.value = true
-  const res = await getCheckinConfig()
-  config.value = res.data || null
+  const res = await getCheckinActivities()
+  if (res.code === 0) list.value = res.data.list || []
   loading.value = false
+}
+
+async function loadSwitches() {
+  const res = await getFeatureSwitches()
+  if (res.code === 0) checkinEnabled.value = res.data.checkin !== false
+}
+
+// ---- 模块开关 ----
+async function onToggleModule(val) {
+  const enabling = !!val
+  await ElMessageBox.confirm(
+    enabling ? '确认开启签到模块？C 端将展示签到页。' : '确认关闭签到模块？C 端签到页将变为空状态。',
+    '签到模块开关',
+    { type: 'warning' }
+  )
+  const res = await saveFeatureSwitch('checkin', enabling)
+  if (res.code === 0) {
+    checkinEnabled.value = enabling
+    ElMessage.success(enabling ? '已开启签到模块' : '已关闭签到模块')
+  }
 }
 
 const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏品 #${id}`
@@ -89,258 +101,225 @@ function eligibilityText(e) {
   }
 }
 
-// ---- 签到全局启停 ----
-async function onToggle() {
-  const enabling = config.value.enabled !== true
-  await ElMessageBox.confirm(
-    enabling ? '确认开启签到功能？C 端将展示签到入口。' : '确认关闭签到功能？C 端签到入口隐藏，连续天数冻结。',
-    '签到功能',
-    { type: 'warning' }
-  )
-  const res = await toggleCheckin(enabling ? 1 : 0)
-  if (res.code === 0) {
-    config.value.enabled = enabling
-    ElMessage.success(enabling ? '已开启签到' : '已关闭签到')
-  }
+/** 活动状态摘要（状态 + 时间窗） */
+function activityPhase(a) {
+  if (a.status === 'disabled') return { text: '已停用', tag: 'info' }
+  if (a.ended) return { text: '已结束', tag: 'info' }
+  if (!a.started) return { text: '未开始', tag: 'warning' }
+  return { text: '进行中', tag: 'success' }
 }
 
-// ---- 活动信息 + 参与资格 + 发放方式编辑 ----
-function openInfo() {
-  infoForm.value = {
-    name: config.value.name || '每日签到',
-    startTime: config.value.startTime || '',
-    endTime: config.value.endTime || ''
+// ---- 新建/编辑活动 ----
+const editShow = ref(false)
+const saving = ref(false)
+const editing = ref(null) // null = 新建
+const form = ref({
+  name: '',
+  status: 'enabled',
+  startTime: '',
+  endTime: '',
+  rewardRules: [], // [{day, rewards: []}]
+  eligibility: { type: 'all', config: {} },
+  grantMode: 'realtime'
+})
+
+function openCreate() {
+  editing.value = null
+  form.value = {
+    name: '',
+    status: 'enabled',
+    startTime: '',
+    endTime: '',
+    rewardRules: [{ day: 1, rewards: [{ type: 'points', amount: 10 }] }],
+    eligibility: { type: 'all', config: {} },
+    grantMode: 'realtime'
   }
-  setForm.value = {
-    eligibility: JSON.parse(JSON.stringify(config.value.eligibility || { type: 'all', config: {} })),
-    grantMode: config.value.grantMode || 'realtime'
-  }
-  infoShow.value = true
+  editShow.value = true
 }
 
-async function onSaveInfo() {
-  const f = infoForm.value
+function openEdit(a) {
+  editing.value = a
+  const rc = a.rewardConfig || {}
+  const rewardRules = Object.keys(rc)
+    .map((day) => ({ day: Number(day), rewards: (rc[day] || []).map((x) => ({ ...x })) }))
+    .sort((x, y) => x.day - y.day)
+  form.value = {
+    name: a.name,
+    status: a.status,
+    startTime: a.startTime || '',
+    endTime: a.endTime || '',
+    rewardRules,
+    eligibility: JSON.parse(JSON.stringify(a.eligibility || { type: 'all', config: {} })),
+    grantMode: a.grantMode || 'realtime'
+  }
+  editShow.value = true
+}
+
+async function onSave() {
+  const f = form.value
   if (!f.name.trim()) return ElMessage.warning('请输入活动名称')
-  const st = setForm.value
-  if (st.eligibility.type === 'hold' && !(st.eligibility.config.collectibleIds || []).filter(Boolean).length) {
+  if (!f.startTime.trim()) return ElMessage.warning('请输入开始时间')
+  if (f.endTime.trim() && f.endTime.trim() <= f.startTime.trim()) return ElMessage.warning('结束时间需晚于开始时间')
+  // 校验奖励项
+  const days = new Set()
+  for (const r of f.rewardRules) {
+    if (!Number.isInteger(r.day) || r.day < 1) return ElMessage.warning('签到天数需为正整数（第 N 天）')
+    if (days.has(r.day)) return ElMessage.warning(`第 ${r.day} 天重复配置`)
+    days.add(r.day)
+    if (!(r.rewards || []).length) return ElMessage.warning(`第 ${r.day} 天至少配置一项奖励`)
+    for (const item of r.rewards) {
+      if (item.type === 'collectible' && !item.collectibleId) return ElMessage.warning('藏品奖励需选择藏品')
+      if (item.type === 'points' && !(item.amount > 0)) return ElMessage.warning('司南币奖励金额需大于 0')
+      if (item.type === 'priority_qualification' && !item.prioritySaleId) return ElMessage.warning('优先购资格需选择优先购活动')
+      if (item.type === 'eligibility_qualification' && !item.collectibleId) return ElMessage.warning('资格购白名单需选择目标藏品')
+    }
+  }
+  if (f.eligibility.type === 'hold' && !(f.eligibility.config.collectibleIds || []).filter(Boolean).length) {
     return ElMessage.warning('持有藏品资格需至少选择一个藏品')
   }
-  const res = await saveCheckinActivity({ name: f.name.trim(), startTime: f.startTime.trim(), endTime: f.endTime.trim() })
-  if (res.code !== 0) return
-  const res2 = await saveCheckinSettings(st)
-  if (res2.code === 0) {
-    ElMessage.success('活动配置已保存')
-    infoShow.value = false
-    load()
-  }
-}
 
-// ---- 规则编辑 ----
-function openAddRule() {
-  editingRule.value = null
-  ruleForm.value = { day: null, rewards: [{ type: 'points', amount: 10 }] }
-  editShow.value = true
-}
-
-function openEditRule(r) {
-  editingRule.value = r
-  ruleForm.value = { day: r.day, rewards: (r.rewards || []).map((x) => ({ ...x })) }
-  editShow.value = true
-}
-
-async function onSaveRule() {
-  const f = ruleForm.value
-  if (!Number.isInteger(f.day) || f.day < 1) return ElMessage.warning('请输入有效的天数（第 N 天）')
-  if (!(f.rewards || []).length) return ElMessage.warning('请至少配置一项奖励')
-  const exists = config.value.rules.find((r) => r.day === f.day && r !== editingRule.value)
-  if (exists) return ElMessage.warning(`第 ${f.day} 天已有奖励规则`)
-  // 校验奖励项完整性
-  for (const r of f.rewards) {
-    if (r.type === 'collectible' && !r.collectibleId) return ElMessage.warning('藏品奖励需选择藏品')
-    if (r.type === 'points' && !(r.amount > 0)) return ElMessage.warning('司南币奖励金额需大于 0')
-    if (r.type === 'priority_qualification' && !r.prioritySaleId) return ElMessage.warning('优先购资格需选择优先购活动')
-    if (r.type === 'eligibility_qualification' && !r.collectibleId) return ElMessage.warning('资格购白名单需选择目标藏品')
-  }
-  if (editingRule.value) {
-    Object.assign(editingRule.value, { day: f.day, rewards: f.rewards })
-  } else {
-    config.value.rules.push({ day: f.day, rewards: f.rewards })
-  }
-  const res = await saveCheckinRules({ rules: [...config.value.rules].sort((a, b) => a.day - b.day) })
+  saving.value = true
+  const res = await saveCheckinActivityV2({
+    id: editing.value?.id,
+    name: f.name.trim(),
+    status: f.status,
+    startTime: f.startTime.trim(),
+    endTime: f.endTime.trim(),
+    rewardRules: f.rewardRules,
+    eligibility: f.eligibility,
+    grantMode: f.grantMode
+  })
+  saving.value = false
   if (res.code === 0) {
-    ElMessage.success('规则已保存，立即生效（历史签到记录不受影响）')
+    ElMessage.success(editing.value ? '活动已更新' : '活动已创建')
     editShow.value = false
     load()
   }
 }
 
-async function onRemoveRule(r) {
-  await ElMessageBox.confirm(`确认删除第 ${r.day} 天的奖励规则？`, '删除规则', { type: 'warning' })
-  config.value.rules = config.value.rules.filter((x) => x.day !== r.day)
-  await saveCheckinRules({ rules: config.value.rules })
-  ElMessage.success('已删除')
+async function onRemove(a) {
+  await ElMessageBox.confirm(
+    `确认删除活动「${a.name}」？删除后 C 端不再展示该活动，历史签到记录保留。`,
+    '删除签到活动',
+    { type: 'warning' }
+  )
+  const res = await deleteCheckinActivity(a.id)
+  if (res.code === 0) {
+    ElMessage.success('活动已删除')
+    load()
+  }
+}
+
+// ---- 奖励档位编辑（弹窗内） ----
+function addRuleSlot() {
+  const next = (f.value.rewardRules.reduce((m, r) => Math.max(m, r.day), 0) || 0) + 1
+  if (next > 7) return ElMessage.warning('连续签到天数仅支持 1~7')
+  f.value.rewardRules.push({ day: next, rewards: [{ type: 'points', amount: 10 }] })
+}
+
+function removeRuleSlot(idx) {
+  f.value.rewardRules.splice(idx, 1)
 }
 </script>
 
 <template>
   <div class="adm-page ck">
     <el-skeleton v-if="loading" :rows="8" animated style="padding: 20px" />
-    <template v-else-if="config">
-      <div class="ck__split">
-        <!-- 左列 -->
-        <div>
-          <!-- 开关与统计 -->
-          <div class="adm-card">
-            <div class="adm-card__title">
-              签到功能
-              <span style="display: inline-flex; align-items: center; gap: 8px; margin-left: auto">
-                <el-button link type="primary" size="small" @click="openInfo">编辑活动配置</el-button>
-              </span>
-            </div>
-            <div class="ck__act-info">
-              <div>
-                <div class="ck__toggle-label">{{ config.name || '每日签到' }}</div>
-                <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
-                  <template v-if="config.startTime || config.endTime">
-                    活动时间：{{ config.startTime || '不限' }} ~ {{ config.endTime || '不限' }}
-                  </template>
-                  <template v-else>活动时间：长期有效（未设置起止时间）</template>
-                </div>
-              </div>
-              <StatusTag :value="config.enabled ? 'enabled' : 'disabled'" :map="ACTIVITY_STATUS" />
-            </div>
-            <div class="ck__toggle">
-              <div>
-                <div class="ck__toggle-label">{{ config.enabled ? '签到功能已开启' : '签到功能已关闭' }}</div>
-                <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
-                  关闭后 C 端签到入口隐藏，连续天数冻结
-                </div>
-              </div>
-              <el-switch :model-value="config.enabled" size="default" @change="onToggle" />
-            </div>
-            <div class="ck__settings">
-              <div class="ck__setting">
-                <div class="t-tertiary">参与资格</div>
-                <div class="ck__setting-val">{{ eligibilityText(config.eligibility) }}</div>
-              </div>
-              <div class="ck__setting">
-                <div class="t-tertiary">奖励发放</div>
-                <div class="ck__setting-val">
-                  {{ config.grantMode === 'manual' ? '记录名单 · 统一发放' : '实时到账' }}
-                </div>
-              </div>
-            </div>
-            <div class="ck__stats">
-              <div class="ck__stat">
-                <div class="price">{{ fmtNumber(config.todayCount) }}</div>
-                <div class="t-tertiary">今日签到</div>
-              </div>
-              <div class="ck__stat">
-                <div class="price">{{ fmtNumber(config.monthCount) }}</div>
-                <div class="t-tertiary">本月签到</div>
-              </div>
-              <div class="ck__stat">
-                <div class="price">{{ config.rules.length }}</div>
-                <div class="t-tertiary">奖励档位</div>
-              </div>
+    <template v-else>
+      <!-- 模块开关 -->
+      <div class="adm-card">
+        <div class="ck__module-toggle">
+          <div>
+            <div class="ck__toggle-label">签到模块</div>
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 3px">
+              关闭后 C 端签到页为空状态；开启后展示当前生效活动（未配置活动时不显示数据）
             </div>
           </div>
-
-          <!-- 奖励规则 -->
-          <div class="adm-card">
-            <div class="adm-card__title">
-              奖励规则（第 N 天 → 奖励，可配置多项）
-              <el-button link type="primary" size="small" :icon="Plus" @click="openAddRule">新增档位</el-button>
-            </div>
-
-            <el-table :data="config.rules">
-              <el-table-column label="签到天数" width="100" align="center">
-                <template #default="{ row }">
-                  <span class="ck__day">第 {{ row.day }} 天</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="奖励内容" min-width="260">
-                <template #default="{ row }">
-                  <div class="ck__rewards">
-                    <div v-for="(r, i) in row.rewards" :key="i" class="ck__reward-item">
-                      <el-tag :type="REWARD_TYPES[r.type]?.tag || 'info'" effect="plain" size="small">
-                        {{ REWARD_TYPES[r.type]?.label || r.type }}
-                      </el-tag>
-                      <span class="ck__reward">{{ rewardText(r) }}</span>
-                    </div>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="130" fixed="right">
-                <template #default="{ row }">
-                  <el-button link type="primary" size="small" @click="openEditRule(row)">编辑</el-button>
-                  <el-button link type="danger" size="small" @click="onRemoveRule(row)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <el-alert
-              type="info"
-              :closable="false"
-              show-icon
-              class="ck__tip"
-              title="每档可配置多项奖励（藏品/司南币/抽奖次数/优先购/资格购/盲盒）；发放时动态校验配额预留库存；选择「记录名单」的奖励在奖励名单页导出统一发放"
-            />
-          </div>
-        </div>
-
-        <!-- 右列：连签榜 -->
-        <div class="adm-card">
-          <div class="adm-card__title">连续签到榜 TOP</div>
-          <div v-for="(u, i) in config.streakTop || []" :key="u.nickname" class="ck__rank-item">
-            <div class="ck__rank" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</div>
-            <div class="ck__rank-name">{{ u.nickname }}</div>
-            <div class="ck__rank-streak">
-              <span class="price">{{ u.streak }}</span>
-              <span class="t-tertiary" style="font-size: 12px"> 天</span>
-            </div>
-          </div>
-          <el-empty v-if="!(config.streakTop || []).length" description="暂无签到数据" :image-size="60" />
+          <el-switch :model-value="checkinEnabled" @change="onToggleModule" />
         </div>
       </div>
 
-      <!-- 规则编辑弹窗 -->
-      <el-dialog v-model="editShow" :title="editingRule ? `编辑第 ${editingRule.day} 天奖励` : '新增奖励档位'" width="620px" :close-on-click-modal="false">
-        <el-form label-width="100px">
-          <el-form-item label="第 N 天">
-            <el-input-number v-model="ruleForm.day" :min="1" :max="365" />
-          </el-form-item>
-          <el-form-item label="奖励配置">
-            <RewardListEditor
-              v-model="ruleForm.rewards"
-              :collectibles="collectibles"
-              :priority-sales="prioritySales"
-            />
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="editShow = false">取消</el-button>
-          <el-button type="primary" @click="onSaveRule">保存</el-button>
-        </template>
-      </el-dialog>
+      <!-- 活动列表 -->
+      <div class="adm-card">
+        <div class="adm-card__title">
+          签到活动（同时仅最新一条「启用中且在时间窗内」的活动生效）
+          <el-button type="primary" size="small" :icon="Plus" @click="openCreate">新建活动</el-button>
+        </div>
 
-      <!-- 活动配置编辑弹窗（信息 + 参与资格 + 发放方式） -->
-      <el-dialog v-model="infoShow" title="编辑签到活动配置" width="560px" :close-on-click-modal="false">
+        <el-table :data="list">
+          <el-table-column label="活动名称" min-width="160">
+            <template #default="{ row }">
+              <span class="ck__day">{{ row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag :type="activityPhase(row).tag" size="small" effect="plain">{{ activityPhase(row).text }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="启停" width="80" align="center">
+            <template #default="{ row }">
+              <StatusTag :value="row.status" :map="ACTIVITY_STATUS" />
+            </template>
+          </el-table-column>
+          <el-table-column label="活动时间" min-width="220">
+            <template #default="{ row }">
+              <span class="t-secondary">{{ row.startTime || '不限' }} ~ {{ row.endTime || '长期' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="奖励档位" width="90" align="center">
+            <template #default="{ row }">{{ row.rewardDays }} 档</template>
+          </el-table-column>
+          <el-table-column label="参与资格" min-width="130">
+            <template #default="{ row }">{{ eligibilityText(row.eligibility) }}</template>
+          </el-table-column>
+          <el-table-column label="发放方式" width="120" align="center">
+            <template #default="{ row }">{{ row.grantMode === 'manual' ? '名单统一发放' : '实时到账' }}</template>
+          </el-table-column>
+          <el-table-column label="累计签到" width="90" align="center">
+            <template #default="{ row }">{{ fmtNumber(row.signinCount) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="onRemove(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!list.length" description="暂无签到活动，点击右上角「新建活动」创建" :image-size="80" />
+
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="ck__tip"
+          title="每档可配置多项奖励（藏品/司南币/抽奖次数/优先购/资格购/盲盒）；连续签到天数支持 1~7 天；删除活动为软删除，历史签到记录保留"
+        />
+      </div>
+
+      <!-- 新建/编辑活动弹窗 -->
+      <el-dialog v-model="editShow" :title="editing ? `编辑活动：${editing.name}` : '新建签到活动'" width="720px" :close-on-click-modal="false">
         <el-form label-width="100px">
           <el-form-item label="活动名称">
-            <el-input v-model="infoForm.name" placeholder="如：每日签到 · 九月篇" maxlength="50" show-word-limit />
+            <el-input v-model="form.name" placeholder="如：每日签到 · 九月篇" maxlength="50" show-word-limit />
           </el-form-item>
           <el-form-item label="开始时间">
-            <el-input v-model="infoForm.startTime" placeholder="如 2026-09-01 00:00:00，留空不限" />
+            <el-input v-model="form.startTime" placeholder="如 2026-09-01 00:00:00（必填）" />
           </el-form-item>
           <el-form-item label="结束时间">
-            <el-input v-model="infoForm.endTime" placeholder="如 2026-09-30 23:59:59，留空不限" />
+            <el-input v-model="form.endTime" placeholder="如 2026-09-30 23:59:59，留空为长期有效" />
+          </el-form-item>
+          <el-form-item label="活动状态">
+            <el-radio-group v-model="form.status">
+              <el-radio value="enabled">启用</el-radio>
+              <el-radio value="disabled">停用</el-radio>
+            </el-radio-group>
           </el-form-item>
           <el-form-item label="参与资格">
-            <EligibilityEditor v-model="setForm.eligibility" :collectibles="collectibles" />
+            <EligibilityEditor v-model="form.eligibility" :collectibles="collectibles" />
           </el-form-item>
           <el-form-item label="奖励发放">
-            <el-radio-group v-model="setForm.grantMode">
+            <el-radio-group v-model="form.grantMode">
               <el-radio value="realtime">实时到账</el-radio>
               <el-radio value="manual">记录名单 · 统一发放</el-radio>
             </el-radio-group>
@@ -348,10 +327,27 @@ async function onRemoveRule(r) {
               实时到账：签到成功立即发放；记录名单：进入「奖励名单」页导出 CSV 统一发放
             </div>
           </el-form-item>
+
+          <el-form-item label="奖励规则">
+            <div class="ck__rules-editor">
+              <div v-for="(r, idx) in form.rewardRules" :key="idx" class="ck__rule-slot">
+                <div class="ck__rule-head">
+                  <span>第 <el-input-number v-model="r.day" :min="1" :max="7" size="small" style="width: 90px" /> 天</span>
+                  <el-button link type="danger" size="small" @click="removeRuleSlot(idx)">删除档位</el-button>
+                </div>
+                <RewardListEditor
+                  v-model="r.rewards"
+                  :collectibles="collectibles"
+                  :priority-sales="prioritySales"
+                />
+              </div>
+              <el-button :icon="Plus" size="small" @click="addRuleSlot">添加档位</el-button>
+            </div>
+          </el-form-item>
         </el-form>
         <template #footer>
-          <el-button @click="infoShow = false">取消</el-button>
-          <el-button type="primary" @click="onSaveInfo">保存</el-button>
+          <el-button @click="editShow = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
         </template>
       </el-dialog>
     </template>
@@ -359,29 +355,7 @@ async function onRemoveRule(r) {
 </template>
 
 <style scoped lang="scss">
-.ck__split {
-  display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 14px;
-  align-items: start;
-
-  @media (max-width: 992px) {
-    grid-template-columns: 1fr;
-  }
-}
-
-.ck__act-info {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: $color-surface;
-  margin-top: 10px;
-}
-
-.ck__toggle {
+.ck__module-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -389,89 +363,37 @@ async function onRemoveRule(r) {
   padding: 10px 12px;
   border-radius: 8px;
   background: $color-primary-bg;
-  margin-top: 10px;
 }
 
 .ck__toggle-label { font-size: 14px; font-weight: 600; color: $color-text-primary; }
 
-.ck__settings {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-top: 10px;
+.ck__day { font-weight: 600; color: $color-text-primary; }
+
+.ck__tip { margin-top: 10px; }
+
+.ck__rules-editor {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.ck__setting {
-  padding: 10px 12px;
+.ck__rule-slot {
+  padding: 12px;
+  border: 1px solid $color-border;
   border-radius: 8px;
   background: $color-surface;
-
-  .t-tertiary { font-size: 11px; }
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.ck__setting-val {
+.ck__rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 13px;
   font-weight: 600;
   color: $color-text-primary;
-  margin-top: 3px;
 }
-
-.ck__stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-top: 14px;
-  text-align: center;
-}
-
-.ck__stat {
-  padding: 12px 0;
-  border-radius: 8px;
-  background: $color-surface;
-}
-
-.ck__stat .price { font-size: 20px; }
-.ck__stat .t-tertiary { font-size: 11px; margin-top: 2px; }
-
-.ck__day { font-weight: 600; color: $color-text-primary; }
-
-.ck__rewards { display: flex; flex-direction: column; gap: 5px; }
-
-.ck__reward-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ck__reward { font-size: 13px; color: $color-text-primary; }
-.ck__tip { margin-top: 10px; }
-
-.ck__rank-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 0;
-  border-bottom: 1px solid $color-border;
-
-  &:last-of-type { border-bottom: none; }
-}
-
-.ck__rank {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: $color-surface;
-  color: $color-text-tertiary;
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-
-  &.is-top { background: var(--color-primary-bg); color: $color-primary; }
-}
-
-.ck__rank-name { flex: 1; font-size: 13px; font-weight: 600; color: $color-text-primary; }
-.ck__rank-streak .price { font-size: 15px; }
 </style>

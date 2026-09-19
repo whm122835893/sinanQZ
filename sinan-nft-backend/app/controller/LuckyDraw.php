@@ -27,8 +27,13 @@ class LuckyDraw extends BaseController
      */
     public function activity()
     {
+        // 模块开关 lucky_enabled：关闭 → C端空状态
+        $enabled = (int) Db::name('system_configs')->where('config_key', 'lucky_enabled')->value('config_value') === 1;
+
         $activityId = $this->intParam('activityId');
         $activity   = null;
+
+        if ($enabled) {
 
         if ($activityId > 0) {
             $activity = Db::name('lucky_draw_activities')
@@ -49,6 +54,7 @@ class LuckyDraw extends BaseController
                 }
             }
         }
+        } // end enabled
 
         $activityId = $activity ? (int) $activity['id'] : 0;
 
@@ -88,6 +94,7 @@ class LuckyDraw extends BaseController
         }
 
         return $this->success([
+            'enabled'    => $enabled,
             'activityId' => $activityId,
             'name'       => $activity['name'] ?? '',
             'startTime'  => $activity['start_time'] ?? null,
@@ -99,11 +106,11 @@ class LuckyDraw extends BaseController
                 return [
                     'prizeId'       => (int) $p['id'],
                     'tierName'      => $p['tier_name'],
-                    'prizeName'     => $p['prize_name'] ?: $p['tier_name'],
+                    'prizeName'     => ($p['prize_name'] ?? null) ?: $p['tier_name'],
                     'prizeType'     => $p['prize_type'],
                     'collectibleId' => $cid ?: null,
-                    'name'          => $p['prize_name'] ?: ($collectibles[$cid]['name'] ?? $p['tier_name']),
-                    'image'         => $p['prize_image'] ?: ($collectibles[$cid]['image'] ?? ''),
+                    'name'          => ($p['prize_name'] ?? null) ?: ($collectibles[$cid]['name'] ?? $p['tier_name']),
+                    'image'         => ($p['prize_image'] ?? null) ?: ($collectibles[$cid]['image'] ?? ''),
                     'total'         => $p['total'] === null ? null : (int) $p['total'],
                     'won'           => (int) $p['won'],
                     'sortOrder'     => (int) $p['sort_order'],
@@ -121,6 +128,11 @@ class LuckyDraw extends BaseController
     {
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
+
+        // 模块开关 lucky_enabled：关闭 → 拦截抽奖
+        if ((int) Db::name('system_configs')->where('config_key', 'lucky_enabled')->value('config_value') !== 1) {
+            return $this->fail(4003, '抽奖功能暂未开放');
+        }
 
         Db::startTrans();
         try {
@@ -229,7 +241,7 @@ class LuckyDraw extends BaseController
             // ---- 5. 发放（manual 记录名单统一发放 / realtime 实时到账）----
             $grantMode  = $activity ? (string) ($activity['grant_mode'] ?? 'realtime') : 'realtime';
             $actName    = $activity['name'] ?? '抽奖活动';
-            $prizeLabel = $winner['prize_name'] ?: $winner['tier_name'];
+            $prizeLabel = ($winner['prize_name'] ?? null) ?: $winner['tier_name'];
 
             if ($grantMode === 'manual') {
                 // 记录名单 → 后台导出名单统一发放（奖品实物不实时到账）

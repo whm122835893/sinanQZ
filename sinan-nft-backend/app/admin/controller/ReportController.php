@@ -51,8 +51,8 @@ class ReportController extends BaseController
             ->whereBetween('created_at', [$start, $end])
             ->group('source')
             ->select()->toArray();
-        // orders.source 存字符串枚举（release/market/priority/eligibility），非数字
-        $sourceMap = ['release' => '发售', 'market' => '市场寄售', 'priority' => '优先购', 'eligibility' => '资格购'];
+        // orders.source 存字符串枚举（release/market/priority/eligibility/raffle），非数字
+        $sourceMap = ['release' => '发售', 'market' => '市场寄售', 'priority' => '优先购', 'eligibility' => '资格购', 'raffle' => '抽签购'];
 
         // 3. 支付方式分布
         $payRows = Db::name('payments')->alias('p')
@@ -464,7 +464,7 @@ class ReportController extends BaseController
             $r['stat_date'], $r['order_count'], round((float) $r['gmv'], 2), $r['quantity']
         ], $data['trend'] ?? []);
 
-        $sourceMap = ['release' => '发售', 'market' => '市场寄售', 'priority' => '优先购', 'eligibility' => '资格购'];
+        $sourceMap = ['release' => '发售', 'market' => '市场寄售', 'priority' => '优先购', 'eligibility' => '资格购', 'raffle' => '抽签购'];
         $sourceRows = array_map(fn ($r) => [
             $sourceMap[$r['source']] ?? '来源' . $r['source'], $r['order_count'], round((float) $r['gmv'], 2)
         ], $data['sources'] ?? []);

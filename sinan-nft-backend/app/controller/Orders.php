@@ -105,24 +105,47 @@ class Orders extends BaseController
                 $source = 'release';
                 $nowTs  = time();
 
-                // Step 1：有效优先购资格 = expires_at > now 且 used < max 且活动窗口内（行锁）
+                // ═══════════════════════════════════════════════════════════
+                // 业务规则（用户明确要求）：
+                //  发售渠道：公售 / 资格购 / 抽签购，三者独立（抽签购走 Raffle 独立接口）
+                //  1. 优先购只作用于公售（提前购买）；资格购开启时优先购不生效
+                //  2. 资格购只有两种路径能买：白名单命中 OR 满足配置条件
+                //  3. 抽签购只有中签 OR 抽签白名单（必中）才能买
+                //  4. 资格购白名单与抽签白名单互不相通
+                // ═══════════════════════════════════════════════════════════
+
+                // Step 1：资格购判定（渠道门槛，未通过直接拦截）
+                $eligibility = \app\service\PurchaseQualifyService::checkEligibility($userId, $collectible);
+                if ($eligibility['enabled']) {
+                    if (!$eligibility['qualified']) {
+                        Db::rollback();
+                        return $this->fail(3004, $eligibility['reason'] ?: '未获得购买资格');
+                    }
+                }
+
+                // Step 2：优先购资格——仅公售模式生效（资格购渠道内没有优先购）
+                // 有效 = expires_at > now 且 used < max 且活动窗口内（行锁）
                 // 注意 field 显式别名：两表均有 id/status 等同名列，PDO fetch 时后者覆盖前者，
                 // 必须以 w.* + ps 别名字段返回，否则 $priority['id'] 会错拿到活动 ID
-                $priority = Db::name('priority_sale_whitelists')->alias('w')
-                    ->join('priority_sales ps', 'ps.id = w.priority_sale_id', 'INNER')
-                    ->field('w.*,ps.id AS sale_id,ps.name AS sale_name,ps.start_time,ps.end_time')
-                    ->where('ps.collectible_id', $collectibleId)
-                    ->where('ps.status', 1)
-                    ->where('w.user_id', $userId)
-                    ->where('w.status', 1)
-                    ->where('w.expires_at', '>', date('Y-m-d H:i:s'))
-                    ->where('ps.start_time', '<=', date('Y-m-d H:i:s'))
-                    ->where('ps.end_time', '>=', date('Y-m-d H:i:s'))
-                    ->whereRaw('w.used_quantity < w.max_quantity')
-                    ->lock(true)
-                    ->find();
+                $priority = null;
+                if (!$eligibility['enabled']) {
+                    $priority = Db::name('priority_sale_whitelists')->alias('w')
+                        ->join('priority_sales ps', 'ps.id = w.priority_sale_id', 'INNER')
+                        ->field('w.*,ps.id AS sale_id,ps.name AS sale_name,ps.start_time,ps.end_time')
+                        ->where('ps.collectible_id', $collectibleId)
+                        ->where('ps.status', 1)
+                        ->where('w.user_id', $userId)
+                        ->where('w.status', 1)
+                        ->where('w.expires_at', '>', date('Y-m-d H:i:s'))
+                        ->where('ps.start_time', '<=', date('Y-m-d H:i:s'))
+                        ->where('ps.end_time', '>=', date('Y-m-d H:i:s'))
+                        ->whereRaw('w.used_quantity < w.max_quantity')
+                        ->lock(true)
+                        ->find();
+                }
+
                 if ($priority) {
-                    // 优先购覆盖资格购限制；原子条件 UPDATE 防并发超用（used + N <= max）
+                    // 优先购独立配额扣减（公售提前通道，只扣优先购专属配额）
                     $bumped = Db::name('priority_sale_whitelists')
                         ->where('id', $priority['id'])
                         ->whereRaw('used_quantity + ' . (int) $quantity . ' <= max_quantity')
@@ -136,31 +159,46 @@ class Orders extends BaseController
                     }
                     $source = 'priority';
                 } else {
-                    // Step 2/3：资格购判定（优先购不参与资格购）
-                    $eligibility = \app\service\PurchaseQualifyService::checkEligibility($userId, $collectible);
-                    if ($eligibility['enabled']) {
-                        if (!$eligibility['qualified']) {
-                            Db::rollback();
-                            return $this->fail(3004, $eligibility['reason'] ?: '未获得购买资格');
-                        }
-                        $source = 'eligibility';
-                    }
-
                     // 公售时间校验（优先购不受公售时间限制；onsale_at 为 NULL 表示不限）
                     if (!empty($collectible['onsale_at']) && strtotime($collectible['onsale_at']) > $nowTs) {
                         Db::rollback();
                         return $this->fail(1001, '尚未开售');
                     }
+                    if ($eligibility['enabled']) {
+                        $source = 'eligibility';
+                    }
                 }
 
-                // 库存锁定（原子操作，受 CHECK 防超卖兜底）
+                // ─── 库存锁定（原子操作，三重保险防超卖） ───
+                // 1) edition 总发行量 CHECK
+                // 2) release_quantity 上架份数（分批发售开启时；NULL=全部上架）
+                // 3) locked_quantity 条件更新（行级互斥）
+                $rq = isset($collectible['release_quantity']) ? (int) $collectible['release_quantity'] : 0;
+                $useReleaseQty = $rq > 0; // release_quantity > 0 才启用分批发售限制
+                $quotaUpper = $useReleaseQty ? $rq : (int) $collectible['edition'];
+
+                // 预校验：saleable 够不够（友好报错；原子更新里还有一层 WHERE 兜底）
+                $saleable = \app\service\InventoryService::saleable($collectible);
+                if ($quantity > $saleable) {
+                    Db::rollback();
+                    return $this->fail(3001,
+                        $useReleaseQty
+                            ? '本轮上架 ' . $rq . ' 份，可售仅剩 ' . $saleable . ' 份'
+                            : '库存不足（可售 ' . $saleable . ' 份）'
+                    );
+                }
+
+                $stockWhere = 'sold + locked_quantity + ' . (int) $quantity . ' <= ' . (int) $quotaUpper;
                 $affected = Db::name('collectibles')
                     ->where('id', $collectibleId)
-                    ->whereRaw('sold + locked_quantity + ' . (int) $quantity . ' <= edition')
+                    ->whereRaw($stockWhere)
                     ->update(['locked_quantity' => Db::raw("locked_quantity + {$quantity}")]);
                 if (!$affected) {
                     Db::rollback();
-                    return $this->fail(3001, '库存不足');
+                    return $this->fail(3001, $useReleaseQty
+                        ? '并发超出本轮上架份额（' . $rq . ' 份），请稍后再试'
+                        : '库存不足，请稍后再试'
+                    );
                 }
 
                 // 限购检查（藏品级 per_user_limit 非 0 时覆盖系统 purchase_limit_per_user，联动点 10.2）
@@ -497,6 +535,24 @@ class Orders extends BaseController
                 if (!$affected) {
                     Db::rollback();
                     return $this->fail(5001, '库存锁定量异常（可能已被并发释放），请联系管理员');
+                }
+
+                // 优先购单：回退白名单配额（下单即扣 used_quantity，取消未回退会导致反复下单-取消耗尽配额）
+                if ($order['source'] === 'priority') {
+                    $wlId = Db::name('priority_sale_whitelists')->alias('w')
+                        ->join('priority_sales ps', 'ps.id = w.priority_sale_id', 'INNER')
+                        ->where('ps.collectible_id', $order['collectible_id'])
+                        ->where('w.user_id', $userId)
+                        ->value('w.id');
+                    if ($wlId) {
+                        Db::name('priority_sale_whitelists')
+                            ->where('id', $wlId)
+                            ->whereRaw('used_quantity >= ' . (int) $order['quantity'])
+                            ->update([
+                                'used_quantity' => Db::raw('used_quantity - ' . (int) $order['quantity']),
+                                'updated_at'    => date('Y-m-d H:i:s'),
+                            ]);
+                    }
                 }
             } else {
                 // 市场单：资产从未过户（支付时才过户），仅需恢复挂单在售

@@ -122,7 +122,7 @@ class User extends BaseController
             'id_card'                => aes_encrypt($idCard),
             'realname_status'        => 1,
             'realname_submitted_at'  => date('Y-m-d H:i:s'),
-            'realname_reject_reason' => null,
+            'realname_reject_reason' => '',
             'updated_at'             => date('Y-m-d H:i:s.v'),
         ]);
 

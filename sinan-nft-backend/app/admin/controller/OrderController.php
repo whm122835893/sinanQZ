@@ -67,7 +67,7 @@ class OrderController extends BaseController
             $query->where('o.status', $status);
         }
         $source = (string) $this->request->param('source', '');
-        if ($source !== '' && in_array($source, ['release', 'market', 'priority', 'eligibility'], true)) {
+        if ($source !== '' && in_array($source, ['release', 'market', 'priority', 'eligibility', 'raffle'], true)) {
             $query->where('o.source', $source);
         }
         $range = $this->dateRange();
@@ -429,7 +429,7 @@ class OrderController extends BaseController
             ->field('o.id, o.order_no, o.user_id, u.uid, o.quantity, o.total_price')
             ->join('users u', 'u.id = o.user_id', 'LEFT')
             ->where('o.status', 'completed')
-            ->whereIn('o.source', ['release', 'priority', 'eligibility'])
+            ->whereIn('o.source', ['release', 'priority', 'eligibility', 'raffle'])
             ->whereRaw('(SELECT COUNT(*) FROM nft_user_collectibles uc WHERE uc.order_id = o.id) < o.quantity')
             ->order('o.id', 'desc')
             ->limit(100)

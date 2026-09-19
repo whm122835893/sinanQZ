@@ -2,25 +2,70 @@
 declare(strict_types=1);
 
 namespace app\controller;
+
 use app\BaseController;
 use app\service\ActivityRewardService;
-
 use think\facade\Db;
 
 /**
- * 签到控制器
+ * 签到控制器（多活动模型）
+ *
+ * 后台"新建活动"模式：nft_check_in_activities 支持多条活动，同时只有
+ * 最新一条"启用中且在时间窗内"的活动生效（奖励/资格/发放方式均取自该活动）。
+ *
+ * 模块开关 checkin_enabled：
+ * - 关闭 → C端签到页空状态（activity() 返回 enabled=false）
+ * - 开启但未配置活动 → 页面显示，activity() 返回 enabled=true + activity=null，签到返回 4003
  */
 class CheckIn extends BaseController
 {
     /**
+     * GET /api/check-in/activity（公开）
+     * C端签到页数据源：模块开关 + 当前生效活动
+     */
+    public function activity()
+    {
+        $enabled = (int) $this->cfg('checkin_enabled') === 1;
+
+        $activity = $enabled ? $this->activeActivity() : null;
+
+        $data = ['enabled' => $enabled, 'activity' => null];
+        if ($activity) {
+            $rewardConfig = json_decode((string) ($activity['reward_config'] ?? ''), true) ?: [];
+            $data['activity'] = [
+                'id'           => (int) $activity['id'],
+                'name'         => (string) $activity['name'],
+                'startTime'    => (string) $activity['start_time'],
+                'endTime'      => $activity['end_time'] !== null ? (string) $activity['end_time'] : null,
+                'rewardDays'   => array_map('intval', array_keys($rewardConfig)),
+                'rewardConfig' => $rewardConfig ?: new \stdClass(),
+                'eligibilityType' => (string) $activity['eligibility_type'],
+                'grantMode'    => (string) $activity['grant_mode'],
+            ];
+        }
+        return $this->success($data);
+    }
+
+    /**
+     * 当前生效的签到活动：启用中 + 未删除 + 在时间窗内，取最新一条
+     */
+    private function activeActivity(): ?array
+    {
+        $now = date('Y-m-d H:i:s');
+        return Db::name('check_in_activities')
+            ->whereNull('deleted_at')
+            ->where('status', 'enabled')
+            ->where('start_time', '<=', $now)
+            ->where(function ($q) use ($now) {
+                $q->whereNull('end_time')->whereOr('end_time', '>=', $now);
+            })
+            ->order('id', 'desc')
+            ->find();
+    }
+
+    /**
      * POST /api/check-in
-     * 每日签到
-     *
-     * 奖励链路（新版签到活动）：
-     *   checkin_enabled=1 且 checkin_reward_config 配置当日奖励
-     *   → 参与资格判定（checkin_eligibility_type/config）
-     *   → 统一发放（checkin_grant_mode：realtime 实时到账 / manual 记录名单统一发放）
-     * 否则回退旧版：checkin_rewards（连续天数 → 司南币）
+     * 每日签到（奖励取当前生效活动：资格判定 → 六类奖励统一发放）
      */
     public function perform()
     {
@@ -44,6 +89,17 @@ class CheckIn extends BaseController
             ]);
         }
 
+        // 模块开关
+        if ((int) $this->cfg('checkin_enabled') !== 1) {
+            return $this->fail(4003, '签到功能暂未开放');
+        }
+
+        // 当前生效活动
+        $activity = $this->activeActivity();
+        if (!$activity) {
+            return $this->fail(4003, '暂无进行中的签到活动');
+        }
+
         // 计算连续天数
         $yesterday = date('Y-m-d', strtotime('-1 day'));
         $prev      = Db::name('check_in_records')
@@ -52,43 +108,32 @@ class CheckIn extends BaseController
             ->find();
         $streak = $prev ? (int) $prev['consecutive_days'] + 1 : 1;
 
-        // 活动配置（新版六类奖励 + 资格 + 发放方式；旧版司南币兜底）
-        $configs = Db::name('system_configs')
-            ->whereIn('config_key', [
-                'checkin_enabled', 'checkin_activity_name',
-                'checkin_eligibility_type', 'checkin_eligibility_config', 'checkin_grant_mode',
-                'checkin_reward_config', 'checkin_rewards',
-            ])
-            ->column('config_value', 'config_key');
-
-        $newRules = json_decode((string) ($configs['checkin_reward_config'] ?? ''), true) ?: [];
-        $useNew   = (int) ($configs['checkin_enabled'] ?? 0) === 1
-            && isset($newRules[$streak]) && is_array($newRules[$streak]) && $newRules[$streak];
-
         $now = date('Y-m-d H:i:s.v');
         Db::startTrans();
         try {
             $reward = ['type' => 'none', 'amount' => 0, 'relatedId' => null, 'description' => '无奖励'];
 
-            if ($useNew) {
-                // ---- 新版：资格判定 → 六类奖励统一发放 ----
+            $rewardConfig = json_decode((string) ($activity['reward_config'] ?? ''), true) ?: [];
+            $actName = (string) $activity['name'];
+
+            if (isset($rewardConfig[$streak]) && is_array($rewardConfig[$streak]) && $rewardConfig[$streak]) {
+                // 资格判定
                 $eligibility = ActivityRewardService::checkEligibility(
                     $userId,
-                    (string) ($configs['checkin_eligibility_type'] ?? 'all'),
-                    json_decode((string) ($configs['checkin_eligibility_config'] ?? ''), true) ?: []
+                    (string) $activity['eligibility_type'],
+                    json_decode((string) ($activity['eligibility_config'] ?? ''), true) ?: []
                 );
                 if (!$eligibility['eligible']) {
                     $reward['description'] = '今日已签到，但不符合活动参与资格：' . $eligibility['reason'];
                 } else {
-                    $rewards = ActivityRewardService::normalizeRewards($newRules[$streak]);
-                    $actName = (string) ($configs['checkin_activity_name'] ?? '每日签到');
+                    $rewards = ActivityRewardService::normalizeRewards($rewardConfig[$streak]);
                     ActivityRewardService::grantRewards(
                         $rewards,
                         $userId,
                         'checkin',
-                        0,
+                        (int) $activity['id'],
                         $actName,
-                        (string) ($configs['checkin_grant_mode'] ?? 'realtime'),
+                        (string) $activity['grant_mode'],
                         [
                             'slot'  => 'day' . $streak,
                             'title' => $actName . '（连续签到第' . $streak . '天）',
@@ -105,42 +150,11 @@ class CheckIn extends BaseController
                         )),
                     ];
                 }
-            } else {
-                // ---- 旧版：连续天数 → 司南币 ----
-                $legacy = json_decode((string) ($configs['checkin_rewards'] ?? ''), true) ?: [];
-                $amount = (int) ($legacy[$streak] ?? 0);
-                if ($amount > 0) {
-                    // 与新版 grantPoints 语义一致：奖励为司南币（points），
-                    // balance_after 必须记录 points 变动后的值，而非 balance+amount
-                    $affected = Db::name('wallets')->where('user_id', $userId)->update([
-                        'points'     => Db::raw("points + {$amount}"),
-                        'updated_at' => $now,
-                    ]);
-                    if (!$affected) {
-                        // amount>0 时 points 必变，affected=0 无歧义 = 钱包行缺失；拒绝静默入账
-                        throw new \RuntimeException("用户 #{$userId} 钱包行缺失，签到奖励入账失败");
-                    }
-                    $pointsAfter = (float) Db::name('wallets')->where('user_id', $userId)->value('points');
-                    Db::name('wallet_transactions')->insert([
-                        'user_id'        => $userId,
-                        'trans_type'     => 'reward',
-                        'title'          => '签到奖励（连续' . $streak . '天）',
-                        'direction'      => 1,
-                        'amount'         => $amount,
-                        'balance_after'  => $pointsAfter,
-                        'created_at'     => $now,
-                    ]);
-                    $reward = [
-                        'type'        => 'points',
-                        'amount'      => $amount,
-                        'relatedId'   => null,
-                        'description' => "连续签到第{$streak}天奖励 {$amount} 司南币",
-                    ];
-                }
             }
 
             Db::name('check_in_records')->insert([
                 'user_id'             => $userId,
+                'activity_id'         => (int) $activity['id'],
                 'check_in_date'       => $today,
                 'consecutive_days'    => $streak,
                 'reward_type'         => $reward['type'],
@@ -149,6 +163,10 @@ class CheckIn extends BaseController
                 'reward_description'  => mb_substr($reward['description'], 0, 255),
                 'created_at'          => $now,
             ]);
+
+            // 活动累计签到人次
+            Db::name('check_in_activities')->where('id', (int) $activity['id'])
+                ->inc('signin_count')->update();
 
             Db::commit();
         } catch (\Throwable $e) {
@@ -174,69 +192,72 @@ class CheckIn extends BaseController
 
     /**
      * GET /api/check-in/records
-     * 签到记录（按月）
+     * 签到记录列表
      */
     public function records()
     {
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
-        $month = $this->request->param('month', date('Y-m'));
-        $start = $month . '-01';
-        $end   = date('Y-m-t', strtotime($start));
-
         $records = Db::name('check_in_records')
             ->where('user_id', $userId)
-            ->whereBetween('check_in_date', [$start, $end])
             ->order('check_in_date', 'desc')
+            ->limit(90)
             ->select()
             ->toArray();
 
-        $currentStreak = (int) ($records[0]['consecutive_days'] ?? 0);
-
-        return $this->success([
-            'currentStreak' => $currentStreak,
-            'records'       => array_map(fn ($r) => [
-                'date'        => $r['check_in_date'],
-                'rewardType'  => $r['reward_type'],
-                'amount'      => (int) $r['reward_amount'],
-            ], $records),
-        ]);
+        return $this->success(array_map(function ($r) {
+            return [
+                'date'         => $r['check_in_date'],
+                'day'          => (int) $r['consecutive_days'],
+                'rewardType'   => $r['reward_type'],
+                'rewardAmount' => (int) $r['reward_amount'],
+                'description'  => $r['reward_description'],
+            ];
+        }, $records));
     }
 
     /**
-     * GET /api/check-in/calendar
-     * 签到日历
+     * GET /api/check-in/calendar?month=2026-09
+     * 日历视图（某月签到日期 + 连续天数）
      */
     public function calendar()
     {
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
-        $year  = $this->intParam('year', (int) date('Y'));
-        $month = $this->intParam('month', (int) date('m'));
-
-        $start = sprintf('%04d-%02d-01', $year, $month);
-        $end   = date('Y-m-t', strtotime($start));
+        $month = (string) $this->request->param('month', date('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            return $this->fail(4220, 'month 格式应为 YYYY-MM');
+        }
 
         $days = Db::name('check_in_records')
             ->where('user_id', $userId)
-            ->whereBetween('check_in_date', [$start, $end])
-            ->column('check_in_date');
+            ->whereLike('check_in_date', $month . '%')
+            ->order('check_in_date', 'asc')
+            ->select()
+            ->toArray();
 
-        $dayNos = array_map(fn ($d) => (int) substr($d, -2), $days);
-        $currentStreak = 0;
-        $yesterday = date('Y-m-d', strtotime('-1 day'));
-        if (in_array($yesterday, $days)) {
-            $currentStreak = Db::name('check_in_records')
-                ->where('user_id', $userId)
-                ->where('check_in_date', $yesterday)
-                ->value('consecutive_days') ?? 0;
-        }
+        $currentStreak = Db::name('check_in_records')
+            ->where('user_id', $userId)
+            ->where('check_in_date', date('Y-m-d'))
+            ->value('consecutive_days');
 
         return $this->success([
-            'days'          => $dayNos,
-            'currentStreak' => (int) $currentStreak,
+            'month'   => $month,
+            'current' => $currentStreak !== null ? (int) $currentStreak : 0,
+            'days'    => array_map(function ($r) {
+                return [
+                    'date' => $r['check_in_date'],
+                    'day'  => (int) $r['consecutive_days'],
+                ];
+            }, $days),
         ]);
+    }
+
+    /** 读取系统配置 */
+    private function cfg(string $key): string
+    {
+        return (string) Db::name('system_configs')->where('config_key', $key)->value('config_value');
     }
 }

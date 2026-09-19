@@ -36,6 +36,9 @@ Route::group('/api', function () {
     // 抽奖
     Route::get('lucky-draw/activity', 'LuckyDraw/activity');
 
+    // 签到（公开：模块开关 + 当前生效活动）
+    Route::get('check-in/activity', 'CheckIn/activity');
+
     // 抽签发售（RF03：C 端入口）
     Route::get('raffle/activities',    'Raffle/activities');
     Route::get('raffle/activities/:id', 'Raffle/detail')

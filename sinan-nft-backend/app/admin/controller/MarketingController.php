@@ -94,8 +94,14 @@ class MarketingController extends BaseController
                 $id = (int) Db::name('priority_activities')->insertGetId($data);
             }
             // 白名单覆盖式更新
-            $whitelist = $this->request->param('whitelist', []);
-            if (is_array($whitelist)) {
+            // SECURITY FIX：用 has('whitelist') 判断请求体是否显式带 whitelist 字段。
+            // 不传时跳过覆盖更新，避免前端只编辑活动信息时误清空白名单。
+            // 前端想显式清空 → 必须传 "whitelist": []；想覆盖 → 传完整 id 列表。
+            if ($this->request->has('whitelist')) {
+                $whitelist = $this->request->param('whitelist', []);
+                if (!is_array($whitelist)) {
+                    throw new \Exception('whitelist 必须是数组');
+                }
                 $userIds = array_values(array_unique(array_map('intval', array_filter($whitelist, 'is_numeric'))));
                 if (count($userIds) > 1000) {
                     throw new \Exception('白名单最多 1000 人');
@@ -246,11 +252,12 @@ class MarketingController extends BaseController
 
     /**
      * POST /admin/marketing/priority-whitelist { activity_id, phone, max_quantity?, expires_at? }
-     * 单个添加优先购白名单：手机号须为平台注册用户；幂等去重；写审计日志
+     * POST /admin/marketing/priority-whitelist { activity_id, phones: "13800000001\n13800000002"|[...], max_quantity?, expires_at? }
+     * 单/批量添加优先购白名单：手机号须为平台注册用户；自动幂等跳过已存在项；写审计日志
      */
     public function priorityWhitelistAdd()
     {
-        $missing = $this->missingParams(['activity_id', 'phone']);
+        $missing = $this->missingParams(['activity_id']);
         if ($missing) {
             return $this->failMissing($missing);
         }
@@ -259,22 +266,6 @@ class MarketingController extends BaseController
         $act = Db::name('priority_activities')->where('id', $activityId)->find();
         if (!$act) {
             return $this->fail(4040, '优先购活动不存在');
-        }
-
-        $phone = trim((string) $this->request->param('phone'));
-        if (!preg_match('/^1\d{10}$/', $phone)) {
-            return $this->fail(4220, '手机号格式不正确');
-        }
-
-        $user = Db::name('users')->where('phone', $phone)->whereNull('deleted_at')->find();
-        if (!$user) {
-            return $this->fail(4040, '该手机号非平台注册用户');
-        }
-
-        $exists = Db::name('priority_whitelists')
-            ->where('activity_id', $activityId)->where('user_id', $user['id'])->count();
-        if ($exists > 0) {
-            return $this->fail(4220, '该用户已在白名单中');
         }
 
         $maxQuantity = max(1, (int) $this->request->param('max_quantity', 1));
@@ -290,20 +281,84 @@ class MarketingController extends BaseController
         }
 
         $now = date('Y-m-d H:i:s');
+
+        // ---- 解析 phones：支持单条 phone / 数组 phones / 换行字符串 phones ----
+        if ($this->request->has('phones')) {
+            $phonesRaw = $this->request->param('phones');
+            if (is_array($phonesRaw)) {
+                $phones = $phonesRaw;
+            } else {
+                $phones = preg_split('/[\s,，]+/', trim((string) $phonesRaw));
+            }
+            $phones = array_values(array_unique(array_filter(array_map('trim', $phones))));
+            $singlePhone = null;
+        } else {
+            $phones = [];
+            $singlePhone = trim((string) $this->request->param('phone', ''));
+            if ($singlePhone !== '') {
+                $phones[] = $singlePhone;
+            }
+        }
+
+        if (!count($phones)) {
+            return $this->fail(4220, '请至少传入一个手机号');
+        }
+        if (count($phones) > 500) {
+            return $this->fail(4220, '单次导入最多 500 人');
+        }
+
+        // ---- 预校验：格式 + 用户存在性 ----
+        $users = Db::name('users')->whereIn('phone', $phones)->whereNull('deleted_at')->column('id', 'phone');
+        $validPhones = [];
+        $invalidFormat = [];
+        $notFound = [];
+        foreach ($phones as $p) {
+            if (!preg_match('/^1\d{10}$/', $p)) {
+                $invalidFormat[] = $p;
+            } elseif (!isset($users[$p])) {
+                $notFound[] = $p;
+            } else {
+                $validPhones[] = $p;
+            }
+        }
+
+        if (!count($validPhones)) {
+            return $this->fail(4220, '没有可导入的手机号（全部格式错误或非平台注册用户）');
+        }
+
+        // 批量查重（已存在白名单的跳过）
+        $existMap = Db::name('priority_whitelists')
+            ->where('activity_id', $activityId)
+            ->whereIn('user_id', array_values($users))
+            ->column('user_id', 'user_id');
+
+        $rows = [];
+        $insertedUserIds = [];
+        foreach ($validPhones as $p) {
+            $uid = (int) $users[$p];
+            if (isset($existMap[$uid])) {
+                continue; // 跳过已存在
+            }
+            $rows[] = [
+                'activity_id'   => $activityId,
+                'user_id'       => $uid,
+                'phone'         => $p,
+                'max_quantity'  => $maxQuantity,
+                'used_quantity' => 0,
+                'expires_at'    => $expiresAt,
+                'status'        => 1,
+                'created_at'    => $now,
+                'updated_at'    => $now,
+            ];
+            $insertedUserIds[] = $uid;
+        }
+
         Db::startTrans();
         try {
-            Db::name('priority_whitelists')->insert([
-                'activity_id'  => $activityId,
-                'user_id'      => $user['id'],
-                'phone'        => $phone,
-                'max_quantity' => $maxQuantity,
-                'used_quantity'=> 0,
-                'expires_at'   => $expiresAt,
-                'status'       => 1,
-                'created_at'   => $now,
-                'updated_at'   => $now,
-            ]);
-            // MK-D1：同步镜像到 C 端白名单
+            if (count($rows)) {
+                Db::name('priority_whitelists')->insertAll($rows);
+            }
+            // MK-D1：同步镜像到 C 端白名单（一次即可覆盖全部新增用户）
             $this->syncPrioritySale($activityId);
             Db::commit();
         } catch (\Throwable $e) {
@@ -311,12 +366,26 @@ class MarketingController extends BaseController
             return $this->fail(5000, '添加失败：' . $e->getMessage());
         }
 
+        // 审计
         $this->audit('marketing', 'priority_whitelist_add',
-            '优先购白名单添加（活动「' . $act['name'] . '」用户 ' . $phone . '，限购 ' . $maxQuantity . ' 份）',
-            ['activity_id' => $activityId, 'user_id' => $user['id'], 'phone' => $phone, 'max_quantity' => $maxQuantity, 'expires_at' => $expiresAt],
+            '优先购白名单导入（活动「' . $act['name'] . '」导入 ' . count($rows) . ' 人，忽略 ' . (count($validPhones) - count($rows)) . ' 条已存在）',
+            ['activity_id' => $activityId, 'count' => count($rows), 'phones' => $validPhones],
             'priority_activity', $activityId);
 
-        return $this->success(['activityId' => $activityId, 'userId' => (int) $user['id']], '已加入白名单并写入审计日志');
+        // 组装人类可读消息（注意 PHP . 优先级高于 ?:，必须用括号包条件）
+        $msg = count($rows) . ' 人已加入';
+        $dup = count($validPhones) - count($rows);
+        if ($dup > 0) $msg .= "（已存在跳过 {$dup} 人）";
+        if (count($invalidFormat)) $msg .= "，格式错误 " . count($invalidFormat) . ' 人';
+        if (count($notFound)) $msg .= "，未注册 " . count($notFound) . ' 人被拦截';
+
+        return $this->success([
+            'activityId'       => $activityId,
+            'imported'         => count($rows),
+            'skippedDuplicate' => $dup,
+            'invalidFormat'    => $invalidFormat,
+            'notFound'         => $notFound,
+        ], $msg);
     }
 
     /**
@@ -562,6 +631,202 @@ class MarketingController extends BaseController
 
         $this->audit('marketing', 'checkin_save', '更新签到活动配置', array_keys($changed));
         return $this->success(null, '签到活动配置已保存');
+    }
+
+    // ==================== 签到活动（新建活动模式） ====================
+
+    /**
+     * GET /admin/marketing/checkin-activities
+     * 签到活动列表（含进行中/已结束标记与累计签到人次）
+     */
+    public function checkinActivityList()
+    {
+        $now = date('Y-m-d H:i:s');
+        $rows = Db::name('check_in_activities')->whereNull('deleted_at')
+            ->order('id', 'desc')->select()->toArray();
+
+        foreach ($rows as &$row) {
+            $rewardConfig = json_decode((string) ($row['reward_config'] ?? ''), true) ?: [];
+            $row['status']  = (string) $row['status'];
+            $row['started'] = strtotime((string) $row['start_time']) <= strtotime($now);
+            $row['ended']   = $row['end_time'] !== null && strtotime((string) $row['end_time']) < strtotime($now);
+            $row['reward_days'] = count($rewardConfig);
+            $row['reward_config'] = $rewardConfig ?: new \stdClass();
+        }
+        unset($row);
+
+        return $this->success(['list' => $rows, 'total' => count($rows)]);
+    }
+
+    /**
+     * POST /admin/marketing/checkin-activity
+     * 新建/编辑签到活动（新建活动模式）
+     * { id?, name, status?, start_time, end_time?, reward_config: {day:[六类奖励]},
+     *   eligibility_type?, eligibility_config?, grant_mode? }
+     */
+    public function checkinActivitySave()
+    {
+        $id = $this->positiveInt('id');
+
+        $name = mb_substr(trim((string) $this->request->param('name', '')), 0, 100);
+        if ($name === '') {
+            return $this->fail(4220, '活动名称不能为空');
+        }
+
+        // 时间窗：start_time 必填，end_time 可空（长期）
+        $startTime = trim((string) $this->request->param('start_time', ''));
+        if ($startTime === '' || !strtotime($startTime)) {
+            return $this->fail(4220, '开始时间不合法');
+        }
+        $startTime = date('Y-m-d H:i:s', strtotime($startTime));
+        $endTime = trim((string) $this->request->param('end_time', ''));
+        if ($endTime !== '') {
+            if (!strtotime($endTime)) return $this->fail(4220, '结束时间不合法');
+            $endTime = date('Y-m-d H:i:s', strtotime($endTime));
+            if ($endTime <= $startTime) return $this->fail(4220, '结束时间需晚于开始时间');
+        } else {
+            $endTime = null;
+        }
+
+        // 状态：新建默认 enabled
+        $status = 'enabled';
+        if ($id !== null || $this->request->has('status')) {
+            $status = (string) $this->request->param('status', 'enabled') === 'disabled' ? 'disabled' : 'enabled';
+        }
+
+        // 资格 + 发放方式（与抽奖/邀请同规则）
+        try {
+            $eligibility = ActivityRewardService::validateEligibility(
+                (string) $this->request->param('eligibility_type', 'all'),
+                (array) ($this->request->param('eligibility_config', []) ?: [])
+            );
+        } catch (\Throwable $e) {
+            return $this->fail(4220, $e->getMessage());
+        }
+        $grantMode = (string) $this->request->param('grant_mode', 'realtime');
+        if (!in_array($grantMode, ['realtime', 'manual'], true)) $grantMode = 'realtime';
+
+        // 奖励规则（新版六类奖励：天数 → 列表）
+        $rewardConfig = (array) ($this->request->param('reward_config', []) ?: []);
+        $clean = [];
+        foreach ($rewardConfig as $day => $rewardsList) {
+            $day = (int) $day;
+            if ($day < 1 || $day > 7) {
+                return $this->fail(4220, '连续签到天数仅支持 1~7');
+            }
+            if (!is_array($rewardsList) || !$rewardsList) continue;
+            try {
+                $clean[$day] = ActivityRewardService::normalizeRewards($rewardsList);
+            } catch (\Throwable $e) {
+                return $this->fail(4220, "第 {$day} 天奖励配置错误：" . $e->getMessage());
+            }
+        }
+        ksort($clean);
+
+        $now = date('Y-m-d H:i:s');
+        $data = [
+            'name'              => $name,
+            'status'            => $status,
+            'start_time'        => $startTime,
+            'end_time'          => $endTime,
+            'reward_config'     => $clean ? json_encode($clean, JSON_UNESCAPED_UNICODE) : null,
+            'eligibility_type' => $eligibility['type'],
+            'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : '',
+            'grant_mode'        => $grantMode,
+            'updated_at'        => $now,
+        ];
+
+        if ($id !== null) {
+            $exists = Db::name('check_in_activities')->where('id', $id)->whereNull('deleted_at')->find();
+            if (!$exists) return $this->fail(4040, '签到活动不存在');
+            Db::name('check_in_activities')->where('id', $id)->update($data);
+            $this->audit('marketing', 'checkin_activity_save', '编辑签到活动', ['id' => $id, 'name' => $name]);
+            return $this->success(['id' => $id], '签到活动已更新');
+        }
+
+        $data['created_at'] = $now;
+        $newId = Db::name('check_in_activities')->insertGetId($data);
+        $this->audit('marketing', 'checkin_activity_save', '新建签到活动', ['id' => $newId, 'name' => $name]);
+        return $this->success(['id' => $newId], '签到活动已创建');
+    }
+
+    /**
+     * POST /admin/marketing/checkin-activity-delete { id }
+     * 软删除签到活动（历史签到记录保留）
+     */
+    public function checkinActivityDelete()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) return $this->fail(4220, '缺少 id');
+
+        $exists = Db::name('check_in_activities')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$exists) return $this->fail(4040, '签到活动不存在');
+
+        Db::name('check_in_activities')->where('id', $id)
+            ->update(['deleted_at' => date('Y-m-d H:i:s'), 'status' => 'disabled']);
+        $this->audit('marketing', 'checkin_activity_delete', '删除签到活动', ['id' => $id, 'name' => $exists['name']]);
+        return $this->success(null, '签到活动已删除');
+    }
+
+    // ==================== 模块功能开关（签到/抽奖/合成） ====================
+
+    /** 模块开关联动的配置键 */
+    private const MODULE_SWITCH_KEYS = [
+        'checkin'   => 'checkin_enabled',
+        'lucky'     => 'lucky_enabled',
+        'synthesis' => 'synthesis_enabled',
+    ];
+
+    /**
+     * GET /admin/marketing/feature-switches
+     * 签到/抽奖/合成模块开关状态（C端关闭时空状态）
+     */
+    public function featureSwitches()
+    {
+        $rows = Db::name('system_configs')
+            ->whereIn('config_key', array_values(self::MODULE_SWITCH_KEYS))
+            ->column('config_value', 'config_key');
+
+        $switches = [];
+        foreach (self::MODULE_SWITCH_KEYS as $module => $key) {
+            $switches[$module] = (int) ($rows[$key] ?? 1) === 1;
+        }
+        return $this->success($switches);
+    }
+
+    /**
+     * POST /admin/marketing/feature-switches { module, enabled }
+     */
+    public function featureSwitchSave()
+    {
+        $module = (string) $this->request->param('module', '');
+        if (!isset(self::MODULE_SWITCH_KEYS[$module])) {
+            return $this->fail(4220, '不支持的模块（checkin/lucky/synthesis）');
+        }
+        $enabled = (int) $this->request->param('enabled') === 1 ? 1 : 0;
+        $this->upsertConfig(self::MODULE_SWITCH_KEYS[$module], (string) $enabled);
+
+        $labels = ['checkin' => '签到', 'lucky' => '抽奖', 'synthesis' => '合成'];
+        $this->audit('marketing', 'feature_switch_save', $labels[$module] . '模块开关', ['module' => $module, 'enabled' => $enabled]);
+        return $this->success(null, $labels[$module] . '功能已' . ($enabled ? '开启' : '关闭'));
+    }
+
+    /**
+     * POST /admin/marketing/synthesis-delete { id }
+     * 软删除合成活动（已结束活动C端仍展示，删除后不再展示）
+     */
+    public function synthesisDelete()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) return $this->fail(4220, '缺少 id');
+
+        $exists = Db::name('synthesis_activities')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$exists) return $this->fail(4040, '合成活动不存在');
+
+        Db::name('synthesis_activities')->where('id', $id)
+            ->update(['deleted_at' => date('Y-m-d H:i:s')]);
+        $this->audit('marketing', 'synthesis_delete', '删除合成活动', ['id' => $id, 'title' => $exists['title']]);
+        return $this->success(null, '合成活动已删除');
     }
 
     /** system_configs upsert（键存在更新，不存在插入） */
@@ -1029,7 +1294,8 @@ class MarketingController extends BaseController
         [$page, $pageSize] = $this->pageParams();
 
         $query = Db::name('synthesis_activities')->alias('a')
-            ->join('collectibles c', 'c.id = a.result_collectible_id');
+            ->join('collectibles c', 'c.id = a.result_collectible_id')
+            ->whereNull('a.deleted_at');
         $keyword = trim((string) $this->request->param('keyword', ''));
         if ($keyword !== '') {
             $query->whereLike('a.title', "%{$keyword}%");
@@ -1135,7 +1401,7 @@ class MarketingController extends BaseController
                 'total_limit'   => $this->positiveInt('total_limit'),
                 'image'         => trim((string) $this->request->param('image', '')) ?: null,
                 'eligibility_type'   => $eligibility['type'],
-                'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : null,
+                'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : '',
                 'grant_mode'    => $grantMode,
                 'updated_at'    => $now,
             ];
@@ -1341,8 +1607,13 @@ class MarketingController extends BaseController
         $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
               - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
         $needTotal = count($eligibles) * (int) $act['quantity_per_user'];
-        $remainLimit = $act['total_limit'] !== null ? (int) $act['total_limit'] - (int) $act['issued_count'] : PHP_INT_MAX;
-        $canIssue = min((int) floor($pool / (int) $act['quantity_per_user']), (int) floor($remainLimit / (int) $act['quantity_per_user']), count($eligibles));
+        // 无总限量时仅按库存池与待发放人数计算（避免 PHP_INT_MAX 参与除法转 int 溢出）
+        $canIssue = (int) floor($pool / (int) $act['quantity_per_user']);
+        if ($act['total_limit'] !== null) {
+            $remainLimit = max(0, (int) $act['total_limit'] - (int) $act['issued_count']);
+            $canIssue = min($canIssue, (int) floor($remainLimit / (int) $act['quantity_per_user']));
+        }
+        $canIssue = min($canIssue, count($eligibles));
         if ($canIssue <= 0) {
             return $this->fail(4220, '库存池或总限量不足以发放（可发放人数 ' . $canIssue . '）');
         }
