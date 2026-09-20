@@ -5,7 +5,7 @@ namespace app\controller;
 use app\BaseController;
 
 use app\service\CaptchaService;
-use app\service\SmsService;
+use app\service\SmsDispatchService;
 use think\facade\Db;
 
 /**
@@ -191,41 +191,13 @@ class User extends BaseController
             }
         }
 
-        // 60 秒内同手机号+场景禁止重发
-        $recent = Db::name('verification_codes')
-            ->where('phone', $phone)
-            ->where('scene', $scene)
-            ->where('sent_at', '>', date('Y-m-d H:i:s.v', time() - 60))
-            ->find();
-        if ($recent) {
-            return $this->fail(1001, '验证码发送过于频繁，请稍后再试');
+        // 统一派发：60s 频控 + 每日限 SmsDispatchService::DAILY_LIMIT 条 + 发送落库
+        $r = SmsDispatchService::dispatch($phone, $scene, $this->request->ip());
+        if (!$r['ok']) {
+            return $this->fail($r['code'], $r['message']);
         }
 
-        // 生成 6 位验证码
-        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $now  = date('Y-m-d H:i:s.v');
-
-        // 短信渠道：读取后台「系统设置→短信配置」（nft_sms_configs），替代原 SMS_MOCK 环境变量
-        $smsConfig = SmsService::getConfig();
-        $content   = '【' . (string) ($smsConfig['signature'] ?: '司南') . '】您的验证码：' . $code . '，5分钟内有效。';
-        [$sent, $smsMsg] = SmsService::send($phone, $content, $smsConfig);
-        if (!$sent) {
-            return $this->fail(5001, $smsMsg);
-        }
-
-        // 发送成功后再落库（bcrypt 哈希，防明文泄库）
-        Db::name('verification_codes')->insert([
-            'phone'      => $phone,
-            'scene'      => $scene,
-            'code'       => hash_password($code),
-            'expires_at' => date('Y-m-d H:i:s.v', time() + 300),
-            'sent_at'    => $now,
-            'ip'         => $this->request->ip(),
-            'created_at' => $now,
-        ]);
-
-        // 仅 mock 渠道 + 开发联调（APP_DEBUG=true）返回明文验证码；真实渠道生产不返回
-        return $this->success(['debugCode' => (SmsService::isMock($smsConfig) && env('APP_DEBUG')) ? $code : null]);
+        return $this->success(['debugCode' => $r['debugCode']]);
     }
 
     /**

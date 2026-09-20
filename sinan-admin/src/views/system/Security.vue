@@ -18,6 +18,7 @@ const captchaEnabled = ref(true)
 // 参数键的展示元数据（与后端 SECURITY_KEYS 白名单对应）
 const META = {
   'captcha.enable': { icon: 'Key', hint: '关闭后前后端所有图形验证码入口均隐藏（开发调试用，生产务必开启）' },
+  sms_daily_limit: { icon: 'Message', hint: '每手机号每日短信验证码发送上限（全场景合计，超限次日恢复）' },
   admin_login_fail_limit: { icon: 'Lock', hint: '连续失败 N 次后锁定账号' },
   admin_lock_minutes: { icon: 'Timer', hint: '锁定时长，到期自动解锁' },
   large_recharge_alert: { icon: 'Warning', hint: '单笔充值超过该金额触发风控告警' },

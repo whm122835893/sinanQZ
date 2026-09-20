@@ -337,6 +337,7 @@ class SystemController extends BaseController
     private const SECURITY_KEYS = [
         'captcha.enable'          => ['图形验证码总开关（1=开启 0=关闭，关闭后所有场景均关闭）', 'bool', 0, 1],
         'captcha.scenes'          => ['图形验证码场景开关（JSON：场景key→0/1）', 'json', 0, 1],
+        'sms_daily_limit'         => ['每手机号短信验证码每日上限（条）', 'int', 1, 100],
         'admin_login_fail_limit'  => ['管理后台登录失败锁定阈值（次）', 'int', 1, 20],
         'admin_lock_minutes'      => ['账号锁定时长（分钟）', 'int', 1, 1440],
         'large_recharge_alert'    => ['大额充值风控告警阈值（元）', 'int', 1, 10000000],
@@ -359,8 +360,13 @@ class SystemController extends BaseController
             if ($key === 'captcha.scenes') {
                 continue;
             }
-            // captcha.enable 未配置时默认开启（与 CaptchaService::isEnabled 缺省值一致）
-            $default = $key === 'captcha.enable' ? '1' : '0';
+            // 未配置时的默认值：captcha.enable 默认开启（与 CaptchaService::isEnabled 一致）；
+            // sms_daily_limit 默认 10（与 SmsDispatchService::DEFAULT_DAILY_LIMIT 一致）；其余 '0'
+            $default = match ($key) {
+                'captcha.enable'  => '1',
+                'sms_daily_limit' => (string) \app\service\SmsDispatchService::DEFAULT_DAILY_LIMIT,
+                default           => '0',
+            };
             $list[] = [
                 'key'         => $key,
                 'name'        => $name,
