@@ -296,8 +296,8 @@ class SwapPlanService
                 ->where('id', $newId)
                 ->whereRaw("sold + locked_quantity + reserved_count + airdropped_count + {$totalAirdrop} + destroyed_count <= edition")
                 ->update([
-                    'airdropped_count' => Db::raw("airdropped_count + {$totalAirdrop}"),
-                    'circulate'        => Db::raw("circulate + {$totalAirdrop}"),
+                    'airdropped_count' => Db::raw('airdropped_count + ' . (float)($totalAirdrop)),
+                    'circulate'        => Db::raw('circulate + ' . (float)($totalAirdrop)),
                     'updated_at'       => $now,
                 ]);
             if (!$ok) {

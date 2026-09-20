@@ -152,7 +152,7 @@ class InventoryService
                         throw new InventoryException("配额「{$quota['quota_name']}」已停用，无法追加");
                     }
                     Db::name('inventory_quotas')->where('id', $item['id'])->update([
-                        'planned_quantity' => Db::raw("planned_quantity + {$item['quantity']}"),
+                        'planned_quantity' => Db::raw('planned_quantity + ' . (float)($item['quantity'])),
                         'updated_at'       => $now,
                     ]);
                     $result[] = [
@@ -193,7 +193,7 @@ class InventoryService
                 ->where('id', $collectibleId)
                 ->whereRaw("sold + locked_quantity + reserved_count + {$totalDelta} + airdropped_count + destroyed_count <= edition")
                 ->update([
-                    'reserved_count' => Db::raw("reserved_count + {$totalDelta}"),
+                    'reserved_count' => Db::raw('reserved_count + ' . (float)($totalDelta)),
                     'updated_at'     => $now,
                 ]);
             if (!$ok) {
@@ -297,7 +297,7 @@ class InventoryService
                     ->where('id', $collectibleId)
                     ->whereRaw("sold + locked_quantity + reserved_count + {$frozenDelta} + airdropped_count + destroyed_count <= edition")
                     ->update([
-                        'reserved_count' => Db::raw("reserved_count + {$frozenDelta}"),
+                        'reserved_count' => Db::raw('reserved_count + ' . (float)($frozenDelta)),
                         'updated_at'     => $now,
                     ]);
                 if (!$ok) {
@@ -310,7 +310,7 @@ class InventoryService
                     ->where('id', $collectibleId)
                     ->where('reserved_count', '>=', $release)
                     ->update([
-                        'reserved_count' => Db::raw("reserved_count - {$release}"),
+                        'reserved_count' => Db::raw('reserved_count - ' . (float)($release)),
                         'updated_at'     => $now,
                     ]);
                 if (!$ok) {
@@ -389,7 +389,7 @@ class InventoryService
                 ->where('status', 1)
                 ->whereRaw('used_quantity + ' . $take . ' <= planned_quantity')
                 ->update([
-                    'used_quantity' => Db::raw('used_quantity + ' . $take),
+                    'used_quantity' => Db::raw('used_quantity + ' . (float)($take)),
                     'updated_at'    => date('Y-m-d H:i:s'),
                 ]);
             if ($ok) {
@@ -461,8 +461,8 @@ class InventoryService
                 ->where('id', $collectibleId)
                 ->whereRaw("sold + locked_quantity + reserved_count + airdropped_count + {$total} + destroyed_count <= edition")
                 ->update([
-                    'airdropped_count' => Db::raw("airdropped_count + {$total}"),
-                    'circulate'        => Db::raw("circulate + {$total}"),
+                    'airdropped_count' => Db::raw('airdropped_count + ' . (float)($total)),
+                    'circulate'        => Db::raw('circulate + ' . (float)($total)),
                     'updated_at'       => $now,
                 ]);
             if (!$ok) {
@@ -558,7 +558,7 @@ class InventoryService
                 ->where('id', $collectibleId)
                 ->whereRaw("sold + locked_quantity + reserved_count + airdropped_count + destroyed_count + {$quantity} <= edition")
                 ->update([
-                    'destroyed_count' => Db::raw("destroyed_count + {$quantity}"),
+                    'destroyed_count' => Db::raw('destroyed_count + ' . (float)($quantity)),
                     'updated_at'      => $now,
                 ]);
             if (!$ok) {

@@ -548,7 +548,7 @@ class BlindBoxController extends BaseController
         try {
             Db::name('collectibles')->where('id', $c['id'])
                 ->whereRaw('edition - sold - locked_quantity - airdropped_count - destroyed_count >= ' . $quantity)
-                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . $quantity), 'updated_at' => $now]);
+                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (float)($quantity)), 'updated_at' => $now]);
 
             Db::name('destroy_records')->insert([
                 'target_type' => 2, // 2=盲盒
@@ -721,8 +721,8 @@ class BlindBoxController extends BaseController
             }
 
             Db::name('collectibles')->where('id', $c['id'])->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . $success),
-                'circulate'        => Db::raw('circulate + ' . $success),
+                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($success)),
+                'circulate'        => Db::raw('circulate + ' . (float)($success)),
                 'updated_at'       => $now,
             ]);
             Db::name('airdrop_tasks')->where('id', $taskId)->update([

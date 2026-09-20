@@ -297,7 +297,7 @@ class LuckyDraw extends BaseController
                     $coinAmount = (float) ($winner['coin_amount'] ?? 0);
                     if ($coinAmount > 0) {
                         $affected = Db::name('wallets')->where('user_id', $userId)->update([
-                            'points'     => Db::raw("points + {$coinAmount}"),
+                            'points'     => Db::raw('points + ' . (float)($coinAmount)),
                             'updated_at' => $now,
                         ]);
                         if (!$affected) {

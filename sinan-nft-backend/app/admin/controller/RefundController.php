@@ -252,8 +252,8 @@ class RefundController extends BaseController
             //    需 CAST 为 SIGNED 再 GREATEST 兜底（防数据漂移导致退款卡死）
             if ($recoveredQty > 0) {
                 Db::name('collectibles')->where('id', $order['collectible_id'])->update([
-                    'sold'      => Db::raw('GREATEST(CAST(sold AS SIGNED) - ' . $recoveredQty . ', 0)'),
-                    'circulate' => Db::raw('GREATEST(CAST(circulate AS SIGNED) - ' . $recoveredQty . ', 0)'),
+                    'sold'      => Db::raw('GREATEST(CAST(sold AS SIGNED) - ' . (float)($recoveredQty) . ', 0)'),
+                    'circulate' => Db::raw('GREATEST(CAST(circulate AS SIGNED) - ' . (float)($recoveredQty) . ', 0)'),
                     'updated_at' => $now,
                 ]);
             }
@@ -268,8 +268,8 @@ class RefundController extends BaseController
             }
             $channel = trim((string) $this->request->param('refund_channel', '')) ?: $refund['refund_no'];
             Db::name('wallets')->where('user_id', $refund['user_id'])->update([
-                'balance'    => Db::raw("balance + {$refund['amount']}"),
-                'available'  => Db::raw("available + {$refund['amount']}"),
+                'balance'    => Db::raw('balance + ' . (float)($refund['amount'])),
+                'available'  => Db::raw('available + ' . (float)($refund['amount'])),
                 'updated_at' => $now,
             ]);
             Db::name('wallet_transactions')->insert([

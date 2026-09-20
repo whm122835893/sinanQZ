@@ -530,7 +530,7 @@ class CollectibleController extends BaseController
                 ]);
                 if ($delta !== 0) {
                     Db::name('collectibles')->where('id', $collectibleId)
-                        ->update(['reserved_count' => Db::raw('GREATEST(0, reserved_count + (' . $delta . '))')]);
+                        ->update(['reserved_count' => Db::raw('GREATEST(0, reserved_count + (' . (float)($delta) . '))')]);
                 }
                 $action = 'update';
             } else {
@@ -645,7 +645,7 @@ class CollectibleController extends BaseController
         try {
             Db::name('collectibles')->where('id', $id)
                 ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . $quantity)
-                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . $quantity), 'updated_at' => $now]);
+                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (float)($quantity)), 'updated_at' => $now]);
 
             Db::name('destroy_records')->insert([
                 'target_type' => 1, // 1=藏品
@@ -850,8 +850,8 @@ class CollectibleController extends BaseController
 
             // 更新藏品统计
             Db::name('collectibles')->where('id', $id)->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . $success),
-                'circulate'        => Db::raw('circulate + ' . $success),
+                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($success)),
+                'circulate'        => Db::raw('circulate + ' . (float)($success)),
                 'updated_at'       => $now,
             ]);
 
@@ -1588,7 +1588,7 @@ class CollectibleController extends BaseController
             $unused = (int) $quota['planned_quantity'] - (int) $quota['used_quantity'];
             if ($newStatus === 0 && $unused > 0) {
                 Db::name('collectibles')->where('id', $collectibleId)
-                    ->update(['reserved_count' => Db::raw('GREATEST(0, reserved_count - ' . $unused . ')')]);
+                    ->update(['reserved_count' => Db::raw('GREATEST(0, reserved_count - ' . (float)($unused) . ')')]);
             } elseif ($newStatus === 1 && $unused > 0) {
                 // 启用前校验库存池充足
                 $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']

@@ -243,7 +243,7 @@ class Decompose extends BaseController
                 }
                 // 产物藏品流通量 +qty（与发售/空投/合成路径保持一致）
                 Db::name('collectibles')->where('id', $it['result_collectible_id'])->update([
-                    'circulate'  => Db::raw('circulate + ' . $qty),
+                    'circulate'  => Db::raw('circulate + ' . (float)($qty)),
                     'updated_at' => $nowV,
                 ]);
             }

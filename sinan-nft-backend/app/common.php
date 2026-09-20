@@ -74,8 +74,9 @@ function app_key(): string
         }
         return $weak;
     }
-    if ($isProd && $key === $weak) {
-        throw new \RuntimeException('APP_KEY 仍为源码默认弱密钥：生产环境必须替换为随机串');
+    // 弱密钥判定：源码内置默认值，或 .example.env 占位串（change-me 标记）
+    if ($isProd && ($key === $weak || stripos($key, 'change-me') !== false)) {
+        throw new \RuntimeException('APP_KEY 仍为示例占位/源码默认弱密钥：生产环境必须替换为 ≥32 字节随机串');
     }
     return $key;
 }

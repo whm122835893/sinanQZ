@@ -263,16 +263,29 @@ class PlatformController extends BaseController
         $hostname = env('database.HOSTNAME', '127.0.0.1');
         $hostport = env('database.HOSTPORT', '3306');
 
-        $cmd = sprintf(
-            'mysqldump -h%s -P%s -u%s %s %s --single-transaction --routines --triggers > %s 2>/dev/null',
-            escapeshellarg($hostname),
-            escapeshellarg((string) $hostport),
-            escapeshellarg($username),
-            $password !== '' ? '-p' . escapeshellarg($password) : '',
-            escapeshellarg($database),
-            escapeshellarg($file)
-        );
-        exec($cmd, $output, $code);
+        // 凭证写入 0600 临时配置文件（--defaults-extra-file），避免密码出现在命令行被 ps 窥探
+        $cnf = $dir . DIRECTORY_SEPARATOR . 'dump_' . date('Ymd_His') . '.cnf';
+        file_put_contents($cnf, sprintf(
+            "[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n",
+            $this->cnfEscape($hostname),
+            $this->cnfEscape((string) $hostport),
+            $this->cnfEscape($username),
+            $this->cnfEscape($password)
+        ));
+        chmod($cnf, 0600);
+
+        try {
+            $cmd = sprintf(
+                'mysqldump --defaults-extra-file=%s %s --single-transaction --routines --triggers > %s 2>/dev/null',
+                escapeshellarg($cnf),
+                escapeshellarg($database),
+                escapeshellarg($file)
+            );
+            exec($cmd, $output, $code);
+        } finally {
+            // 无论成败立即删除凭证文件
+            @unlink($cnf);
+        }
 
         if ($code !== 0 || !is_file($file) || filesize($file) < 100) {
             // F7-D7 修复：备份失败必须抛异常阻断清库（原实现仅写失败标记后继续执行，属最高危操作带伤放行）
@@ -280,5 +293,13 @@ class PlatformController extends BaseController
         }
 
         return $file;
+    }
+
+    /**
+     * mysqldump defaults-extra-file 值转义（含换行/特殊字符时加双引号）
+     */
+    private function cnfEscape(string $v): string
+    {
+        return preg_match('/^[\w.\-\/:]+$/', $v) ? $v : '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $v) . '"';
     }
 }

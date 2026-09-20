@@ -820,6 +820,7 @@ INSERT INTO `nft_admin_permissions` (`id`, `name`, `code`, `module`, `type`, `pa
 (1301, '支付渠道配置', 'system:payment', 'system', 1, 1300, '/system/payment', '', 1),
 (1302, '短信配置', 'system:sms', 'system', 1, 1300, '/system/sms', '', 2),
 (1303, '安全策略配置', 'system:security', 'system', 1, 1300, '/system/security', '', 3),
+(1304, '图片上传', 'system:upload', 'system', 2, 1300, '', '', 4),
 -- 权限管理
 (1400, '权限管理', 'permission:admin', 'permission', 1, 0, '/permission/admin', 'Key', 14),
 (1401, '角色管理', 'permission:role', 'permission', 1, 1400, '/permission/role', '', 1),
@@ -864,6 +865,7 @@ INSERT INTO `nft_admin_role_permissions` (`role_id`, `permission_id`) VALUES
 (2, 900),
 (2, 1000), (2, 1001), (2, 1002), (2, 1003), (2, 1004), (2, 1005), (2, 1006), (2, 1007), (2, 1008), (2, 1009),
 (2, 1200), (2, 1201), (2, 1202), (2, 1203), (2, 1204),
+(2, 1304),
 (2, 1600), (2, 1601),
 (2, 1700), (2, 1701), (2, 1702), (2, 1703);
 

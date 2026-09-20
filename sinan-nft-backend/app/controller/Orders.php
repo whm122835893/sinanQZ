@@ -192,7 +192,7 @@ class Orders extends BaseController
                 $affected = Db::name('collectibles')
                     ->where('id', $collectibleId)
                     ->whereRaw($stockWhere)
-                    ->update(['locked_quantity' => Db::raw("locked_quantity + {$quantity}")]);
+                    ->update(['locked_quantity' => Db::raw('locked_quantity + ' . (float)($quantity))]);
                 if (!$affected) {
                     Db::rollback();
                     return $this->fail(3001, $useReleaseQty
@@ -323,8 +323,8 @@ class Orders extends BaseController
                     return $this->fail(4003, '余额不足');
                 }
                 Db::name('wallets')->where('user_id', $userId)->update([
-                    'balance'     => Db::raw("balance - {$order['total_price']}"),
-                    'available'   => Db::raw("available - {$order['total_price']}"),
+                    'balance'     => Db::raw('balance - ' . (float)($order['total_price'])),
+                    'available'   => Db::raw('available - ' . (float)($order['total_price'])),
                     'updated_at'  => $now,
                 ]);
                 Db::name('wallet_transactions')->insert([
@@ -367,9 +367,9 @@ class Orders extends BaseController
                     ->find();
 
                 Db::name('collectibles')->where('id', $order['collectible_id'])->update([
-                    'sold'            => Db::raw("sold + {$order['quantity']}"),
-                    'locked_quantity' => Db::raw("locked_quantity - {$order['quantity']}"),
-                    'circulate'       => Db::raw("circulate + {$order['quantity']}"),
+                    'sold'            => Db::raw('sold + ' . (float)($order['quantity'])),
+                    'locked_quantity' => Db::raw('locked_quantity - ' . (float)($order['quantity'])),
+                    'circulate'       => Db::raw('circulate + ' . (float)($order['quantity'])),
                     'updated_at'      => $now,
                 ]);
 
@@ -441,8 +441,8 @@ class Orders extends BaseController
                         ->lock(true)
                         ->find();
                     Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
-                        'balance'    => Db::raw("balance + {$listing['actual_amount']}"),
-                        'available'  => Db::raw("available + {$listing['actual_amount']}"),
+                        'balance'    => Db::raw('balance + ' . (float)($listing['actual_amount'])),
+                        'available'  => Db::raw('available + ' . (float)($listing['actual_amount'])),
                         'updated_at' => $now,
                     ]);
                     Db::name('wallet_transactions')->insert([
@@ -529,7 +529,7 @@ class Orders extends BaseController
                     ->where('id', $order['collectible_id'])
                     ->whereRaw('locked_quantity >= ' . (int) $order['quantity'])
                     ->update([
-                        'locked_quantity' => Db::raw("locked_quantity - {$order['quantity']}"),
+                        'locked_quantity' => Db::raw('locked_quantity - ' . (float)($order['quantity'])),
                         'updated_at'      => $now,
                     ]);
                 if (!$affected) {

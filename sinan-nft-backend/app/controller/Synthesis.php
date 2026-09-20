@@ -270,7 +270,7 @@ class Synthesis extends BaseController
 
             // 产物藏品流通量 +N（与发售/空投/盲盒奖品路径保持一致，保证 circulate = 资产行总数）
             Db::name('collectibles')->where('id', $act['result_collectible_id'])->update([
-                'circulate'  => Db::raw('circulate + ' . $resultQty),
+                'circulate'  => Db::raw('circulate + ' . (float)($resultQty)),
                 'updated_at' => $now,
             ]);
 

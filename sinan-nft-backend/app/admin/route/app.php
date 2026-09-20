@@ -34,9 +34,11 @@ Route::group('auth', function () {
 })->middleware(AdminAuth::class);
 
 // ---------------------------------------------------------------------------
-// 通用图片上传（仅需登录；具体业务写操作另有独立权限校验）
+// 通用图片上传（system:upload 权限；具体业务写操作另有独立权限校验）
 // ---------------------------------------------------------------------------
-Route::post('upload/image', 'UploadController/image')->middleware(AdminAuth::class);
+Route::post('upload/image', 'UploadController/image')
+    ->middleware(AdminAuth::class)
+    ->middleware(AdminPermission::class, 'system:upload');
 
 // ---------------------------------------------------------------------------
 // 仪表盘（dashboard:view）

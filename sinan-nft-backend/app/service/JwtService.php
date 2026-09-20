@@ -23,6 +23,11 @@ class JwtService
             \think\facade\Log::error('C 端 JWT 密钥未配置或不安全：请在 .env 设置 jwt.SECRET（≥32 字节随机串）');
             throw new \RuntimeException('user jwt secret not configured or too short');
         }
+        // 生产环境（APP_DEBUG=false）拒绝 .example.env 占位串（change-me 标记）：防止照抄示例配置直接上线
+        if (!env('APP_DEBUG', false) && stripos($secret, 'change-me') !== false) {
+            \think\facade\Log::error('C 端 JWT 密钥仍为示例占位串：生产环境必须替换为随机串');
+            throw new \RuntimeException('user jwt secret is a placeholder, replace it before production use');
+        }
         return $secret;
     }
 

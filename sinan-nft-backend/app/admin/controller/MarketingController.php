@@ -1674,12 +1674,12 @@ class MarketingController extends BaseController
 
             $issuedQty = $issued * (int) $act['quantity_per_user'];
             Db::name('collectibles')->where('id', $act['collectible_id'])->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . $issuedQty),
-                'circulate'        => Db::raw('circulate + ' . $issuedQty),
+                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($issuedQty)),
+                'circulate'        => Db::raw('circulate + ' . (float)($issuedQty)),
                 'updated_at'       => $now,
             ]);
             Db::name('airdrop_activities')->where('id', $activityId)->update([
-                'issued_count' => Db::raw('issued_count + ' . $issuedQty),
+                'issued_count' => Db::raw('issued_count + ' . (float)($issuedQty)),
                 'updated_at'   => $now,
             ]);
             Db::name('airdrop_tasks')->where('id', $taskId)->update(['success_count' => $issued * (int) $act['quantity_per_user']]);

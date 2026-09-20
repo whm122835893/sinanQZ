@@ -253,7 +253,7 @@ class RewardGrantService
             Db::name('collectibles')
                 ->where('id', $collectibleId)
                 ->where('circulate + ' . $quantity . ' <= edition')
-                ->update(['circulate' => Db::raw("circulate + {$quantity}"), 'updated_at' => $now]);
+                ->update(['circulate' => Db::raw('circulate + ' . (float)($quantity)), 'updated_at' => $now]);
             $via = 'quota';
         } else {
             // 无配额 → 库存池路径（文档 5.4「或库存池充足」）
@@ -261,8 +261,8 @@ class RewardGrantService
                 ->where('id', $collectibleId)
                 ->whereRaw("sold + locked_quantity + reserved_count + airdropped_count + {$quantity} + destroyed_count <= edition")
                 ->update([
-                    'airdropped_count' => Db::raw("airdropped_count + {$quantity}"),
-                    'circulate'        => Db::raw("circulate + {$quantity}"),
+                    'airdropped_count' => Db::raw('airdropped_count + ' . (float)($quantity)),
+                    'circulate'        => Db::raw('circulate + ' . (float)($quantity)),
                     'updated_at'       => $now,
                 ]);
             if (!$ok) {
@@ -319,7 +319,7 @@ class RewardGrantService
     {
         $now = date('Y-m-d H:i:s.v');
         $affected = Db::name('wallets')->where('user_id', $userId)->update([
-            'points'     => Db::raw('points + ' . $amount),
+            'points'     => Db::raw('points + ' . (float)($amount)),
             'updated_at' => $now,
         ]);
         if (!$affected) {
@@ -396,7 +396,7 @@ class RewardGrantService
             ->find();
         if ($exists) {
             Db::name('priority_sale_whitelists')->where('id', $exists['id'])->update([
-                'max_quantity' => Db::raw('max_quantity + ' . $quantity),
+                'max_quantity' => Db::raw('max_quantity + ' . (float)($quantity)),
                 'expires_at'   => $expires,
                 'status'       => 1,
                 'updated_at'   => $now,

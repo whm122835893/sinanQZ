@@ -277,8 +277,8 @@ class Raffle extends BaseController
 
             $nowV = date('Y-m-d H:i:s.v');
             Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'    => Db::raw("balance - {$totalPrice}"),
-                'available'  => Db::raw("available - {$totalPrice}"),
+                'balance'    => Db::raw('balance - ' . (float)($totalPrice)),
+                'available'  => Db::raw('available - ' . (float)($totalPrice)),
                 'updated_at' => $nowV,
             ]);
             Db::name('wallet_transactions')->insert([
@@ -424,7 +424,7 @@ class Raffle extends BaseController
                 ->where('id', $reg['id'])
                 ->whereRaw('purchased_quantity + ' . $qty . ' <= ' . $quota)
                 ->update([
-                    'purchased_quantity' => Db::raw('purchased_quantity + ' . $qty),
+                    'purchased_quantity' => Db::raw('purchased_quantity + ' . (float)($qty)),
                 ]);
             if (!$bumped) {
                 Db::rollback();
@@ -444,8 +444,8 @@ class Raffle extends BaseController
                 ->where('id', $act['collectible_id'])
                 ->whereRaw('sold + locked_quantity + ' . $qty . ' <= ' . (int) $quotaUpper)
                 ->update([
-                    'sold'       => Db::raw('sold + ' . $qty),
-                    'circulate'  => Db::raw('circulate + ' . $qty),
+                    'sold'       => Db::raw('sold + ' . (float)($qty)),
+                    'circulate'  => Db::raw('circulate + ' . (float)($qty)),
                     'updated_at' => $now,
                 ]);
             if (!$affected) {
@@ -466,8 +466,8 @@ class Raffle extends BaseController
             $orderNo = gen_order_no();
 
             Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'    => Db::raw("balance - {$totalPrice}"),
-                'available'  => Db::raw("available - {$totalPrice}"),
+                'balance'    => Db::raw('balance - ' . (float)($totalPrice)),
+                'available'  => Db::raw('available - ' . (float)($totalPrice)),
                 'updated_at' => $nowV,
             ]);
             Db::name('wallet_transactions')->insert([

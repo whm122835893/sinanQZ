@@ -210,8 +210,8 @@ class BuyRequest extends BaseController
 
             // 买家扣款 + 流水
             Db::name('wallets')->where('user_id', $buyerId)->update([
-                'balance'    => Db::raw("balance - {$totalPrice}"),
-                'available'  => Db::raw("available - {$totalPrice}"),
+                'balance'    => Db::raw('balance - ' . (float)($totalPrice)),
+                'available'  => Db::raw('available - ' . (float)($totalPrice)),
                 'updated_at' => $now,
             ]);
             Db::name('wallet_transactions')->insert([
@@ -235,8 +235,8 @@ class BuyRequest extends BaseController
 
             $sellerWallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
             Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'    => Db::raw("balance + {$actualAmount}"),
-                'available'  => Db::raw("available + {$actualAmount}"),
+                'balance'    => Db::raw('balance + ' . (float)($actualAmount)),
+                'available'  => Db::raw('available + ' . (float)($actualAmount)),
                 'updated_at' => $now,
             ]);
             Db::name('wallet_transactions')->insert([

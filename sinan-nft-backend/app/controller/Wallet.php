@@ -78,8 +78,8 @@ class Wallet extends BaseController
         try {
             $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
             Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'     => Db::raw("balance + {$amount}"),
-                'available'   => Db::raw("available + {$amount}"),
+                'balance'     => Db::raw('balance + ' . (float)($amount)),
+                'available'   => Db::raw('available + ' . (float)($amount)),
                 'updated_at'  => $now,
             ]);
             Db::name('wallet_transactions')->insert([

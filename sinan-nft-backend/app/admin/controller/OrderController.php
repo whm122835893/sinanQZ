@@ -209,8 +209,8 @@ class OrderController extends BaseController
                     return $this->fail(4220, '用户余额不足，无法标记余额支付');
                 }
                 Db::name('wallets')->where('user_id', $order['user_id'])->update([
-                    'balance'    => Db::raw("balance - {$order['total_price']}"),
-                    'available'  => Db::raw("available - {$order['total_price']}"),
+                    'balance'    => Db::raw('balance - ' . (float)($order['total_price'])),
+                    'available'  => Db::raw('available - ' . (float)($order['total_price'])),
                     'updated_at' => $now,
                 ]);
                 Db::name('wallet_transactions')->insert([
@@ -241,9 +241,9 @@ class OrderController extends BaseController
                 // 发售模式：库存结转 + 生成持仓
                 $collectible = Db::name('collectibles')->where('id', $order['collectible_id'])->lock(true)->find();
                 Db::name('collectibles')->where('id', $order['collectible_id'])->update([
-                    'sold'            => Db::raw("sold + {$order['quantity']}"),
-                    'locked_quantity' => Db::raw("locked_quantity - {$order['quantity']}"),
-                    'circulate'       => Db::raw("circulate + {$order['quantity']}"),
+                    'sold'            => Db::raw('sold + ' . (float)($order['quantity'])),
+                    'locked_quantity' => Db::raw('locked_quantity - ' . (float)($order['quantity'])),
+                    'circulate'       => Db::raw('circulate + ' . (float)($order['quantity'])),
                     'updated_at'      => $now,
                 ]);
                 $soldPrev = (int) $collectible['sold'];
@@ -289,8 +289,8 @@ class OrderController extends BaseController
                 }
                 $sellerWallet = Db::name('wallets')->where('user_id', $listing['seller_id'])->lock(true)->find();
                 Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
-                    'balance'    => Db::raw("balance + {$listing['actual_amount']}"),
-                    'available'  => Db::raw("available + {$listing['actual_amount']}"),
+                    'balance'    => Db::raw('balance + ' . (float)($listing['actual_amount'])),
+                    'available'  => Db::raw('available + ' . (float)($listing['actual_amount'])),
                     'updated_at' => $now,
                 ]);
                 Db::name('wallet_transactions')->insert([

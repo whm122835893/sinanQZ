@@ -247,7 +247,7 @@ class ChainService
 
             // 合约交易计数 + 藏品上链状态收口
             Db::name('chain_contracts')->where('id', $contract['id'])->update([
-                'tx_count'   => Db::raw('tx_count + ' . $minted),
+                'tx_count'   => Db::raw('tx_count + ' . (float)($minted)),
                 'updated_at' => $now,
             ]);
             Db::name('collectibles')->where('id', $collectibleId)->update([

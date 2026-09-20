@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use think\facade\Db;
+use HTMLPurifier;
+use HTMLPurifier_Config;
 
 /**
  * 内容管理控制器（CMS）
@@ -17,7 +19,7 @@ use think\facade\Db;
  *
  * 严谨性设计：
  * - 全部软删除（deleted_at），物理删除仅软删入口
- * - 富文本内容入库前去除危险标签（script/iframe/on* 事件属性）
+ * - 富文本内容入库前经 HTMLPurifier 白名单净化（仅保留受限标签/属性/协议）
  * - 排序字段整数化、枚举白名单校验、路径/URL 长度截断
  */
 class CmsController extends BaseController
@@ -1109,15 +1111,42 @@ class CmsController extends BaseController
     }
 
     /**
-     * 富文本消毒：移除 script/iframe/object/embed 标签与 on* 事件属性、javascript: 协议
+     * 富文本消毒：HTMLPurifier 白名单净化
+     *
+     * 正则黑名单可被构造性绕过（如属性值内换行、大小写混淆、残缺标签），
+     * 改为白名单方案：仅保留编辑器可产出的受限标签/属性/协议，其余一律剥离。
+     * - 标签白名单：段落/标题/加粗斜体等排版标签、列表、引用、a、img
+     * - 内联样式仅允许 text-align/color（编辑器对齐与文字颜色功能所需）
+     * - URI 协议仅 http/https/mailto（javascript:、data: 等自动剥离）
+     * - a[target=_blank] 自动补 rel="noopener noreferrer"
      */
     private function sanitizeRichText(string $html): string
     {
-        $html = preg_replace('#<(script|iframe|object|embed)[^>]*>.*?</\1>#is', '', $html) ?? $html;
-        $html = preg_replace('#<(script|iframe|object|embed)[^>]*/?>#is', '', $html) ?? $html;
-        $html = preg_replace('#\son\w+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]+)#i', '', $html) ?? $html;
-        $html = preg_replace('#(href|src)\s*=\s*(["\']?)\s*javascript:[^"\'>\s]*\2#i', '$1=$2$2', $html) ?? $html;
-        return $html;
+        static $purifier = null;
+        if ($purifier === null) {
+            $config = HTMLPurifier_Config::createDefault();
+            $config->set('HTML.Allowed',
+                'div[style],p[style],span[style],br,hr,'
+                . 'h1[style],h2[style],h3[style],h4[style],h5[style],h6[style],'
+                . 'strong,b,em,i,u,s,strike,sub,sup,'
+                . 'ul,ol,li,blockquote,pre,code,'
+                . 'a[href|title|target|rel],'
+                . 'img[src|alt|width|height]'
+            );
+            $config->set('CSS.AllowedProperties', ['text-align', 'color']);
+            $config->set('URI.AllowedSchemes', ['http' => true, 'https' => true, 'mailto' => true]);
+            $config->set('Attr.AllowedFrameTargets', ['_blank' => true]);
+            $config->set('HTML.TargetNoreferrer', true);
+            $config->set('HTML.TargetNoopener', true);
+            // 序列化缓存写入 runtime 目录，避免依赖 vendor 目录可写
+            $cacheDir = runtime_path() . 'htmlpurifier';
+            if (!is_dir($cacheDir)) {
+                @mkdir($cacheDir, 0755, true);
+            }
+            $config->set('Cache.SerializerPath', $cacheDir);
+            $purifier = new HTMLPurifier($config);
+        }
+        return $purifier->purify($html);
     }
 
     /**
