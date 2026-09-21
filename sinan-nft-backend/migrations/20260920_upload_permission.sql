@@ -7,7 +7,7 @@
 
 -- 1) 权限表新增（幂等）
 INSERT INTO `nft_admin_permissions`
-  (`id`, `name`, `permission_code`, `module`, `type`, `parent_id`, `path`, `icon`, `sort_order`)
+  (`id`, `name`, `code`, `module`, `type`, `parent_id`, `path`, `icon`, `sort_order`)
 VALUES
   (1304, '图片上传', 'system:upload', 'system', 2, 1300, '', '', 4)
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
@@ -17,7 +17,7 @@ INSERT IGNORE INTO `nft_admin_role_permissions` (`role_id`, `permission_id`)
 SELECT DISTINCT rp.`role_id`, 1304
 FROM `nft_admin_role_permissions` rp
 JOIN `nft_admin_permissions` p ON p.`id` = rp.`permission_id`
-WHERE p.`permission_code` IN (
+WHERE p.`code` IN (
   'collectible:manage', 'blindbox:manage',
   'cms:banner', 'cms:announcement', 'cms:agreement', 'cms:artifact', 'cms:decoration',
   'marketing:priority:manage', 'marketing:lucky:manage', 'marketing:synthesis:manage',

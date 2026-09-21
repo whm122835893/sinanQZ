@@ -1401,7 +1401,7 @@ class MarketingController extends BaseController
                 'total_limit'   => $this->positiveInt('total_limit'),
                 'image'         => trim((string) $this->request->param('image', '')) ?: null,
                 'eligibility_type'   => $eligibility['type'],
-                'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : '',
+                'eligibility_config' => $eligibility['config'] ? json_encode($eligibility['config'], JSON_UNESCAPED_UNICODE) : null,
                 'grant_mode'    => $grantMode,
                 'updated_at'    => $now,
             ];
