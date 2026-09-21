@@ -859,7 +859,8 @@ class CmsController extends BaseController
             ->column('setting_value', 'setting_key');
 
         return $this->success([
-            'siteName'   => $rows['site_name'] ?? '司南珍藏',
+            // 空字符串回退默认名（?? 对 '' 不生效；C 端清空站点名后管理端仍展示品牌）
+            'siteName'   => ($rows['site_name'] ?? '') !== '' ? $rows['site_name'] : '司南珍藏',
             'siteLogo'   => $rows['site_logo'] ?? '',
             'siteAvatar' => $rows['site_avatar'] ?? '',
             'themeColor' => $rows['theme_color'] ?? '',
