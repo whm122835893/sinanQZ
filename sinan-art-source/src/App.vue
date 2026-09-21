@@ -43,7 +43,7 @@ onBeforeUnmount(() => inbox.stopPoll())
 
   <van-pull-refresh v-model="refreshing" @refresh="onRefresh" class="app-refresh">
     <router-view v-slot="{ Component }">
-      <Transition name="page">
+      <Transition name="page" mode="out-in">
         <component :is="Component" :key="route.fullPath" />
       </Transition>
     </router-view>
