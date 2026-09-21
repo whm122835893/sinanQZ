@@ -43,11 +43,12 @@ async function onSubmit() {
   }
   submitting.value = true
   try {
-    await request.post('/user/realname', {
+    const res = await request.post('/user/realname', {
       realName: realName.value.trim(),
       idCard: idCard.value.trim().toUpperCase()
     })
-    showToast('已提交，等待审核')
+    // 自动审核模式立即返回 approved；人工审核返回 pending
+    showToast(res?.status === 'approved' ? '实名认证已通过' : '已提交，等待审核')
     editing.value = false
     await user.fetchUserInfo()
   } catch (e) {

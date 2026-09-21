@@ -73,6 +73,10 @@ class SystemController extends BaseController
         if (in_array($key, ['cleanup_sms_required'], true) && !in_array($value, ['0', '1'], true)) {
             return $this->fail(4220, '参数 ' . $key . ' 仅允许 0/1');
         }
+        // 实名审核模式：manual=人工审核 auto=自动通过（提交即认证成功）
+        if ($key === 'realname_audit_mode' && !in_array($value, ['manual', 'auto'], true)) {
+            return $this->fail(4220, '参数 realname_audit_mode 仅允许 manual / auto');
+        }
 
         $exists = Db::name('system_configs')->where('config_key', $key)->find();
         if ($exists) {

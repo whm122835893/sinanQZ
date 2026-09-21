@@ -21,6 +21,7 @@ const GROUPS = [
   { key: 'marketing', name: '营销参数', icon: 'Present', keys: ['checkin_rewards'] },
   { key: 'service', name: '客服配置', icon: 'Service', keys: ['service_hotline', 'service_hours', 'service_online_url'] },
   { key: 'risk', name: '风控阈值', icon: 'Warning', keys: ['large_recharge_alert', 'large_refund_approval_threshold'] },
+  { key: 'user', name: '用户与实名', icon: 'User', keys: ['realname_audit_mode'] },
   { key: 'platform', name: '平台运维', icon: 'Operation', keys: ['cleanup_sms_required', 'chain_mint_batch_limit'] }
 ]
 
@@ -37,6 +38,15 @@ const META = {
   service_online_url: { label: '在线客服链接', unit: '', hint: 'C 端「在线客服」跳转链接（可空，空则展示提示）' },
   large_recharge_alert: { label: '大额充值告警', unit: '元', hint: '单笔充值超过该金额触发风控告警' },
   large_refund_approval_threshold: { label: '大额退款审批阈值', unit: '元', hint: '退款金额超过后需审批中心复核' },
+  realname_audit_mode: {
+    label: '实名审核模式',
+    unit: '',
+    hint: '人工审核：提交后进入待审核队列，管理员逐条审核；自动通过：格式校验通过即认证成功',
+    options: [
+      { label: '人工审核', value: 'manual' },
+      { label: '自动通过', value: 'auto' }
+    ]
+  },
   cleanup_sms_required: { label: '清库短信确认', unit: '', hint: '平台清库强制短信验证码二次确认', bool: true },
   chain_mint_batch_limit: { label: '上链单批上限', unit: '条', hint: '单次铸造最大持仓条数（防长事务）' }
 }
@@ -122,6 +132,19 @@ async function onSave(cfg) {
                 <el-switch v-model="cfg.value" active-value="1" inactive-value="0" @change="onSave(cfg)" />
                 <span class="cfg__item-state" :class="cfg.value === '1' ? 'is-on' : 'is-off'">
                   {{ cfg.value === '1' ? '开启' : '关闭' }}
+                </span>
+              </template>
+              <template v-else-if="META[cfg.key]?.options">
+                <el-select v-model="cfg.value" style="width: 140px" @change="onSave(cfg)">
+                  <el-option
+                    v-for="o in META[cfg.key].options"
+                    :key="o.value"
+                    :label="o.label"
+                    :value="o.value"
+                  />
+                </el-select>
+                <span class="cfg__item-state" :class="cfg.value === 'auto' ? 'is-on' : 'is-off'">
+                  {{ cfg.value === 'auto' ? '自动' : '人工' }}
                 </span>
               </template>
               <template v-else-if="META[cfg.key]?.json">
