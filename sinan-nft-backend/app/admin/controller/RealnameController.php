@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
-use app\service\ActivityRewardService;
+use app\service\RealnameService;
 use think\facade\Db;
 
 /**
@@ -166,23 +166,10 @@ class RealnameController extends BaseController
 
         $now = date('Y-m-d H:i:s');
         if ($action === 'approve') {
-            Db::name('users')->where('id', $userId)->update([
-                'realname_status' => 2,
-                'is_realname'     => 1,
-                'realname_verified_at' => $now,
-                'realname_reject_reason' => '',
-                'updated_at'      => $now,
-            ]);
+            // 通过口径（状态更新 + 注册/邀请活动结算）与 C 端自动通过统一收敛在 RealnameService
+            $settled = RealnameService::approve($userId);
             $this->audit('realname', 'audit_approve',
                 '实名审核通过（UID ' . $user['uid'] . '）', ['user_id' => $userId], 'user', $userId);
-
-            // 实名通过 → 注册活动（实名前N名档位）+ 邀请活动（被邀请人完成实名）结算
-            // 独立事务：奖励发放失败不阻断审核（记日志，可在奖励名单中排查）
-            $settled = ['register' => null, 'invite' => null];
-            ActivityRewardService::settleQuietly(function () use ($userId, &$settled) {
-                $settled['register'] = ActivityRewardService::settleRegisterReward($userId);
-                $settled['invite']   = ActivityRewardService::settleInviteReward($userId);
-            });
 
             return $this->success([
                 'status' => 'approved',

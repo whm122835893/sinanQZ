@@ -243,25 +243,11 @@ class Resale extends BaseController
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
-        $enabled = (string) Db::name('system_configs')->where('config_key', 'batch_buy_enabled')->value('config_value');
-        $scope   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_scope')->value('config_value');
-        $limit   = (int) Db::name('system_configs')->where('config_key', 'batch_buy_limit')->value('config_value');
-        $users   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_users')->value('config_value');
-
-        $available = false;
-        if ($enabled === '1' && $limit > 0) {
-            if ($scope === 'all') {
-                $available = true;
-            } elseif ($scope === 'specific') {
-                $phone = Db::name('users')->where('id', $userId)->value('phone');
-                $phoneSet = array_filter(array_map('trim', preg_split('/[\r\n]+/', $users)));
-                $available = in_array($phone, $phoneSet, true);
-            }
-        }
+        $access = $this->batchBuyAccess($userId);
 
         return $this->success([
-            'enabled' => $available,
-            'limit'   => $available ? $limit : 0,
+            'enabled' => $access['ok'],
+            'limit'   => $access['ok'] ? $access['limit'] : 0,
         ]);
     }
 
@@ -286,17 +272,9 @@ class Resale extends BaseController
         if ((int) $isRealname !== 1) return $this->fail(1001, '请先完成实名认证');
 
         // 批量购买开关 + 限度（全体用户 / 指定用户）
-        $enabled = (string) Db::name('system_configs')->where('config_key', 'batch_buy_enabled')->value('config_value');
-        $scope   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_scope')->value('config_value');
-        $limit   = (int) Db::name('system_configs')->where('config_key', 'batch_buy_limit')->value('config_value');
-        $users   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_users')->value('config_value');
-
-        if ($enabled !== '1' || $limit <= 0) return $this->fail(1001, '批量购买未开启');
-        if ($scope === 'specific') {
-            $phone = Db::name('users')->where('id', $userId)->value('phone');
-            $phoneSet = array_filter(array_map('trim', preg_split('/[\r\n]+/', $users)));
-            if (!in_array($phone, $phoneSet, true)) return $this->fail(1001, '您无批量购买权限');
-        }
+        $access = $this->batchBuyAccess($userId);
+        if (!$access['ok']) return $this->fail(1001, $access['reason']);
+        $limit = $access['limit'];
         if ($quantity > $limit) $quantity = $limit;
 
         Db::startTrans();
@@ -479,5 +457,32 @@ class Resale extends BaseController
         }, $rows);
 
         return $this->paginate($items, $total, $p['page'], $p['pageSize']);
+    }
+
+    /**
+     * 批量购买开关与资格判定（batchBuyConfig 展示 / batchBuy 下单共用）
+     *
+     * 开关关闭或限度为 0 → 不可用；scope=specific 时校验手机号白名单
+     *
+     * @return array{ok: bool, limit: int, reason: string}
+     */
+    private function batchBuyAccess(int $userId): array
+    {
+        $enabled = (string) Db::name('system_configs')->where('config_key', 'batch_buy_enabled')->value('config_value');
+        $scope   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_scope')->value('config_value');
+        $limit   = (int) Db::name('system_configs')->where('config_key', 'batch_buy_limit')->value('config_value');
+        $users   = (string) Db::name('system_configs')->where('config_key', 'batch_buy_users')->value('config_value');
+
+        if ($enabled !== '1' || $limit <= 0) {
+            return ['ok' => false, 'limit' => 0, 'reason' => '批量购买未开启'];
+        }
+        if ($scope === 'specific') {
+            $phone = Db::name('users')->where('id', $userId)->value('phone');
+            $phoneSet = array_filter(array_map('trim', preg_split('/[\r\n]+/', $users)));
+            if (!in_array($phone, $phoneSet, true)) {
+                return ['ok' => false, 'limit' => 0, 'reason' => '您无批量购买权限'];
+            }
+        }
+        return ['ok' => true, 'limit' => $limit, 'reason' => ''];
     }
 }

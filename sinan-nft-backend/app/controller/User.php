@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
-use app\service\ActivityRewardService;
+use app\service\RealnameService;
 use app\service\CaptchaService;
 use app\service\SmsDispatchService;
 use think\facade\Db;
@@ -121,28 +121,27 @@ class User extends BaseController
         // 审核模式开关（后台「全局参数」realname_audit_mode，实时生效）：
         // manual=人工审核（进入待审核队列） auto=自动通过（与管理端审核通过同口径）
         $auditMode = (string) (Db::name('system_configs')->where('config_key', 'realname_audit_mode')->value('config_value') ?: 'manual');
-        $autoPass  = $auditMode === 'auto';
 
-        $now = date('Y-m-d H:i:s');
+        if ($auditMode === 'auto') {
+            // 提交即通过：提交数据合并进同一条 update，状态/奖励口径由 RealnameService 统一
+            RealnameService::approve($userId, [
+                'real_name'             => aes_encrypt($realName),
+                'id_card'               => aes_encrypt($idCard),
+                'realname_submitted_at' => date('Y-m-d H:i:s'),
+            ]);
+            return $this->success(['status' => 'approved'], '实名认证已自动通过');
+        }
+
+        // 人工审核：进入待审核队列
         Db::name('users')->where('id', $userId)->update([
             'real_name'              => aes_encrypt($realName),
             'id_card'                => aes_encrypt($idCard),
-            'realname_status'        => $autoPass ? 2 : 1,
-            'is_realname'            => $autoPass ? 1 : 0,
-            'realname_verified_at'   => $autoPass ? $now : null,
-            'realname_submitted_at'  => $now,
+            'realname_status'        => 1,
+            'is_realname'            => 0,
+            'realname_submitted_at'  => date('Y-m-d H:i:s'),
             'realname_reject_reason' => '',
             'updated_at'             => date('Y-m-d H:i:s.v'),
         ]);
-
-        if ($autoPass) {
-            // 与管理端审核通过同口径：结算注册活动（实名排位）/ 邀请活动（被邀请人完成实名）
-            ActivityRewardService::settleQuietly(function () use ($userId) {
-                ActivityRewardService::settleRegisterReward($userId);
-                ActivityRewardService::settleInviteReward($userId);
-            });
-            return $this->success(['status' => 'approved'], '实名认证已自动通过');
-        }
 
         return $this->success(['status' => 'pending'], '已提交实名认证，等待审核');
     }
