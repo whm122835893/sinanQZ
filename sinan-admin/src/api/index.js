@@ -737,6 +737,71 @@ export function getAirdropTaskRecords(taskId, params) {
   return get(`/marketing/airdrop-tasks/${taskId}/records`, params)
 }
 
+// ------------------------------------------------------------
+// 空投管理（活动空投：条件筛选 / 名单快照 / 批量发放）
+// ------------------------------------------------------------
+/** 空投活动列表（分页；status: draft/active/paused/ended） */
+export function getAirdropActivities(params) {
+  return get('/marketing/airdrop', params)
+}
+
+/**
+ * 新建/编辑空投活动
+ * payload: { id?, name, type(condition/direct/hold), status, collectibleId, quantityPerUser,
+ *            totalLimit?, startTime?, endTime?, snapshotCollectibleId?, description?,
+ *            condition: { phoneTails?: string[], registeredStart?, registeredEnd?,
+ *                         realnameStatus?, holdCollectibleId?, holdMinQty? } }
+ */
+export function saveAirdropActivity(payload) {
+  const cond = payload.condition || {}
+  return post('/marketing/airdrop', {
+    id: payload.id,
+    name: payload.name,
+    type: payload.type,
+    status: payload.status || 'draft',
+    airdrop_mode: 'batch',
+    collectible_id: payload.collectibleId,
+    quantity_per_user: payload.quantityPerUser || 1,
+    ...(payload.totalLimit ? { total_limit: payload.totalLimit } : {}),
+    start_time: payload.startTime || null,
+    end_time: payload.endTime || null,
+    ...(payload.snapshotCollectibleId ? { snapshot_collectible_id: payload.snapshotCollectibleId } : {}),
+    description: payload.description || '',
+    ...(payload.type === 'condition'
+      ? {
+          condition_config: {
+            phone_tails: cond.phoneTails || [],
+            registered_start: cond.registeredStart || '',
+            registered_end: cond.registeredEnd || '',
+            ...(cond.realnameStatus !== '' && cond.realnameStatus !== null && cond.realnameStatus !== undefined
+              ? { realname_status: cond.realnameStatus } : {}),
+            ...(cond.holdCollectibleId ? { hold_collectible_id: cond.holdCollectibleId, hold_min_qty: cond.holdMinQty || 1 } : {})
+          }
+        }
+      : {})
+  })
+}
+
+/** 生成/重新生成资格名单（清除未发放记录，保留已发放） */
+export function generateAirdropEligibility(activityId) {
+  return post('/marketing/airdrop/eligibility-generate', { activity_id: activityId })
+}
+
+/** 资格名单（分页；status: eligible/issued） */
+export function getAirdropEligibilities(params) {
+  return get('/marketing/airdrop/eligibilities', params)
+}
+
+/** 批量发放（向全部待发放用户发放，受库存池与总限量约束） */
+export function issueAirdrop(activityId) {
+  return post('/marketing/airdrop/issue', { activity_id: activityId })
+}
+
+/** 删除空投活动（已发放过的活动禁止删除） */
+export function deleteAirdropActivity(id) {
+  return post('/marketing/airdrop-delete', { id })
+}
+
 /** 盲盒销毁 */
 export function destroyBlindBox({ id, quantity, reason = '管理员销毁库存' }) {
   return post(`/blind-boxes/${id}/destroy`, { quantity, reason })

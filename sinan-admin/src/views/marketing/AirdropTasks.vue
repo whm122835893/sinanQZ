@@ -24,8 +24,8 @@ async function load() {
     if (filters.targetType !== '') params.target_type = filters.targetType
     if (filters.keyword.trim()) params.keyword = filters.keyword.trim()
     const res = await getAirdropTasks(params)
-    list.value = res.list || []
-    total.value = res.total || 0
+    list.value = res.data?.list || []
+    total.value = res.data?.total || 0
   } catch (e) {
     ElMessage.error('加载失败')
   } finally {
@@ -69,8 +69,8 @@ async function loadRecords() {
       page: recordsPage.value,
       pageSize: recordsPageSize.value
     })
-    records.value = res.list || []
-    recordsTotal.value = res.total || 0
+    records.value = res.data?.list || []
+    recordsTotal.value = res.data?.total || 0
   } catch (e) {
     ElMessage.error('加载明细失败')
   } finally {
@@ -92,6 +92,7 @@ function statusTag(s) {
           <el-select v-model="filters.targetType" placeholder="全部类型" clearable style="width: 140px" @change="onSearch">
             <el-option label="藏品" :value="1" />
             <el-option label="盲盒" :value="2" />
+            <el-option label="空投活动" :value="3" />
           </el-select>
           <el-input
             v-model="filters.keyword"

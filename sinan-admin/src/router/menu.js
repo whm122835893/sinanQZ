@@ -45,6 +45,8 @@ export const menuGroups = [
       { path: '/marketing/luckydraw', title: '抽奖活动', icon: 'Trophy', perm: 'marketing' },
       { path: '/marketing/synthesis', title: '合成活动', icon: 'MagicStick', perm: 'marketing' },
       { path: '/marketing/decompose', title: '分解活动', icon: 'Aim', perm: 'marketing' },
+      { path: '/marketing/airdrop', title: '空投管理', icon: 'Present', perm: 'marketing' },
+      { path: '/marketing/airdrop-tasks', title: '空投任务记录', icon: 'Promotion', perm: 'marketing' },
       { path: '/marketing/reward-records', title: '奖励名单', icon: 'Memo', perm: 'marketing' }
     ]
   },

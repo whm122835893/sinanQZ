@@ -27,7 +27,7 @@ class UserController extends BaseController
 
     /**
      * GET /admin/user/list
-     * 筛选：keyword(手机号/UID/用户名)、status、isRealname、isBlacklisted、注册时间区间
+     * 筛选：keyword(手机号/UID/用户名)、status、isRealname、isBlacklisted、phoneTail(手机尾号)、注册时间区间
      */
     public function list()
     {
@@ -62,6 +62,22 @@ class UserController extends BaseController
         $isBlacklisted = $this->request->param('isBlacklisted');
         if ($isBlacklisted !== null && $isBlacklisted !== '') {
             $query->where('u.is_blacklisted', (int) $isBlacklisted);
+        }
+        // 手机尾号（1~11 位数字，逗号分隔多选，如 1 或 1,3,88；命中任一即符合）
+        $phoneTail = trim((string) $this->request->param('phoneTail', ''));
+        if ($phoneTail !== '') {
+            $tails = array_values(array_unique(array_filter(array_map('trim', explode(',', $phoneTail)))));
+            if (!$tails) {
+                return $this->fail(4220, '手机尾号参数不正确');
+            }
+            $branches = [];
+            foreach ($tails as $t) {
+                if (!preg_match('/^\d{1,11}$/', $t)) {
+                    return $this->fail(4220, '手机尾号仅允许 1~11 位数字');
+                }
+                $branches[] = "RIGHT(u.phone, " . strlen($t) . ") = '" . $t . "'";
+            }
+            $query->whereRaw('(' . implode(' OR ', $branches) . ')');
         }
         $range = $this->dateRange();
         if ($range) {

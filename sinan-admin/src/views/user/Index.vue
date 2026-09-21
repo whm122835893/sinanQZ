@@ -7,6 +7,21 @@ import StatusTag from '@/components/StatusTag.vue'
 import { USER_STATUS, REALNAME_STATUS } from '@/utils/maps'
 import { fmtMoney } from '@/utils/format'
 
+// CSV 导出列（手机号遵循后端权限：无 realname:full 权限时导出脱敏号）
+const EXPORT_COLUMNS = [
+  { label: '用户ID', prop: 'id' },
+  { label: 'UID', prop: 'uid' },
+  { label: '昵称', prop: 'nickname' },
+  { label: '手机号', prop: 'phone' },
+  { label: '状态', prop: 'status', format: (row) => USER_STATUS[row.status]?.label || row.status },
+  { label: '实名', prop: 'realnameStatus', format: (row) => REALNAME_STATUS[row.realnameStatus]?.label || row.realnameStatus },
+  { label: '余额（元）', prop: 'balance' },
+  { label: '藏品数', prop: 'collectibleCount' },
+  { label: '订单数', prop: 'orderCount' },
+  { label: '注册时间', prop: 'registerTime' },
+  { label: '最近登录', prop: 'lastLoginTime' }
+]
+
 const drawerShow = ref(false)
 const detail = ref(null)
 
@@ -59,6 +74,11 @@ const filters = [
       { value: 'rejected', label: '已驳回' },
       { value: 'none', label: '未实名' }
     ]
+  },
+  {
+    field: 'phoneTail',
+    label: '手机尾号',
+    options: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map((t) => ({ value: t, label: `尾号 ${t}` }))
   }
 ]
 
@@ -246,7 +266,14 @@ async function onForceLogout() {
 
 <template>
   <div class="adm-page">
-    <AdminTablePage :fetch="getUserList" :filters="filters" search-placeholder="搜索昵称 / 手机号 / UID">
+    <AdminTablePage
+      :fetch="getUserList"
+      :filters="filters"
+      search-placeholder="搜索昵称 / 手机号 / UID"
+      exportable
+      export-filename="用户名单"
+      :export-columns="EXPORT_COLUMNS"
+    >
       <template #default="{ items }">
         <el-table-column label="用户" min-width="200" fixed="left">
           <template #default="{ row }">

@@ -609,7 +609,7 @@ async function onResaleVerified() {
             <el-input-number v-model="airForm.quantity" :min="1" :max="Math.max(1, stockPool(detail))" />
           </el-form-item>
         </el-form>
-        <el-alert type="info" :closable="false" show-icon title="空投从库存池扣减、已独立空投增加、发放资产到用户仓库，生成发放记录并写入审计日志" />
+        <el-alert type="info" :closable="false" show-icon title="空投从库存池扣减、已独立空投增加、发放资产到用户仓库，生成发放记录并写入审计日志；按条件筛选空投请前往「活动管理 → 空投管理」" />
         <template #footer>
           <el-button @click="airShow = false">取消</el-button>
           <el-button type="primary" @click="onAirdropSubmit">下一步（确认摘要）</el-button>

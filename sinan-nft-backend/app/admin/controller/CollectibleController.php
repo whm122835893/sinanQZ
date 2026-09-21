@@ -708,9 +708,6 @@ class CollectibleController extends BaseController
             return $this->fail(4220, 'id 参数不正确');
         }
         $reason = trim((string) $this->request->param('reason', ''));
-        if ($reason === '') {
-            $reason = '运营空投';
-        }
         $users    = $this->request->param('users', []);
         $quantity = (int) $this->request->param('quantity', 1);
 
@@ -770,6 +767,21 @@ class CollectibleController extends BaseController
         if (!$validIds) {
             return $this->fail(4220, '目标用户全部无效（不存在/已删除/黑名单）');
         }
+
+        return $this->executeAirdrop($c, $validUsers, $quantity, $reason, $invalidCount);
+    }
+
+    /**
+     * 空投发放执行（独立空投共用）
+     * 事务：空投任务 → 逐份生成持仓+记录 → 更新藏品统计 → 收件箱通知
+     */
+    private function executeAirdrop(array $c, array $validUsers, int $quantity, string $reason, int $invalidCount)
+    {
+        $id = (int) $c['id'];
+        $validIds = array_map('intval', array_keys($validUsers));
+
+        // 审计摘要：用户数多时只留前 50 个 ID（完整名单在 airdrop_records）
+        $auditUsers = count($validIds) > 50 ? array_slice($validIds, 0, 50) : $validIds;
 
         $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
               - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
@@ -898,7 +910,7 @@ class CollectibleController extends BaseController
         }
 
         $this->audit('collectible', 'airdrop', '独立空投「' . $c['name'] . '」' . $success . ' 份（' . $successUsers . ' 人 × ' . $quantity . ' 份）',
-            ['task_no' => $taskNo, 'reason' => $reason, 'users' => $validIds, 'quantity_per_user' => $quantity], 'collectible', $id);
+            ['task_no' => $taskNo, 'reason' => $reason, 'users' => $auditUsers, 'quantity_per_user' => $quantity], 'collectible', $id);
 
         return $this->success([
             'task_no' => $taskNo,

@@ -204,10 +204,13 @@ Route::group('marketing', function () {
     Route::post('synthesis-delete', 'MarketingController/synthesisDelete')->middleware(AdminPermission::class, 'marketing:synthesis:manage');
     // 合成记录（多合/错合定位与对账）
     Route::get('synthesis-records', 'MarketingController/synthesisRecords');
-    // 活动空投
+    // 空投管理（活动空投：条件筛选/名单快照/批量发放）
     Route::get('airdrop', 'MarketingController/airdropList');
     Route::post('airdrop', 'MarketingController/airdropSave')->middleware(AdminPermission::class, 'marketing:airdrop');
     Route::post('airdrop/issue', 'MarketingController/airdropIssue')->middleware(AdminPermission::class, 'marketing:airdrop');
+    Route::post('airdrop/eligibility-generate', 'MarketingController/airdropEligibilityGenerate')->middleware(AdminPermission::class, 'marketing:airdrop');
+    Route::get('airdrop/eligibilities', 'MarketingController/airdropEligibilityList');
+    Route::post('airdrop-delete', 'MarketingController/airdropDelete')->middleware(AdminPermission::class, 'marketing:airdrop');
     // 注册活动（实名前N名档位奖励）
     Route::get('register', 'MarketingController/registerList');
     Route::post('register-save', 'MarketingController/registerSave')->middleware(AdminPermission::class, 'marketing:register:config');

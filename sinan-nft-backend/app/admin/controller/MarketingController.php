@@ -1494,26 +1494,47 @@ class MarketingController extends BaseController
         return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }
 
-    // ==================== 活动空投 ====================
+    // ==================== 空投管理（活动空投） ====================
 
     /**
      * GET /admin/marketing/airdrop
-     * 空投活动列表 + 发放进度
+     * 空投活动列表 + 发放进度（分页）
      */
     public function airdropList()
     {
-        $rows = Db::name('airdrop_activities')->whereNull('deleted_at')
-            ->order('id', 'desc')->limit(100)->select()->toArray();
+        [$page, $pageSize] = $this->pageParams();
+
+        $query = Db::name('airdrop_activities')->whereNull('deleted_at');
+        $status = (string) $this->request->param('status', '');
+        if (in_array($status, ['draft', 'active', 'paused', 'ended'], true)) {
+            $query->where('status', $status);
+        }
+        $type = (string) $this->request->param('type', '');
+        if ($type !== '') {
+            $query->where('type', $type);
+        }
+        $keyword = trim((string) $this->request->param('keyword', ''));
+        if ($keyword !== '') {
+            $query->whereLike('name', "%{$keyword}%");
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
         foreach ($rows as &$row) {
             $row['collectible_name'] = Db::name('collectibles')->where('id', $row['collectible_id'])->value('name');
+            $row['collectible_image'] = Db::name('collectibles')->where('id', $row['collectible_id'])->value('image');
             $row['eligible_count'] = Db::name('airdrop_eligibilities')->where('activity_id', $row['id'])->where('status', 'eligible')->count();
-            $row['issued_count'] = Db::name('airdrop_eligibilities')->where('activity_id', $row['id'])->where('status', 'issued')->count();
+            $row['issued_user_count'] = Db::name('airdrop_eligibilities')->where('activity_id', $row['id'])->where('status', 'issued')->count();
+            $row['condition_config'] = $row['condition_config'] !== null ? json_decode((string) $row['condition_config'], true) : null;
         }
-        return $this->success(camelize_keys($rows));
+        return $this->paginate(camelize_keys($rows), $total, $page, $pageSize);
     }
 
     /**
-     * POST /admin/marketing/airdrop-save { id?, name, type, status, collectible_id, quantity_per_user, total_limit?, start_time?, end_time?, snapshot_collectible_id?, checkin_days?, condition_config?, description? }
+     * POST /admin/marketing/airdrop-save
+     * { id?, name, type(direct/hold/condition), status, collectible_id, quantity_per_user,
+     *   total_limit?, start_time?, end_time?, snapshot_collectible_id?, checkin_days?, description?,
+     *   condition_config? { phone_tails?: string[], registered_start?, registered_end?, realname_status?: 0-3, hold_collectible_id?, hold_min_qty? } }
      */
     public function airdropSave()
     {
@@ -1527,7 +1548,7 @@ class MarketingController extends BaseController
         $qty    = (int) $this->request->param('quantity_per_user');
         $status = (string) $this->request->param('status', 'draft');
 
-        if (!in_array($type, ['direct', 'hold', 'checkin', 'register', 'login', 'invite'], true)) {
+        if (!in_array($type, ['direct', 'hold', 'checkin', 'register', 'login', 'invite', 'condition'], true)) {
             return $this->fail(4220, 'type 不合法');
         }
         if (!in_array($status, ['draft', 'active', 'paused', 'ended'], true)) {
@@ -1540,13 +1561,29 @@ class MarketingController extends BaseController
             return $this->fail(4220, '每人发放数量需在 1~100');
         }
 
+        // 条件筛选：校验并归一化 condition_config
+        $conditionConfig = null;
+        if ($type === 'condition') {
+            $conditionConfig = $this->normalizeAirdropCondition();
+            if ($conditionConfig instanceof \think\Response) {
+                return $conditionConfig;
+            }
+            if (!$conditionConfig) {
+                return $this->fail(4220, '条件筛选型活动需至少配置一个筛选条件');
+            }
+        }
+        // 持有快照：必须指定快照藏品
+        if ($type === 'hold' && $this->positiveInt('snapshot_collectible_id') === null) {
+            return $this->fail(4220, '持有快照型活动需指定快照藏品');
+        }
+
         $now = date('Y-m-d H:i:s');
         $data = [
             'name'          => mb_substr($name, 0, 100),
             'type'          => $type,
             'status'        => $status,
-            'airdrop_mode'  => in_array($this->request->param('airdrop_mode', 'realtime'), ['realtime', 'batch'], true)
-                ? (string) $this->request->param('airdrop_mode', 'realtime') : 'realtime',
+            'airdrop_mode'  => in_array($this->request->param('airdrop_mode', 'batch'), ['realtime', 'batch'], true)
+                ? (string) $this->request->param('airdrop_mode', 'batch') : 'batch',
             'collectible_id' => $cid,
             'quantity_per_user' => $qty,
             'total_limit'   => $this->positiveInt('total_limit'),
@@ -1554,19 +1591,24 @@ class MarketingController extends BaseController
             'end_time'      => $this->optionalDate('end_time'),
             'snapshot_collectible_id' => $this->positiveInt('snapshot_collectible_id'),
             'checkin_days'  => $this->positiveInt('checkin_days'),
-            'condition_config' => (string) $this->request->param('condition_config', '') ?: null,
+            'condition_config' => $conditionConfig ? json_encode($conditionConfig, JSON_UNESCAPED_UNICODE) : null,
             'description'   => (string) $this->request->param('description', '') ?: null,
             'updated_at'    => $now,
         ];
 
         $id = $this->positiveInt('id');
         if ($id !== null) {
-            $act = Db::name('airdrop_activities')->where('id', $id)->find();
+            $act = Db::name('airdrop_activities')->where('id', $id)->whereNull('deleted_at')->find();
             if (!$act) {
                 return $this->fail(4040, '空投活动不存在');
             }
-            if ((int) $act['issued_count'] > 0 && $cid !== (int) $act['collectible_id']) {
-                return $this->fail(4220, '该活动已发放过藏品，禁止更换空投藏品');
+            if ((int) $act['issued_count'] > 0) {
+                if ($cid !== (int) $act['collectible_id']) {
+                    return $this->fail(4220, '该活动已发放过藏品，禁止更换空投藏品');
+                }
+                if ($type !== $act['type']) {
+                    return $this->fail(4220, '该活动已发放过藏品，禁止更换资格类型');
+                }
             }
             Db::name('airdrop_activities')->where('id', $id)->update($data);
         } else {
@@ -1575,12 +1617,275 @@ class MarketingController extends BaseController
             $id = (int) Db::name('airdrop_activities')->insertGetId($data);
         }
 
-        $this->audit('marketing', 'airdrop_save', '保存空投活动「' . $name . '」', ['id' => $id], 'airdrop_activity', $id);
+        $this->audit('marketing', 'airdrop_save', '保存空投活动「' . $name . '」', ['id' => $id, 'type' => $type], 'airdrop_activity', $id);
         return $this->success(['id' => $id], '空投活动已保存');
     }
 
     /**
-     * POST /admin/marketing/airdrop-issue { activity_id }
+     * 条件配置归一化（condition_config 参数：数组或 JSON 字符串）
+     * 返回归一化数组（仅含已配置的条件），校验失败返回 fail 响应
+     */
+    private function normalizeAirdropCondition()
+    {
+        $cfg = $this->request->param('condition_config', []);
+        if (is_string($cfg)) {
+            $cfg = json_decode($cfg, true) ?: [];
+        }
+        if (!is_array($cfg)) {
+            return $this->fail(4220, 'condition_config 格式不正确');
+        }
+
+        $out = [];
+
+        // 手机尾号（可选 0-9 多选；兼容逗号分隔字符串）
+        $tails = $cfg['phone_tails'] ?? [];
+        if (is_string($tails)) {
+            $tails = array_filter(array_map('trim', explode(',', $tails)));
+        }
+        if ($tails) {
+            if (!is_array($tails)) {
+                return $this->fail(4220, '手机尾号格式不正确');
+            }
+            $clean = [];
+            foreach ($tails as $t) {
+                $t = trim((string) $t);
+                if (!preg_match('/^\d{1,11}$/', $t)) {
+                    return $this->fail(4220, '手机尾号仅允许 1~11 位数字');
+                }
+                $clean[$t] = true;
+            }
+            $out['phone_tails'] = array_keys($clean);
+        }
+
+        // 注册时间区间
+        $regStart = trim((string) ($cfg['registered_start'] ?? ''));
+        $regEnd   = trim((string) ($cfg['registered_end'] ?? ''));
+        if ($regStart !== '' && !strtotime($regStart)) {
+            return $this->fail(4220, '注册开始时间格式不正确');
+        }
+        if ($regEnd !== '' && !strtotime($regEnd)) {
+            return $this->fail(4220, '注册结束时间格式不正确');
+        }
+        if ($regStart !== '') $out['registered_start'] = $regStart;
+        if ($regEnd !== '')   $out['registered_end'] = $regEnd;
+
+        // 实名状态（0 未提交 / 1 待审核 / 2 已通过 / 3 已驳回）
+        $rs = $cfg['realname_status'] ?? null;
+        if ($rs !== null && $rs !== '') {
+            if (!in_array((int) $rs, [0, 1, 2, 3], true)) {
+                return $this->fail(4220, '实名状态仅允许 0/1/2/3');
+            }
+            $out['realname_status'] = (int) $rs;
+        }
+
+        // 持有藏品条件
+        $holdCid = (int) ($cfg['hold_collectible_id'] ?? 0);
+        if ($holdCid > 0) {
+            if (!Db::name('collectibles')->where('id', $holdCid)->whereNull('deleted_at')->find()) {
+                return $this->fail(4220, '持有条件所选藏品不存在');
+            }
+            $out['hold_collectible_id'] = $holdCid;
+            $out['hold_min_qty'] = max(1, (int) ($cfg['hold_min_qty'] ?? 1));
+        }
+
+        return $out;
+    }
+
+    /**
+     * POST /admin/marketing/airdrop/eligibility-generate { activity_id }
+     * 生成资格名单快照：按活动类型筛选用户写入 airdrop_eligibilities
+     * - condition：condition_config（手机尾号/注册时间/实名状态/持有藏品）AND 组合
+     * - direct：全部有效用户（未删除、非黑名单）
+     * - hold：持有快照藏品有效持仓的用户
+     * 重新生成：清除未发放（eligible）记录、保留已发放（issued）记录
+     */
+    public function airdropEligibilityGenerate()
+    {
+        $activityId = $this->positiveInt('activity_id');
+        if ($activityId === null) {
+            return $this->fail(4220, 'activity_id 参数不正确');
+        }
+        $act = Db::name('airdrop_activities')->where('id', $activityId)->whereNull('deleted_at')->find();
+        if (!$act) {
+            return $this->fail(4040, '空投活动不存在');
+        }
+        if (!in_array($act['type'], ['condition', 'direct', 'hold'], true)) {
+            return $this->fail(4220, '「' . $act['type'] . '」类型活动按用户行为实时产生资格，无需生成名单');
+        }
+
+        // 用户查询（空投口径：未删除 + 非黑名单）
+        $query = Db::name('users')->alias('u')
+            ->whereNull('u.deleted_at')
+            ->where('u.is_blacklisted', 0);
+
+        if ($act['type'] === 'condition') {
+            $cfg = json_decode((string) ($act['condition_config'] ?? ''), true) ?: [];
+            if (!empty($cfg['phone_tails'])) {
+                // 手机号 11 位 = 1 开头 + 中间位 + 尾号 → 每个尾号独立分支
+                $branches = array_map(fn ($t) => '1[0-9]{' . (10 - strlen((string) $t)) . '}' . $t, $cfg['phone_tails']);
+                $query->whereRaw("u.phone REGEXP '^(" . implode('|', $branches) . ")$'");
+            }
+            if (!empty($cfg['registered_start'])) $query->where('u.created_at', '>=', $cfg['registered_start']);
+            if (!empty($cfg['registered_end']))   $query->where('u.created_at', '<=', $cfg['registered_end']);
+            if (isset($cfg['realname_status']) && $cfg['realname_status'] !== null && $cfg['realname_status'] !== '') {
+                $query->where('u.realname_status', (int) $cfg['realname_status']);
+            }
+            if (!empty($cfg['hold_collectible_id'])) {
+                $minQty = max(1, (int) ($cfg['hold_min_qty'] ?? 1));
+                $query->whereRaw(
+                    '(SELECT COUNT(*) FROM ' . Db::getConnection()->getConfig('prefix') . 'user_collectibles uc
+                      WHERE uc.user_id = u.id AND uc.collectible_id = ' . (int) $cfg['hold_collectible_id'] . "
+                      AND uc.status IN ('held','consigned','frozen')) >= " . $minQty
+                );
+            }
+        } elseif ($act['type'] === 'hold') {
+            $snapId = (int) $act['snapshot_collectible_id'];
+            $query->whereRaw(
+                "EXISTS (SELECT 1 FROM " . Db::getConnection()->getConfig('prefix') . "user_collectibles uc
+                 WHERE uc.user_id = u.id AND uc.collectible_id = " . $snapId . "
+                 AND uc.status IN ('held','consigned','frozen'))"
+            );
+        }
+
+        $users = $query->field('u.id, u.phone')->select()->toArray();
+        if (count($users) > 5000) {
+            return $this->fail(4220, '匹配 ' . count($users) . ' 人，超过单次生成上限 5000 人，请收窄条件或分批创建活动');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        Db::startTrans();
+        try {
+            // 已发放用户（保留 issued 记录；因唯一键 uk_activity_phone，重插时须排除）
+            $issuedPhones = Db::name('airdrop_eligibilities')
+                ->where('activity_id', $activityId)->where('status', 'issued')
+                ->column('phone');
+            $issuedMap = array_fill_keys($issuedPhones, true);
+            $keptIssued = count($issuedPhones);
+            Db::name('airdrop_eligibilities')
+                ->where('activity_id', $activityId)->where('status', 'eligible')->delete();
+
+            $newUsers = array_values(array_filter(
+                $users,
+                fn ($u) => !isset($issuedMap[(string) $u['phone']])
+            ));
+            if ($newUsers) {
+                $rows = array_map(fn ($u) => [
+                    'activity_id'       => $activityId,
+                    'user_id'           => (int) $u['id'],
+                    'phone'             => (string) $u['phone'],
+                    'task_type'         => (string) $act['type'],
+                    'task_completed_at' => $now,
+                    'status'            => 'eligible',
+                    'created_at'        => $now,
+                    'updated_at'        => $now,
+                ], $newUsers);
+                foreach (array_chunk($rows, 500) as $chunk) {
+                    Db::name('airdrop_eligibilities')->insertAll($chunk);
+                }
+            }
+            Db::name('airdrop_activities')->where('id', $activityId)->update([
+                'snapshot_at' => $now,
+                'updated_at'  => $now,
+            ]);
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '名单生成失败：' . $e->getMessage());
+        }
+
+        $this->audit('marketing', 'airdrop_eligibility', '生成空投资格名单「' . $act['name'] . '」新增 ' . count($newUsers) . ' 人',
+            ['activity_id' => $activityId, 'generated' => count($newUsers), 'kept_issued' => $keptIssued], 'airdrop_activity', $activityId);
+        return $this->success([
+            'generated'   => count($newUsers),
+            'kept_issued' => $keptIssued,
+            'total'       => $keptIssued + count($newUsers),
+        ], '新增待发放 ' . count($newUsers) . ' 人（保留已发放 ' . $keptIssued . ' 人）');
+    }
+
+    /**
+     * GET /admin/marketing/airdrop/eligibilities?activity_id=&status=&page=&pageSize=
+     * 资格名单查看（分页 + 状态统计）
+     */
+    public function airdropEligibilityList()
+    {
+        $activityId = $this->positiveInt('activity_id');
+        if ($activityId === null) {
+            return $this->fail(4220, 'activity_id 参数不正确');
+        }
+        [$page, $pageSize] = $this->pageParams();
+
+        $act = Db::name('airdrop_activities')->where('id', $activityId)->whereNull('deleted_at')->find();
+        if (!$act) {
+            return $this->fail(4040, '空投活动不存在');
+        }
+
+        $query = Db::name('airdrop_eligibilities')->alias('e')
+            ->join('users u', 'u.id = e.user_id', 'LEFT')
+            ->where('e.activity_id', $activityId);
+        $status = (string) $this->request->param('status', '');
+        if (in_array($status, ['eligible', 'issued'], true)) {
+            $query->where('e.status', $status);
+        }
+
+        $total = (clone $query)->count();
+        $rows = $query->order('e.id', 'asc')->page($page, $pageSize)
+            ->field('e.id, e.user_id, e.phone, e.status, e.task_type, e.created_at, e.updated_at, u.uid, u.username')
+            ->select()->toArray();
+
+        $list = array_map(fn ($r) => [
+            'id'          => (int) $r['id'],
+            'userId'      => (int) $r['user_id'],
+            'uid'         => $r['uid'] ?: '-',
+            'username'    => $r['username'] ?: '-',
+            'phone'       => mask_phone((string) $r['phone']),
+            'status'      => $r['status'],
+            'taskType'    => $r['task_type'],
+            'createdAt'   => $r['created_at'],
+            'handledAt'   => $r['updated_at'],
+        ], $rows);
+
+        return $this->paginate($list, $total, $page, $pageSize);
+    }
+
+    /**
+     * POST /admin/marketing/airdrop-delete { id }
+     * 删除空投活动（软删除）：已发放过的活动禁止删除；未发放的资格记录一并清除
+     */
+    public function airdropDelete()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $act = Db::name('airdrop_activities')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$act) {
+            return $this->fail(4040, '空投活动不存在');
+        }
+        if ((int) $act['issued_count'] > 0) {
+            return $this->fail(4220, '该活动已发放过藏品，禁止删除（可改为「已结束」状态归档）');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        Db::startTrans();
+        try {
+            Db::name('airdrop_activities')->where('id', $id)->update([
+                'status'     => 'ended',
+                'deleted_at' => $now,
+                'updated_at' => $now,
+            ]);
+            Db::name('airdrop_eligibilities')->where('activity_id', $id)->where('status', 'eligible')->delete();
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '删除失败：' . $e->getMessage());
+        }
+
+        $this->audit('marketing', 'airdrop_delete', '删除空投活动「' . $act['name'] . '」', ['id' => $id], 'airdrop_activity', $id);
+        return $this->success(['id' => $id], '空投活动已删除');
+    }
+
+    /**
+     * POST /admin/marketing/airdrop/issue { activity_id }
      * 活动空投批量发放：向全部 eligible 未发放用户发放（受库存池与总限量约束）
      */
     public function airdropIssue()
@@ -1599,14 +1904,13 @@ class MarketingController extends BaseController
 
         $eligibles = Db::name('airdrop_eligibilities')->where('activity_id', $activityId)->where('status', 'eligible')->select()->toArray();
         if (!$eligibles) {
-            return $this->fail(4220, '没有待发放的用户（无资格记录或已全部发放）');
+            return $this->fail(4220, '没有待发放的用户（无资格记录或已全部发放，请先生成资格名单）');
         }
 
         // 库存校验
         $c = Db::name('collectibles')->where('id', $act['collectible_id'])->find();
         $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
               - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
-        $needTotal = count($eligibles) * (int) $act['quantity_per_user'];
         // 无总限量时仅按库存池与待发放人数计算（避免 PHP_INT_MAX 参与除法转 int 溢出）
         $canIssue = (int) floor($pool / (int) $act['quantity_per_user']);
         if ($act['total_limit'] !== null) {
@@ -1636,7 +1940,9 @@ class MarketingController extends BaseController
                 'created_at'     => $now,
             ]);
 
+            $inboxRows = [];
             foreach (array_slice($eligibles, 0, $canIssue) as $elig) {
+                $lastRecordId = 0;
                 for ($i = 0; $i < (int) $act['quantity_per_user']; $i++) {
                     $ucid = (int) Db::name('user_collectibles')->insertGetId([
                         'user_id'        => $elig['user_id'],
@@ -1652,7 +1958,7 @@ class MarketingController extends BaseController
                     Db::name('user_collectibles')->where('id', $ucid)->update([
                         'serial' => 'SN-' . $act['collectible_id'] . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
                     ]);
-                    Db::name('airdrop_records')->insert([
+                    $lastRecordId = (int) Db::name('airdrop_records')->insertGetId([
                         'activity_id' => $activityId,
                         'task_id'     => $taskId,
                         'user_id'     => $elig['user_id'],
@@ -1667,9 +1973,30 @@ class MarketingController extends BaseController
                     ]);
                 }
                 Db::name('airdrop_eligibilities')->where('id', $elig['id'])->update([
-                    'status' => 'issued', 'updated_at' => $now,
+                    'status'            => 'issued',
+                    'airdrop_record_id' => $lastRecordId,
+                    'updated_at'        => $now,
                 ]);
+                $inboxRows[] = [
+                    'user_id'        => (int) $elig['user_id'],
+                    'type'           => 'airdrop',
+                    'ref_id'         => $taskId,
+                    'title'          => '恭喜你收到空投藏品',
+                    'collectible_id' => (int) $act['collectible_id'],
+                    'name'           => (string) $c['name'],
+                    'image'          => (string) ($c['image'] ?? ''),
+                    'extra'          => json_encode([
+                        'quantity' => (int) $act['quantity_per_user'],
+                        'reason'   => '活动空投「' . $act['name'] . '」',
+                    ], JSON_UNESCAPED_UNICODE),
+                    'status'         => 0,
+                    'created_at'     => $now,
+                ];
                 $issued++;
+            }
+
+            if ($inboxRows) {
+                Db::name('inbox')->insertAll($inboxRows);
             }
 
             $issuedQty = $issued * (int) $act['quantity_per_user'];
@@ -2010,7 +2337,7 @@ class MarketingController extends BaseController
         $total = (clone $query)->count();
         $rows = $query->order('id', 'desc')->page($page, $pageSize)->select()->toArray();
 
-        $targetTypes = [1 => '藏品', 2 => '盲盒'];
+        $targetTypes = [1 => '藏品', 2 => '盲盒', 3 => '空投活动'];
         $items = array_map(function ($r) use ($targetTypes) {
             return [
                 'id'              => (int) $r['id'],
