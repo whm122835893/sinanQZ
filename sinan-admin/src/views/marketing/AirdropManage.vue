@@ -23,13 +23,13 @@ const AIRDROP_STATUS = {
 }
 
 const AIRDROP_TYPES = {
-  direct:    { label: '全量直投', tag: 'primary', snapshottable: true,  desc: '向全部有效用户（未删除、非黑名单）生成名单' },
-  hold:      { label: '持有快照', tag: 'warning', snapshottable: true,  desc: '向持有指定快照藏品的用户生成名单' },
-  condition: { label: '条件筛选', tag: 'danger',  snapshottable: true,  desc: '按手机尾号/注册时间/实名状态/持有藏品组合筛选生成名单' },
-  checkin:   { label: '连续签到', tag: 'info', snapshottable: false, desc: '用户行为实时产生资格（签到模块维护）' },
-  register:  { label: '注册行为', tag: 'info', snapshottable: false, desc: '用户行为实时产生资格' },
-  login:     { label: '登录行为', tag: 'info', snapshottable: false, desc: '用户行为实时产生资格' },
-  invite:    { label: '邀请行为', tag: 'info', snapshottable: false, desc: '用户行为实时产生资格' }
+  direct:    { label: '全量直投', tag: 'primary', snapshottable: true, desc: '向全部有效用户（未删除、非黑名单）生成名单' },
+  hold:      { label: '持有快照', tag: 'warning', snapshottable: true, desc: '向持有指定快照藏品的用户生成名单' },
+  condition: { label: '条件筛选', tag: 'danger',  snapshottable: true, desc: '按手机尾号/注册时间/实名状态/持有藏品组合筛选生成名单' },
+  checkin:   { label: '累计签到', tag: 'success', snapshottable: true, desc: '按累计签到天数圈定名单（生成时按阈值筛选）' },
+  register:  { label: '注册行为', tag: 'info',    snapshottable: true, desc: '按活动起止时间内注册的新用户圈定名单' },
+  login:     { label: '登录行为', tag: 'info',    snapshottable: true, desc: '按累计登录次数圈定名单' },
+  invite:    { label: '邀请行为', tag: 'info',    snapshottable: true, desc: '按累计成功邀请人数圈定名单' }
 }
 
 const REALNAME_OPTIONS = [
@@ -110,14 +110,16 @@ function emptyForm() {
     endTime: '',
     snapshotCollectibleId: null,
     description: '',
-    // 条件筛选（type=condition）
+    // 条件筛选（type=condition）+ 行为型阈值（checkin.days / login.count / invite.count）
     condition: {
       phoneTails: [],
       registeredStart: '',
       registeredEnd: '',
       realnameStatus: '',
       holdCollectibleId: null,
-      holdMinQty: 1
+      holdMinQty: 1,
+      days: 1,
+      count: 1
     }
   }
 }
@@ -149,7 +151,9 @@ function openEdit(row) {
       registeredEnd: cfg.registeredEnd || '',
       realnameStatus: cfg.realnameStatus ?? '',
       holdCollectibleId: cfg.holdCollectibleId || null,
-      holdMinQty: cfg.holdMinQty || 1
+      holdMinQty: cfg.holdMinQty || 1,
+      days: cfg.days || 1,
+      count: cfg.count || 1
     }
   }
   editShow.value = true
@@ -372,6 +376,10 @@ async function onDelete(row) {
           <span v-if="row.type === 'condition'">{{ conditionText(row) || '—' }}</span>
           <span v-else-if="row.type === 'hold'">持有 {{ cname(row.snapshotCollectibleId) }}</span>
           <span v-else-if="row.type === 'direct'">全部有效用户</span>
+          <span v-else-if="row.type === 'checkin'">累计签到 ≥ {{ row.conditionConfig?.days || 1 }} 天</span>
+          <span v-else-if="row.type === 'login'">累计登录 ≥ {{ row.conditionConfig?.count || 1 }} 次</span>
+          <span v-else-if="row.type === 'invite'">成功邀请 ≥ {{ row.conditionConfig?.count || 1 }} 人</span>
+          <span v-else-if="row.type === 'register'">活动期间注册的新用户</span>
           <span v-else class="t-tertiary">{{ AIRDROP_TYPES[row.type]?.desc || row.type }}</span>
         </template>
       </el-table-column>
@@ -441,7 +449,7 @@ async function onDelete(row) {
 
         <el-form-item label="资格类型">
           <el-radio-group v-model="form.type" :disabled="!!editing && editing.issuedCount > 0">
-            <el-radio v-for="k in ['condition', 'direct', 'hold']" :key="k" :value="k">
+            <el-radio v-for="k in ['condition', 'direct', 'hold', 'checkin', 'register', 'login', 'invite']" :key="k" :value="k">
               {{ AIRDROP_TYPES[k].label }}
             </el-radio>
           </el-radio-group>
@@ -488,7 +496,6 @@ async function onDelete(row) {
         <!-- 条件筛选：组合条件 -->
         <template v-if="form.type === 'condition'">
           <el-divider content-position="left">筛选条件（多选组合，需至少配置一项）</el-divider>
-
           <el-form-item label="手机尾号">
             <el-select v-model="form.condition.phoneTails" multiple placeholder="选择手机尾号（0-9，可多选）" style="width: 100%">
               <el-option v-for="t in PHONE_TAIL_OPTIONS" :key="t" :value="t" :label="`尾号 ${t}`" />
@@ -523,6 +530,26 @@ async function onDelete(row) {
             <div class="t-tertiary am__hint">选择后仅统计有效持仓（持有中/寄售中/冻结）数量达标的用户</div>
           </el-form-item>
         </template>
+
+        <!-- 行为型：阈值配置（生成名单时按此筛选） -->
+        <template v-if="['checkin', 'login', 'invite'].includes(form.type)">
+          <el-divider content-position="left">行为条件（生成名单时按此筛选）</el-divider>
+          <el-form-item v-if="form.type === 'checkin'" label="累计签到天数">
+            <el-input-number v-model="form.condition.days" :min="1" :max="3650" style="width: 160px" />
+            <div class="t-tertiary am__hint">仅累计签到（按日去重）达到该天数的用户进入名单</div>
+          </el-form-item>
+          <el-form-item v-else label="累计阈值">
+            <el-input-number v-model="form.condition.count" :min="1" :max="10000" style="width: 160px" />
+            <div class="t-tertiary am__hint">
+              {{ form.type === 'login' ? '仅累计登录次数达到该值的用户进入名单' : '仅累计成功邀请（被邀请人已注册）人数达到该值的用户进入名单' }}
+            </div>
+          </el-form-item>
+        </template>
+        <el-alert
+          v-if="form.type === 'register'"
+          type="info" :closable="false" show-icon
+          title="注册行为型：以活动起止时间圈定该期间注册的新用户（未配置时间则为全部有效用户），请在上方「起止时间」中设置"
+        />
 
         <el-form-item label="活动说明">
           <el-input v-model="form.description" type="textarea" :rows="2" maxlength="200" show-word-limit placeholder="内部备注说明" />

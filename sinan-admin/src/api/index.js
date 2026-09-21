@@ -778,7 +778,10 @@ export function saveAirdropActivity(payload) {
             ...(cond.holdCollectibleId ? { hold_collectible_id: cond.holdCollectibleId, hold_min_qty: cond.holdMinQty || 1 } : {})
           }
         }
-      : {})
+      : {}),
+    // 行为型：阈值配置（checkin.days / login.count / invite.count；register 用活动起止时间无需配置）
+    ...(payload.type === 'checkin' ? { condition_config: { days: cond.days || 1 } } : {}),
+    ...(['login', 'invite'].includes(payload.type) ? { condition_config: { count: cond.count || 1 } } : {})
   })
 }
 

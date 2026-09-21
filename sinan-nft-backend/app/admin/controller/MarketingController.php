@@ -1572,6 +1572,14 @@ class MarketingController extends BaseController
                 return $this->fail(4220, '条件筛选型活动需至少配置一个筛选条件');
             }
         }
+        // 行为型（checkin/login/invite）：condition_config 归一化阈值（未传则编辑时保留原配置）
+        if (in_array($type, ['checkin', 'login', 'invite'], true)
+            && $this->request->param('condition_config') !== null) {
+            $conditionConfig = $this->normalizeAirdropBehaviorConfig($type);
+            if ($conditionConfig instanceof \think\Response) {
+                return $conditionConfig;
+            }
+        }
         // 持有快照：必须指定快照藏品
         if ($type === 'hold' && $this->positiveInt('snapshot_collectible_id') === null) {
             return $this->fail(4220, '持有快照型活动需指定快照藏品');
@@ -1609,6 +1617,10 @@ class MarketingController extends BaseController
                 if ($type !== $act['type']) {
                     return $this->fail(4220, '该活动已发放过藏品，禁止更换资格类型');
                 }
+            }
+            // 行为型编辑未传 condition_config：保留原阈值（update 不覆盖为 null）
+            if ($conditionConfig === null && in_array($type, ['checkin', 'login', 'invite'], true)) {
+                unset($data['condition_config']);
             }
             Db::name('airdrop_activities')->where('id', $id)->update($data);
         } else {
@@ -1692,11 +1704,44 @@ class MarketingController extends BaseController
     }
 
     /**
+     * 行为型空投条件归一化（condition_config 参数：数组或 JSON 字符串）
+     * - checkin {days: N}   累计签到 ≥ N 天（默认 1；兼容 checkin_days 参数/历史列）
+     * - login   {count: N}  累计登录 ≥ N 次（默认 1）
+     * - invite  {count: N}  累计成功邀请 ≥ N 人（默认 1）
+     */
+    private function normalizeAirdropBehaviorConfig(string $type)
+    {
+        $cfg = $this->request->param('condition_config', []);
+        if (is_string($cfg)) {
+            $cfg = json_decode($cfg, true) ?: [];
+        }
+        if (!is_array($cfg)) {
+            return $this->fail(4220, 'condition_config 格式不正确');
+        }
+        if ($type === 'checkin') {
+            $days = (int) ($cfg['days'] ?? $this->request->param('checkin_days', 1));
+            if ($days < 1 || $days > 3650) {
+                return $this->fail(4220, '累计签到天数需在 1~3650');
+            }
+            return ['days' => $days];
+        }
+        $count = (int) ($cfg['count'] ?? 1);
+        if ($count < 1 || $count > 10000) {
+            return $this->fail(4220, '累计次数需在 1~10000');
+        }
+        return ['count' => $count];
+    }
+
+    /**
      * POST /admin/marketing/airdrop/eligibility-generate { activity_id }
      * 生成资格名单快照：按活动类型筛选用户写入 airdrop_eligibilities
      * - condition：condition_config（手机尾号/注册时间/实名状态/持有藏品）AND 组合
      * - direct：全部有效用户（未删除、非黑名单）
      * - hold：持有快照藏品有效持仓的用户
+     * - checkin：累计签到 ≥ N 天（condition_config.days，兼容历史 checkin_days 列）
+     * - register：活动起止时间内注册的新用户（未配置时间则全部有效用户）
+     * - login：累计登录 ≥ N 次（condition_config.count）
+     * - invite：累计成功邀请 ≥ N 人（condition_config.count，口径 status=registered）
      * 重新生成：清除未发放（eligible）记录、保留已发放（issued）记录
      */
     public function airdropEligibilityGenerate()
@@ -1709,8 +1754,8 @@ class MarketingController extends BaseController
         if (!$act) {
             return $this->fail(4040, '空投活动不存在');
         }
-        if (!in_array($act['type'], ['condition', 'direct', 'hold'], true)) {
-            return $this->fail(4220, '「' . $act['type'] . '」类型活动按用户行为实时产生资格，无需生成名单');
+        if (!in_array($act['type'], ['condition', 'direct', 'hold', 'checkin', 'register', 'login', 'invite'], true)) {
+            return $this->fail(4220, '不支持的活动类型');
         }
 
         // 用户查询（空投口径：未删除 + 非黑名单）
@@ -1744,6 +1789,28 @@ class MarketingController extends BaseController
                 "EXISTS (SELECT 1 FROM " . Db::getConnection()->getConfig('prefix') . "user_collectibles uc
                  WHERE uc.user_id = u.id AND uc.collectible_id = " . $snapId . "
                  AND uc.status IN ('held','consigned','frozen'))"
+            );
+        } elseif ($act['type'] === 'checkin') {
+            $cfg = json_decode((string) ($act['condition_config'] ?? ''), true) ?: [];
+            $days = max(1, (int) ($cfg['days'] ?? (($act['checkin_days'] ?? 0) ?: 1)));
+            $query->whereRaw(
+                '(SELECT COUNT(DISTINCT cir.check_in_date) FROM ' . Db::getConnection()->getConfig('prefix') . "check_in_records cir
+                  WHERE cir.user_id = u.id) >= " . $days
+            );
+        } elseif ($act['type'] === 'register') {
+            // 活动起止时间内注册的新用户（未配置时间则全部有效用户）
+            if (!empty($act['start_time'])) $query->where('u.created_at', '>=', $act['start_time']);
+            if (!empty($act['end_time']))   $query->where('u.created_at', '<=', $act['end_time']);
+        } elseif ($act['type'] === 'login') {
+            $cfg = json_decode((string) ($act['condition_config'] ?? ''), true) ?: [];
+            $count = max(1, (int) ($cfg['count'] ?? 1));
+            $query->where('u.login_count', '>=', $count);
+        } elseif ($act['type'] === 'invite') {
+            $cfg = json_decode((string) ($act['condition_config'] ?? ''), true) ?: [];
+            $count = max(1, (int) ($cfg['count'] ?? 1));
+            $query->whereRaw(
+                "(SELECT COUNT(*) FROM " . Db::getConnection()->getConfig('prefix') . "invite_records ir
+                  WHERE ir.inviter_id = u.id AND ir.status = 'registered') >= " . $count
             );
         }
 

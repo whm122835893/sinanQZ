@@ -1504,79 +1504,82 @@ CREATE TABLE IF NOT EXISTS `nft_inbox` (
 
 -- ====== ALTER nft_airdrop_records ======
 -- 来自 admin_init.sql
-ALTER TABLE `nft_airdrop_records` ADD COLUMN `task_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_airdrop_records` ADD COLUMN `task_id` BIGINT UNSIGNED NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_airdrop_records` MODIFY COLUMN `activity_id` INT UNSIGNED NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_airdrop_records` MODIFY COLUMN `activity_id` INT UNSIGNED NULL DEFAULT NULL COMMENT '';
 
 -- ====== ALTER nft_blind_boxes ======
 -- 来自 admin_init.sql
-ALTER TABLE `nft_blind_boxes` ADD COLUMN `opened_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_blind_boxes` ADD COLUMN `opened_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 full_feature_upgrade.sql
-ALTER TABLE `nft_blind_boxes` ADD COLUMN `schedule_time` DATETIME NULL COMMENT \;
+ALTER TABLE `nft_blind_boxes` ADD COLUMN `schedule_time` DATETIME NULL COMMENT '';
 -- 来自 full_feature_upgrade.sql
-ALTER TABLE `nft_blind_boxes` ADD COLUMN `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT \;
+ALTER TABLE `nft_blind_boxes` ADD COLUMN `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT '';
 
 -- ====== ALTER nft_categories ======
 -- 来自 category_scene_upgrade.sql
-ALTER TABLE `nft_categories` ADD COLUMN `scene` VARCHAR(20) NOT NULL DEFAULT;
+ALTER TABLE `nft_categories` ADD COLUMN `scene` VARCHAR(20) NOT NULL DEFAULT 'market' COMMENT '分类场景：market市场二级分类 / artifact文物展览分类';
 
 -- ====== ALTER nft_check_in_records ======
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_check_in_records` MODIFY COLUMN `reward_type` ENUM(\;
+ALTER TABLE `nft_check_in_records` MODIFY COLUMN `reward_type` ENUM('none','collectible','points','draw_chance','priority_qualification','eligibility_qualification','blindbox') NOT NULL DEFAULT 'none' COMMENT '奖励类型';
 
 -- ====== ALTER nft_collectibles ======
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `per_user_limit` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `per_user_limit` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `is_transferable` TINYINT(1) NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `is_transferable` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `is_resaleable` TINYINT(1) NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `is_resaleable` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `resale_price_mode` TINYINT NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `resale_price_mode` TINYINT NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `resale_price_min` DECIMAL(10,2) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `resale_price_min` DECIMAL(10,2) NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `resale_price_max` DECIMAL(10,2) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `resale_price_max` DECIMAL(10,2) NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `is_qualification_enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `is_qualification_enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `reserved_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `reserved_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `airdropped_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `airdropped_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `destroyed_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `destroyed_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` MODIFY COLUMN `status` ENUM(;
+ALTER TABLE `nft_collectibles` MODIFY COLUMN `status` ENUM('upcoming','onsale','soldout','off') NOT NULL DEFAULT 'upcoming' COMMENT '发售状态：upcoming未发售 onsale发售中 soldout已售罄 off已下架';
 -- 来自 admin_init.sql
 ALTER TABLE `nft_collectibles` DROP CONSTRAINT `chk_collectibles_stock`;
 -- 来自 admin_init.sql
 ALTER TABLE `nft_collectibles` ADD CONSTRAINT `chk_collectibles_stock_v2` CHECK (`sold` + `locked_quantity` + `reserved_count` + `airdropped_count` + `destroyed_count` <= `edition` AND `circulate` <= `edition`);
 -- 来自 admin_init.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `is_buy_request_enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_collectibles` ADD COLUMN `is_buy_request_enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 full_feature_upgrade.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `schedule_time` DATETIME NULL COMMENT \;
+ALTER TABLE `nft_collectibles` ADD COLUMN `schedule_time` DATETIME NULL COMMENT '';
 -- 来自 full_feature_upgrade.sql
-ALTER TABLE `nft_collectibles` ADD COLUMN `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT \;
+ALTER TABLE `nft_collectibles` ADD COLUMN `is_scheduled` TINYINT NOT NULL DEFAULT 0 COMMENT '';
 
 -- ====== ALTER nft_community_groups ======
 -- 来自 admin_init.sql
-ALTER TABLE `nft_community_groups` ADD COLUMN `members` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_community_groups` ADD COLUMN `members` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_community_groups` ADD COLUMN `qq_group` VARCHAR(20) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_community_groups` ADD COLUMN `qq_group` VARCHAR(20) NULL DEFAULT NULL COMMENT '';
 
 -- ====== ALTER nft_invite_activities ======
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_invite_activities` ADD COLUMN `tiers` JSON NULL DEFAULT NULL COMMENT \;
+ALTER TABLE `nft_invite_activities` ADD COLUMN `tiers` JSON NULL DEFAULT NULL COMMENT '';
 
 -- ====== ALTER nft_lucky_draw_activities ======
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_lucky_draw_activities` ADD COLUMN `eligibility_type` VARCHAR(20) NOT NULL DEFAULT \;
+ALTER TABLE `nft_lucky_draw_activities`
+  ADD COLUMN `eligibility_type` VARCHAR(20) NOT NULL DEFAULT 'all' COMMENT '参与资格类型：all/realname/checkin/invite/hold/checkin_rank' AFTER `end_time`,
+  ADD COLUMN `eligibility_config` JSON NULL DEFAULT NULL COMMENT '参与资格配置 JSON' AFTER `eligibility_type`,
+  ADD COLUMN `grant_mode` ENUM('realtime','manual') NOT NULL DEFAULT 'realtime' COMMENT '奖励发放方式：realtime实时到账/manual记录名单统一发放' AFTER `eligibility_config`;
 
 -- ====== ALTER nft_lucky_draw_prizes ======
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_lucky_draw_prizes` ADD COLUMN `prize_name` VARCHAR(100) NULL DEFAULT NULL COMMENT \;
+ALTER TABLE `nft_lucky_draw_prizes` ADD COLUMN `prize_name` VARCHAR(100) NULL DEFAULT NULL COMMENT '';
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_lucky_draw_prizes` MODIFY COLUMN `prize_type` ENUM(\;
+ALTER TABLE `nft_lucky_draw_prizes` MODIFY COLUMN `prize_type` ENUM('collectible','points','draw_chance','priority_qualification','eligibility_qualification','blindbox','none') NOT NULL DEFAULT 'collectible' COMMENT '奖品类型：collectible藏品/points司南币/draw_chance抽奖次数/priority_qualification优先购资格/eligibility_qualification资格购资格/blindbox盲盒/none谢谢参与';
 
 -- ====== ALTER nft_orders ======
 -- 来自 init.sql
@@ -1585,9 +1588,9 @@ ALTER TABLE `nft_orders`
   FOREIGN KEY (`resale_listing_id`) REFERENCES `nft_resale_listings` (`id`)
   ON DELETE SET NULL ON UPDATE CASCADE;
 -- 来自 admin_init.sql
-ALTER TABLE `nft_orders` MODIFY COLUMN `source` ENUM(;
+ALTER TABLE `nft_orders` MODIFY COLUMN `source` ENUM('release','market','priority','eligibility') NOT NULL DEFAULT 'release' COMMENT '订单来源：release首发 market市场 priority优先购 eligibility资格购';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_orders` MODIFY COLUMN `status` ENUM(;
+ALTER TABLE `nft_orders` MODIFY COLUMN `status` ENUM('pending','completed','cancelled','refunding','refunded') NOT NULL DEFAULT 'pending' COMMENT '订单状态：pending待支付 completed已完成 cancelled已取消 refunding退款中 refunded已退款';
 -- 来自 batch_buy_upgrade.sql
 ALTER TABLE `nft_orders`
   ADD COLUMN `batch_listing_ids` VARCHAR(512) NULL DEFAULT NULL
@@ -1596,71 +1599,74 @@ ALTER TABLE `nft_orders`
 
 -- ====== ALTER nft_raffle_activities ======
 -- 来自 raffle_draw_code_system_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `draw_code_enabled` TINYINT NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `draw_code_enabled` TINYINT NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_draw_code_system_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `draw_code_price` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `draw_code_price` DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `total_supply` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `total_supply` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `draw_win_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `draw_win_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `buy_code_limit` INT UNSIGNED NOT NULL DEFAULT 5 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `buy_code_limit` INT UNSIGNED NOT NULL DEFAULT 5 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `invite_enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `invite_enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `invite_code_limit` INT UNSIGNED NOT NULL DEFAULT 5 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `invite_code_limit` INT UNSIGNED NOT NULL DEFAULT 5 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `invite_user_needed` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `invite_user_needed` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `max_wins_per_user` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `max_wins_per_user` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
 ALTER TABLE `nft_raffle_activities` DROP COLUMN `user_max_code`;
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `win_locked` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `win_locked` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
 ALTER TABLE `nft_raffle_activities` DROP COLUMN `whitelist_only`;
 -- 来自 raffle_admin_upgrade.sql
 ALTER TABLE `nft_raffle_activities` DROP COLUMN `limit_per_user`;
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_activities` ADD COLUMN `drawn_at` DATETIME NULL COMMENT;
+ALTER TABLE `nft_raffle_activities` ADD COLUMN `drawn_at` DATETIME NULL COMMENT '';
 
 -- ====== ALTER nft_raffle_registrations ======
 -- 来自 raffle_draw_code_system_upgrade.sql
 ALTER TABLE `nft_raffle_registrations` DROP COLUMN `draw_code`;
 -- 来自 raffle_purchase_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `purchased_quantity` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT \;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `purchased_quantity` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `is_force_win` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `is_force_win` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `force_set_by` BIGINT UNSIGNED NULL COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `force_set_by` BIGINT UNSIGNED NULL COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `force_set_at` DATETIME NULL COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `force_set_at` DATETIME NULL COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_paid` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_paid` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_paid_at` DATETIME NULL COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_paid_at` DATETIME NULL COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_verified` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_verified` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_verified_at` DATETIME NULL COMMENT;
+ALTER TABLE `nft_raffle_registrations` ADD COLUMN `win_verified_at` DATETIME NULL COMMENT '';
 
 -- ====== ALTER nft_resale_listings ======
 -- 来自 admin_init.sql
-ALTER TABLE `nft_resale_listings` ADD COLUMN `is_system_delisted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_resale_listings` ADD COLUMN `is_system_delisted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_resale_listings` ADD COLUMN `system_delisted_at` DATETIME(3) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_resale_listings` ADD COLUMN `system_delisted_at` DATETIME(3) NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_resale_listings` ADD COLUMN `delist_reason` VARCHAR(255) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_resale_listings` ADD COLUMN `delist_reason` VARCHAR(255) NULL DEFAULT NULL COMMENT '';
 
 -- ====== ALTER nft_synthesis_activities ======
 -- 来自 marketing_activity_upgrade.sql
-ALTER TABLE `nft_synthesis_activities` ADD COLUMN `status` TINYINT(1) NOT NULL DEFAULT 1 COMMENT \;
+ALTER TABLE `nft_synthesis_activities` ADD COLUMN `status` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_synthesis_activities` ADD COLUMN `result_quantity` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT \;
+ALTER TABLE `nft_synthesis_activities` ADD COLUMN `result_quantity` INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_synthesis_activities` ADD COLUMN `eligibility_type` VARCHAR(20) NOT NULL DEFAULT \;
+ALTER TABLE `nft_synthesis_activities`
+  ADD COLUMN `eligibility_type` VARCHAR(20) NOT NULL DEFAULT 'all' COMMENT '参与资格类型：all/realname/checkin/invite/hold/checkin_rank' AFTER `result_quantity`,
+  ADD COLUMN `eligibility_config` JSON NULL DEFAULT NULL COMMENT '参与资格配置 JSON' AFTER `eligibility_type`,
+  ADD COLUMN `grant_mode` ENUM('realtime','manual') NOT NULL DEFAULT 'realtime' COMMENT '奖励发放方式：realtime实时到账/manual记录名单统一发放' AFTER `eligibility_config`;
 
 -- ====== ALTER nft_user_collectibles ======
 -- 来自 init.sql
@@ -1669,35 +1675,35 @@ ALTER TABLE `nft_user_collectibles`
   FOREIGN KEY (`airdrop_record_id`) REFERENCES `nft_airdrop_records` (`id`)
   ON DELETE SET NULL ON UPDATE CASCADE;
 -- 来自 admin_init.sql
-ALTER TABLE `nft_user_collectibles` MODIFY COLUMN `status` ENUM(;
+ALTER TABLE `nft_user_collectibles` MODIFY COLUMN `status` ENUM('held','consigned','frozen','transferred','consumed','recovered') NOT NULL DEFAULT 'held' COMMENT '资产状态：held持有 consigned寄售中 frozen转赠冻结 transferred已转赠 consumed已消耗（开盒/合成） recovered已回收';
 
 -- ====== ALTER nft_user_draw_codes ======
 -- 来自 raffle_draw_code_system_upgrade.sql
-ALTER TABLE `nft_user_draw_codes` ADD COLUMN `status` TINYINT NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_user_draw_codes` ADD COLUMN `status` TINYINT NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 raffle_draw_code_system_upgrade.sql
-ALTER TABLE `nft_user_draw_codes` ADD COLUMN `remark` VARCHAR(255) NULL COMMENT;
+ALTER TABLE `nft_user_draw_codes` ADD COLUMN `remark` VARCHAR(255) NULL COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
-ALTER TABLE `nft_user_draw_codes` MODIFY COLUMN `status` TINYINT NOT NULL DEFAULT 1 COMMENT;
+ALTER TABLE `nft_user_draw_codes` MODIFY COLUMN `status` TINYINT NOT NULL DEFAULT 1 COMMENT '';
 -- 来自 raffle_admin_upgrade.sql
 ALTER TABLE `nft_user_draw_codes` ADD KEY `idx_activity_status` (`activity_id`, `status`);
 
 -- ====== ALTER nft_users ======
 -- 来自 admin_init.sql
-ALTER TABLE `nft_users` ADD COLUMN `password` VARCHAR(255) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_users` ADD COLUMN `password` VARCHAR(255) NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_users` ADD COLUMN `is_blacklisted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT;
+ALTER TABLE `nft_users` ADD COLUMN `is_blacklisted` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_users` ADD COLUMN `blacklist_reason` VARCHAR(255) NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_users` ADD COLUMN `blacklist_reason` VARCHAR(255) NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_users` ADD COLUMN `blacklist_at` DATETIME NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_users` ADD COLUMN `blacklist_at` DATETIME NULL DEFAULT NULL COMMENT '';
 -- 来自 admin_init.sql
-ALTER TABLE `nft_users` ADD COLUMN `logout_before` DATETIME NULL DEFAULT NULL COMMENT;
+ALTER TABLE `nft_users` ADD COLUMN `logout_before` DATETIME NULL DEFAULT NULL COMMENT '';
 -- 来自 activity_reward_upgrade.sql
-ALTER TABLE `nft_users` ADD COLUMN `realname_verified_at` DATETIME(3) NULL DEFAULT NULL COMMENT \;
+ALTER TABLE `nft_users` ADD COLUMN `realname_verified_at` DATETIME(3) NULL DEFAULT NULL COMMENT '';
 
 -- ====== ALTER nft_verification_codes ======
 -- 来自 admin_sms_scene_upgrade.sql
-ALTER TABLE `nft_verification_codes` MODIFY `scene` VARCHAR(32) NOT NULL COMMENT;
+ALTER TABLE `nft_verification_codes` MODIFY `scene` VARCHAR(32) NOT NULL COMMENT '';
 
 -- ---------- DROP 废弃表 ----------
 -- 来自 raffle_admin_upgrade.sql
