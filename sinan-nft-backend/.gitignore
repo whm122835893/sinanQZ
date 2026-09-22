@@ -11,3 +11,5 @@ Thumbs.db
 /.settings
 /.buildpath
 /.project
+.phpunit.result.cache
+.phpunit.cache/
