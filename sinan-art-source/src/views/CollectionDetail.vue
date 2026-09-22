@@ -21,8 +21,16 @@ const isWarehouse = computed(() => route.query.from === 'warehouse')
 // 盲盒进入：底部显示「开启盲盒」+「立即寄售(灰色)」
 const isBlindbox = computed(() => route.query.type === 'blindbox')
 
+const loading = ref(true)
+
 onMounted(async () => {
-  detail.value = await store.fetchDetail(route.params.id)
+  try {
+    detail.value = await store.fetchDetail(route.params.id)
+  } catch (e) {
+    // 藏品不存在/网络异常：走页面空态提示，不抛未捕获异常
+  } finally {
+    loading.value = false
+  }
   // 带编号进入（仓库视角）时确保库存已拉取，链上凭证才有数据源
   if (serialNo.value && userStore.isLoggedIn && !userStore.inventory.length) {
     userStore.fetchInventory()
@@ -357,7 +365,7 @@ async function drawPosterFallback() {
 </script>
 
 <template>
-  <div class="detail page--no-tabbar" v-if="detail">
+  <div class="detail page--no-tabbar">
     <AppNavBar :title="isWarehouse ? '我的藏品' : '藏品详情'" @click-left="$router.back()">
       <!-- 用户持有的藏品：右上角分享海报入口 -->
       <template v-if="isWarehouse" #right>
@@ -365,6 +373,7 @@ async function drawPosterFallback() {
       </template>
     </AppNavBar>
 
+    <template v-if="detail">
     <!-- 主视觉卡片 -->
     <div class="detail-hero">
       <img class="detail-hero__cover" :src="detail.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
@@ -459,6 +468,10 @@ async function drawPosterFallback() {
       <button v-else class="detail-buy__btn" @click="openConsign">立即寄售</button>
       <button v-if="transferEnabled && !isNoLockedNow" class="detail-buy__btn detail-buy__btn--transfer" @click="openTransfer">转赠</button>
     </div>
+    </template>
+
+    <!-- 空态：藏品不存在或已下架 -->
+    <div v-else-if="!loading" class="detail-empty">藏品不存在或已下架</div>
 
     <!-- 寄售弹窗 -->
     <van-popup v-model:show="showConsign" position="bottom" round :close-on-click-overlay="!consigning && !pwdStep">
@@ -646,6 +659,13 @@ async function drawPosterFallback() {
 
 <style scoped lang="scss">
 .detail { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+
+.detail-empty {
+  margin-top: 120px;
+  text-align: center;
+  font-size: 14px;
+  color: $color-text-tertiary;
+}
 
 .detail-hero {
   position: relative; margin: 12px $page-padding; border-radius: $radius-lg;

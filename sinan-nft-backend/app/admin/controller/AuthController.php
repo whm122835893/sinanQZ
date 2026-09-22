@@ -32,15 +32,18 @@ class AuthController extends BaseController
             return $this->fail(4220, '账号或密码格式不正确');
         }
 
-        // 图形码前置（挡后台撞库爆破，场景级开关：admin_login）
+        // 图形码前置（挡后台撞库爆破，场景级开关：admin_login；local/aliyun 服务商分流）
         if (CaptchaService::isEnabled('admin_login')) {
-            $captchaId   = trim((string) $this->request->param('captcha_id', ''));
-            $captchaCode = trim((string) $this->request->param('captcha_code', ''));
-            if ($captchaId === '' || $captchaCode === '') {
-                return $this->fail(4220, '请先完成图形验证码');
+            $aliyun = CaptchaService::provider() === CaptchaService::PROVIDER_ALIYUN;
+            $missing = $aliyun
+                ? trim((string) $this->request->param('captcha_verify_param', '')) === ''
+                : (trim((string) $this->request->param('captcha_id', '')) === ''
+                    || trim((string) $this->request->param('captcha_code', '')) === '');
+            if ($missing) {
+                return $this->fail(4220, $aliyun ? '请先完成滑块验证' : '请先完成图形验证码');
             }
-            if (!(new CaptchaService())->verify($captchaId, $captchaCode, true)) {
-                return $this->fail(4220, '图形验证码错误或已过期，请刷新重试');
+            if (!CaptchaService::verifyRequest($this->request)) {
+                return $this->fail(4220, $aliyun ? '滑块验证未通过，请重试' : '图形验证码错误或已过期，请刷新重试');
             }
         }
 

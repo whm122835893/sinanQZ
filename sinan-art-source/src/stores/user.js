@@ -53,11 +53,12 @@ export const useUserStore = defineStore('user', () => {
   }
 
   // ---- 发送验证码（真实接口：POST /api/auth/send-code；开发环境返回 debugCode）----
-  // 图形码参数可选：captcha_id + captcha_code（开关关闭时不校验）
-  async function sendCode(phone, scene = 'login', captchaId = '', captchaCode = '') {
+  // 图形码参数可选：local 模式 captcha_id + captcha_code；aliyun 模式 captcha_verify_param
+  async function sendCode(phone, scene = 'login', captchaId = '', captchaCode = '', captchaVerifyParam = '') {
     const body = { phone, scene }
     if (captchaId) body.captcha_id = captchaId
     if (captchaCode) body.captcha_code = captchaCode
+    if (captchaVerifyParam) body.captcha_verify_param = captchaVerifyParam
     const res = await request.post('/auth/send-code', body)
     return res // { debugCode?: '123456' }
   }

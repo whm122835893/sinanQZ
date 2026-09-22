@@ -34,9 +34,24 @@ class CaptchaController extends BaseController
         if (!isset(CaptchaService::SCENES[$scene])) {
             return $this->fail(4004, '未知验证码场景：' . $scene);
         }
+
+        $provider = CaptchaService::provider();
+        $aliyun = null;
+        if ($provider === CaptchaService::PROVIDER_ALIYUN) {
+            $cfg = CaptchaService::aliyunConfig();
+            // scene_id/prefix 是前端 SDK 初始化所需的无敏感信息，直接下发
+            $aliyun = [
+                'sceneId' => $cfg['scene_id'],
+                'prefix'  => $cfg['prefix'],
+                'region'  => 'cn',
+            ];
+        }
+
         return $this->success([
-            'enabled' => CaptchaService::isEnabled($scene),
-            'scene'   => $scene,
+            'enabled'  => CaptchaService::isEnabled($scene),
+            'scene'    => $scene,
+            'provider' => $provider,
+            'aliyun'   => $aliyun,
         ]);
     }
 }

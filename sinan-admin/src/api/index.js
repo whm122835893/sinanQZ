@@ -31,11 +31,12 @@ const s = (v) => (v === null || v === undefined ? '' : String(v))
 // 认证
 // ============================================================
 
-export function login({ username, password, captcha_id = '', captcha_code = '' }) {
+export function login({ username, password, captcha_id = '', captcha_code = '', captcha_verify_param = '' }) {
   // silent：登录页自行处理错误提示，避免双重弹窗
   const body = { username, password }
   if (captcha_id) body.captcha_id = captcha_id
   if (captcha_code) body.captcha_code = captcha_code
+  if (captcha_verify_param) body.captcha_verify_param = captcha_verify_param
   return post('/auth/login', body, { silent: true })
 }
 

@@ -1,14 +1,15 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useSiteStore } from '@/stores/site'
-import { useCaptcha } from '@/utils/useCaptcha'
+import { useCountdown } from '@/utils/useCountdown'
+import { showToast, showDialog } from 'vant'
 import AppInput from '@/components/AppInput.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import { useCountdown } from '@/utils/useCountdown'
-import { showToast, showDialog } from 'vant'
+import CaptchaDialog from '@/components/CaptchaDialog.vue'
+import { useCaptcha } from '@/utils/useCaptcha'
 
 const route = useRoute()
 const router = useRouter()
@@ -16,8 +17,9 @@ const user = useUserStore()
 const site = useSiteStore()
 const { counting, remain, start } = useCountdown(60)
 
-// 图形验证码（密码登录 + 短信发送均前置，各自独立场景开关）
-const captcha = useCaptcha('auth_login_password')
+// ===== 弹窗式验证码 =====
+const captchaRef = ref(null)
+const captcha = useCaptcha(captchaRef)
 
 const loginMode = ref('password') // 'password' | 'code'
 const phone = ref('')
@@ -35,20 +37,19 @@ const canSubmit = computed(() => {
 async function sendCode() {
   if (phone.value.length < 11) { showToast('请输入手机号'); return }
   if (counting.value) return
+  // 验证码前置（场景 auth_login_sms）
+  const payload = await captcha.require('auth_login_sms')
+  if (payload === null) return
   try {
-    // 图形码前置（场景 auth_login_sms）：需要时 inject captcha_id / captcha_code
-    const payload = captcha.inject({ phone: phone.value, scene: 'login' })
-    const res = await user.sendCode(payload.phone, payload.scene, payload.captcha_id, payload.captcha_code)
+    const res = await user.sendCode(phone.value, 'login',
+      payload.captcha_id, payload.captcha_code, payload.captcha_verify_param)
     start()
     showToast('验证码已发送')
     if (res?.debugCode) showToast(`开发验证码：${res.debugCode}`)
-    // 成功后图形码已被消费，刷新下一张
-    await captcha.refresh()
   } catch (e) {
-    // 图形码错误时自动刷新
-    if (e.message?.includes('图形验证码')) {
-      captcha.code.value = ''
-      await captcha.refresh()
+    // 验证码失效时重新打开弹窗
+    if (e.message?.includes('验证码')) {
+      captcha.invalidate('auth_login_sms')
     }
     showToast(e.message || '验证码发送失败')
   }
@@ -60,12 +61,16 @@ async function onLogin() {
   if (submitting.value) return
   submitting.value = true
   try {
-    const payload = captcha.inject({})
+    let captchaPayload = null
     if (loginMode.value === 'password') {
-      await user.login({ phone: phone.value, password: password.value, ...payload })
-    } else {
-      await user.login({ phone: phone.value, code: code.value })
+      captchaPayload = await captcha.require('auth_login_password')
+      if (captchaPayload === null) { submitting.value = false; return }
     }
+    const params = { phone: phone.value, ...(captchaPayload || {}) }
+    if (loginMode.value === 'password') params.password = password.value
+    else params.code = code.value
+
+    await user.login(params)
     showToast('登录成功')
     const redirect = route.query.redirect
     if (redirect) {
@@ -74,48 +79,37 @@ async function onLogin() {
       router.replace('/')
     }
   } catch (e) {
-    if (e.message?.includes('图形验证码')) {
-      captcha.code.value = ''
-      await captcha.refresh()
-    }
+    if (e.message?.includes('验证码')) captcha.invalidate()
     showToast(e.message || '登录失败')
   } finally {
     submitting.value = false
   }
 }
+
 function onRegister() { router.push('/auth/register') }
 function onForgot() { router.push('/auth/forgot') }
 
-// 兜底文案（后台未配置协议时使用）
+// 兜底文案
 const FALLBACK_AGREEMENT = '欢迎使用司南艺术数字藏品平台。请在使用前仔细阅读本协议，一旦使用即视为同意所有条款。'
 const FALLBACK_PRIVACY = '司南艺术数字藏品平台隐私政策：我们尊重并保护您的个人信息，严格按照法律法规收集、使用和保护您的信息。'
 
 function goAgreement(key) {
-  // key: 'agreement' | 'privacy'
   const title = key === 'agreement' ? '用户服务协议' : '隐私政策'
   const content = (key === 'agreement' ? site.agreement : site.privacy)
     || (key === 'agreement' ? FALLBACK_AGREEMENT : FALLBACK_PRIVACY)
-  showDialog({
-    title,
-    message: content,
-    confirmButtonText: '我知道了',
-    allowHtml: true
-  })
+  showDialog({ title, message: content, confirmButtonText: '我知道了', allowHtml: true })
 }
 
 onMounted(async () => {
   if (!site.loaded) site.init().catch(() => {})
-  await captcha.refresh()
-})
-
-// 切换登录模式时切换图形码场景（密码登录/短信发送各自独立开关）
-watch(loginMode, async (val) => {
-  await captcha.setScene(val === 'password' ? 'auth_login_password' : 'auth_login_sms')
 })
 </script>
 
 <template>
   <div class="auth page--no-tabbar">
+    <!-- 验证码弹窗（必须放在根 div 内：多根节点会导致 Transition leave 卡死 → 跳转白屏） -->
+    <CaptchaDialog ref="captchaRef" />
+
     <div class="auth__close" @click="router.back()">
       <AppIcon name="close" :size="24" color="#333" />
     </div>
@@ -139,29 +133,10 @@ watch(loginMode, async (val) => {
 
       <template v-if="loginMode === 'password'">
         <AppInput v-model="password" label="密码" type="password" password-toggle placeholder="请输入密码" />
-        <!-- 图形验证码（密码登录前置，后端开关关闭时不显示） -->
-        <template v-if="captcha.enabled">
-          <div class="captcha-row">
-            <AppInput v-model="captcha.code" label="图形验证码" type="tel" maxlength="4" placeholder="请输入验证码">
-              <template #suffix>
-                <img :src="captcha.image" class="captcha-img" alt="验证码" @click="captcha.refresh" />
-              </template>
-            </AppInput>
-          </div>
-        </template>
+        <!-- 图形验证码：改为弹窗模式，提交时自动 require('auth_login_password') -->
         <div class="auth__forgot" @click="onForgot">忘记登录密码？</div>
       </template>
       <template v-else>
-        <!-- 验证码登录：发送验证码按钮前置图形码 -->
-        <template v-if="captcha.enabled">
-          <div class="captcha-row">
-            <AppInput v-model="captcha.code" label="图形验证码" type="tel" maxlength="4" placeholder="请输入验证码">
-              <template #suffix>
-                <img :src="captcha.image" class="captcha-img" alt="验证码" @click="captcha.refresh" />
-              </template>
-            </AppInput>
-          </div>
-        </template>
         <AppInput v-model="code" label="验证码" type="tel" maxlength="6" placeholder="请输入验证码">
           <template #suffix>
             <button class="auth__code-btn" :class="{ disabled: counting }" @click="sendCode">
@@ -213,11 +188,4 @@ watch(loginMode, async (val) => {
   &.checked { background: $color-primary; border-color: $color-primary; }
 }
 .auth__agree-text { font-size: 12px; color: $color-text-secondary; em { color: $color-primary; font-style: normal; cursor: pointer; } }
-
-.captcha-row { width: 100%; }
-.captcha-img {
-  height: 32px; width: auto; cursor: pointer; border-radius: 4px;
-  border: 1px solid $color-border; display: block;
-  &:active { opacity: 0.7; }
-}
 </style>

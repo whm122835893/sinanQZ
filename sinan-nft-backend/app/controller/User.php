@@ -195,15 +195,18 @@ class User extends BaseController
             return $this->fail(1001, '图形码场景参数错误');
         }
 
-        // 图形码前置（按场景，开关关闭直接通过）
+        // 图形码前置（按场景，开关关闭直接通过；local/aliyun 服务商分流）
         if (CaptchaService::isEnabled($captchaScene)) {
-            $captchaId   = trim((string) $this->request->post('captcha_id', ''));
-            $captchaCode = trim((string) $this->request->post('captcha_code', ''));
-            if ($captchaId === '' || $captchaCode === '') {
-                return $this->fail(1001, '请先完成图形验证码');
+            $aliyun = CaptchaService::provider() === CaptchaService::PROVIDER_ALIYUN;
+            $missing = $aliyun
+                ? trim((string) $this->request->post('captcha_verify_param', '')) === ''
+                : (trim((string) $this->request->post('captcha_id', '')) === ''
+                    || trim((string) $this->request->post('captcha_code', '')) === '');
+            if ($missing) {
+                return $this->fail(1001, $aliyun ? '请先完成滑块验证' : '请先完成图形验证码');
             }
-            if (!(new CaptchaService())->verify($captchaId, $captchaCode, true)) {
-                return $this->fail(1001, '图形验证码错误或已过期，请刷新重试');
+            if (!CaptchaService::verifyRequest($this->request)) {
+                return $this->fail(1001, $aliyun ? '滑块验证未通过，请重试' : '图形验证码错误或已过期，请刷新重试');
             }
         }
 

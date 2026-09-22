@@ -1,85 +1,89 @@
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 import request from '@/utils/request'
 
 /**
- * 图形验证码复用 composable（C 端，支持场景级开关）
+ * C 端验证码 composable（与 CaptchaDialog.vue 配合使用）
  *
- * 场景表（与后端 CaptchaService::SCENES 约定一致）：
- *   auth_login_password  密码登录
- *   auth_login_sms       登录短信验证码发送
- *   auth_register        注册短信验证码发送
- *   auth_forgot          忘记密码短信验证码发送
- *   user_change_pwd      已登录修改登录密码
- *   user_op_pwd          设置/修改支付密码
- *   user_cancel          注销账户
- *   admin_login          管理后台登录（admin 端使用）
+ * 设计理念：业务页面只需要在模板里放一次 <CaptchaDialog>，
+ * 提交前调 `await captcha.require(scene)` —— 该方法自动：
+ *   1. 探测 /api/captcha/enabled 判断该场景是否需要验证
+ *   2. 若需要 → 调用 dialog.open(scene) 返回 Promise(用户完成验证)
+ *   3. 若不需要 → 直接 resolve(null)，业务跳过验证码字段
  *
- * 使用：
- *   const captcha = useCaptcha('auth_register')
- *   onMounted(() => captcha.refresh())
- *   // 提交时：captcha.inject() 自动拼 captcha_id/captcha_code
+ * 使用示例：
+ *   <template>
+ *     ...业务表单...
+ *     <CaptchaDialog ref="captchaRef" />
+ *   </template>
+ *
+ *   <script setup>
+ *   import CaptchaDialog from '@/components/CaptchaDialog.vue'
+ *   const captchaRef = ref(null)
+ *   const captcha = useCaptcha(captchaRef)
+ *
+ *   async function onSubmit() {
+ *     const payload = await captcha.require('auth_login_sms')
+ *     // payload = null  → 该场景未启用验证码，跳过
+ *     // payload = { captcha_id, captcha_code }   → local 图形码
+ *     // payload = { captcha_verify_param }       → aliyun
+ *     await api.sendCode({ ...form, ...(payload || {}) })
+ *   }
+ *   </script>
  */
-export function useCaptcha(scene = '') {
-  const enabled = ref(false)
-  const image = ref('')
-  const captchaId = ref('')
-  const code = ref('')
-  // 当前场景（切换登录模式时可通过 setScene 更新）
-  let currentScene = scene
 
-  async function refresh() {
+/**
+ * 缓存各场景的探测结果（同页面多个业务动作共用探测）
+ * key: scene
+ * value: Promise<detected>
+ */
+const detectedCache = {}
+
+function detectScene(scene) {
+  if (!scene) return Promise.resolve(null)
+  if (detectedCache[scene]) return detectedCache[scene]
+  // 注意：request 实例 baseURL 已是 /api，这里只写相对路径
+  detectedCache[scene] = request.get('/captcha/enabled', { params: { scene } })
+    .then((res) => res || { enabled: false, provider: 'local', mode: 'graphic' })
+    .catch(() => {
+      delete detectedCache[scene] // 探测失败不缓存，下次点击自动重试
+      return { enabled: false, provider: 'local', mode: 'graphic' }
+    })
+  return detectedCache[scene]
+}
+
+export function useCaptcha(dialogRef) {
+  /**
+   * 探测 + 弹窗，返回 Promise。
+   * @param {string} scene 场景 key（见 CaptchaService::SCENES）
+   * @returns {Promise<object|null>} null=未启用验证码/用户取消；object=payload
+   */
+  async function require(scene) {
+    if (!scene) return null
+
+    const detected = await detectScene(scene)
+    if (!detected?.enabled) return null
+
+    // 需要验证 → 打开弹窗
+    if (!dialogRef?.value || typeof dialogRef.value.open !== 'function') {
+      console.warn('[useCaptcha] CaptchaDialog ref 未就绪,请确保模板中已挂载')
+      return null
+    }
     try {
-      // 先探测该场景是否开启
-      const config = currentScene ? { params: { scene: currentScene } } : {}
-      const enabledRes = await request.get('/captcha/enabled', config)
-      enabled.value = !!enabledRes?.enabled
-      if (!enabled.value) {
-        image.value = ''
-        captchaId.value = ''
-        return
-      }
-      // 再拉图片（同样带场景，后端校验该场景确实开启）
-      const res = await request.get('/captcha/image', config)
-      if (res?.captcha_id && res?.image) {
-        captchaId.value = res.captcha_id
-        image.value = res.image
-        code.value = ''
-      }
+      const payload = await dialogRef.value.open({ scene, preDetected: detected })
+      return payload
     } catch (e) {
-      // 后端 4004 表示该场景关闭，其他错误降级为关闭状态
-      if (e.message?.includes('已关闭') || e.message?.includes('场景')) {
-        enabled.value = false
-        image.value = ''
-        captchaId.value = ''
-      } else {
-        console.warn('[captcha] refresh failed:', e.message)
-      }
+      // 用户取消或错误
+      return null
     }
   }
 
-  /**
-   * 切换场景（如登录页切换 密码/验证码 模式），并重新探测开关
-   */
-  async function setScene(nextScene) {
-    currentScene = nextScene
-    await refresh()
+  /** 强制刷新某个场景的探测缓存（切后台或网络恢复时调用） */
+  function invalidate(scene) {
+    if (scene) delete detectedCache[scene]
+    else Object.keys(detectedCache).forEach((k) => delete detectedCache[k])
   }
 
-  /**
-   * 提交时把图形码参数拼进 payload（该场景关闭时返回原 payload）
-   */
-  function inject(payload = {}) {
-    if (!enabled.value) return payload
-    return { ...payload, captcha_id: captchaId.value, captcha_code: code.value }
-  }
-
-  return {
-    enabled,
-    image,
-    captchaId,
-    code,
-    refresh,
-    setScene,
-    inject
-  }
+  return { require, invalidate }
 }
+
+export default useCaptcha

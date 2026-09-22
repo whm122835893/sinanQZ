@@ -341,11 +341,27 @@ class SystemController extends BaseController
     private const SECURITY_KEYS = [
         'captcha.enable'          => ['图形验证码总开关（1=开启 0=关闭，关闭后所有场景均关闭）', 'bool', 0, 1],
         'captcha.scenes'          => ['图形验证码场景开关（JSON：场景key→0/1）', 'json', 0, 1],
+        'captcha.provider'        => ['验证码服务商（local=本地图形码 aliyun=阿里云验证码2.0）', 'provider', 0, 1],
+        'captcha.mode'            => ['验证模式（slider=滑块行为验证 graphic=图形验证码）', 'mode', 0, 1],
+        'captcha.aliyun.scene_id' => ['阿里云验证码场景ID（SceneId，控制台场景列表获取）', 'text', 0, 1],
+        'captcha.aliyun.prefix'   => ['阿里云验证码身份标（prefix，控制台概览页获取，前端初始化用）', 'text', 0, 1],
+        'captcha.aliyun.access_key_id'     => ['阿里云 AccessKey ID（AES 加密落库，永不回显明文）', 'secret', 0, 1],
+        'captcha.aliyun.access_key_secret' => ['阿里云 AccessKey Secret（AES 加密落库，永不回显明文）', 'secret', 0, 1],
         'sms_daily_limit'         => ['每手机号短信验证码每日上限（条）', 'int', 1, 100],
         'admin_login_fail_limit'  => ['管理后台登录失败锁定阈值（次）', 'int', 1, 20],
         'admin_lock_minutes'      => ['账号锁定时长（分钟）', 'int', 1, 1440],
         'large_recharge_alert'    => ['大额充值风控告警阈值（元）', 'int', 1, 10000000],
         'cleanup_sms_required'    => ['平台清库短信二次确认', 'bool', 0, 1],
+    ];
+
+    /** 验证码服务商/阿里云配置键（securityConfig 单独区块渲染，不进普通参数列表） */
+    private const CAPTCHA_PROVIDER_KEYS = [
+        'captcha.provider',
+        'captcha.mode',
+        'captcha.aliyun.scene_id',
+        'captcha.aliyun.prefix',
+        'captcha.aliyun.access_key_id',
+        'captcha.aliyun.access_key_secret',
     ];
 
     /**
@@ -360,8 +376,9 @@ class SystemController extends BaseController
 
         $list = [];
         foreach (self::SECURITY_KEYS as $key => [$name, , $min, $max]) {
-            // captcha.scenes 由下方 captchaScenes 场景表单独渲染，不进普通参数列表
-            if ($key === 'captcha.scenes') {
+            // captcha.scenes 由下方 captchaScenes 场景表单独渲染；
+            // 服务商/阿里云配置由下方 captchaProvider 区块单独渲染，均不进普通参数列表
+            if ($key === 'captcha.scenes' || in_array($key, self::CAPTCHA_PROVIDER_KEYS, true)) {
                 continue;
             }
             // 未配置时的默认值：captcha.enable 默认开启（与 CaptchaService::isEnabled 一致）；
@@ -392,6 +409,32 @@ class SystemController extends BaseController
             ];
         }
 
+        // 附带验证码服务商区块（provider + mode + 阿里云参数，密钥仅回显掩码）
+        $aliyunCfg = CaptchaService::aliyunConfig();
+        $provider = ($map['captcha.provider'] ?? '') === CaptchaService::PROVIDER_ALIYUN
+            ? CaptchaService::PROVIDER_ALIYUN : CaptchaService::PROVIDER_LOCAL;
+        $ak = $aliyunCfg['access_key_id'];
+        $sk = $aliyunCfg['access_key_secret'];
+        $modeRaw = $map['captcha.mode'] ?? CaptchaService::MODE_GRAPHIC;
+        $mode = ($modeRaw === CaptchaService::MODE_SLIDER || $modeRaw === CaptchaService::MODE_GRAPHIC)
+            ? $modeRaw : CaptchaService::MODE_GRAPHIC;
+        // local 只支持 graphic,强制归一化
+        if ($provider === CaptchaService::PROVIDER_LOCAL) {
+            $mode = CaptchaService::MODE_GRAPHIC;
+        }
+        $captchaProvider = [
+            'provider' => $provider,
+            'mode'     => $mode,
+            'aliyun'   => [
+                'sceneId'     => $aliyunCfg['scene_id'],
+                'prefix'      => $aliyunCfg['prefix'],
+                'akMasked'    => $ak !== '' ? substr($ak, 0, 4) . str_repeat('*', max(0, strlen($ak) - 6)) . substr($ak, -2) : '',
+                'skMasked'    => $sk !== '' ? str_repeat('*', 8) . '(' . strlen($sk) . '字符)' : '',
+                'akConfigured' => $ak !== '',
+                'skConfigured' => $sk !== '',
+            ],
+        ];
+
         // 附带管理员账号安全概览
         $adminTotal   = Db::name('admin_users')->whereNull('deleted_at')->count();
         $adminLocked  = Db::name('admin_users')->whereNull('deleted_at')
@@ -406,6 +449,7 @@ class SystemController extends BaseController
         return $this->success([
             'configs' => $list,
             'captchaScenes' => $captchaScenes,
+            'captchaProvider' => $captchaProvider,
             'captchaEnabled' => CaptchaService::isEnabled(),
             'overview' => [
                 'adminTotal'    => $adminTotal,
@@ -418,6 +462,14 @@ class SystemController extends BaseController
 
     /**
      * PUT /admin/system/security-config/:key { value }
+     *
+     * 类型说明：
+     *   bool    0/1
+     *   json    场景开关 JSON（captcha.scenes）
+     *   provider local/aliyun；切 aliyun 前强制校验阿里云参数齐全
+     *   text    普通文本（阿里云 scene_id/prefix，长度 ≤100）
+     *   secret  密钥（AES 加密落库；传空串 = 保持不变）
+     *   int     数值范围校验
      */
     public function securitySave()
     {
@@ -428,6 +480,8 @@ class SystemController extends BaseController
             return $this->fail(4220, '不支持的安全参数：' . $key);
         }
         [$name, $type, $min, $max] = self::SECURITY_KEYS[$key];
+
+        $auditValue = $value; // 审计日志展示值（secret 类型脱敏）
 
         if ($type === 'bool') {
             if (!in_array($value, ['0', '1'], true)) {
@@ -449,10 +503,51 @@ class SystemController extends BaseController
             }
             // 归一化：补齐缺失场景（默认 '1'），按键排序保证可读
             $normalized = [];
-            foreach (CaptchaService::SCENES as $scene => $name) {
+            foreach (CaptchaService::SCENES as $scene => $sceneName) {
                 $normalized[$scene] = (string) ($map[$scene] ?? '1');
             }
             $value = json_encode($normalized, JSON_UNESCAPED_UNICODE);
+        } elseif ($type === 'provider') {
+            if (!in_array($value, [CaptchaService::PROVIDER_LOCAL, CaptchaService::PROVIDER_ALIYUN], true)) {
+                return $this->fail(4220, '参数 ' . $key . ' 仅允许 local / aliyun');
+            }
+            // 切换到 aliyun 前强制校验参数齐全（防止切完线上验证全挂）
+            if ($value === CaptchaService::PROVIDER_ALIYUN) {
+                $cfg = CaptchaService::aliyunConfig();
+                $missing = [];
+                if ($cfg['scene_id'] === '') $missing[] = '场景ID';
+                if ($cfg['prefix'] === '') $missing[] = '身份标(prefix)';
+                if ($cfg['access_key_id'] === '') $missing[] = 'AccessKey ID';
+                if ($cfg['access_key_secret'] === '') $missing[] = 'AccessKey Secret';
+                if ($missing) {
+                    return $this->fail(4220, '切换阿里云验证码前请先配置：' . implode('、', $missing));
+                }
+            }
+        } elseif ($type === 'mode') {
+            if (!in_array($value, [CaptchaService::MODE_SLIDER, CaptchaService::MODE_GRAPHIC], true)) {
+                return $this->fail(4220, '参数 ' . $key . ' 仅允许 slider / graphic');
+            }
+            // local 只支持 graphic,强制归一化
+            if (CaptchaService::provider() === CaptchaService::PROVIDER_LOCAL && $value !== CaptchaService::MODE_GRAPHIC) {
+                return $this->fail(4220, '当前服务商为 local，仅支持 graphic 模式');
+            }
+        } elseif ($type === 'text') {
+            if ($value === '' || mb_strlen($value) > 100) {
+                return $this->fail(4220, '参数 ' . $key . ' 不能为空且长度不超过 100');
+            }
+            if (!preg_match('/^[A-Za-z0-9_\-]+$/', $value)) {
+                return $this->fail(4220, '参数 ' . $key . ' 仅允许字母/数字/中划线/下划线');
+            }
+        } elseif ($type === 'secret') {
+            // 空串 = 保持不变（前端不回显明文，仅重新输入时提交）
+            if ($value === '') {
+                return $this->success(null, '参数未变更');
+            }
+            if (strlen($value) < 8 || strlen($value) > 100) {
+                return $this->fail(4220, '参数 ' . $key . ' 长度需在 8~100 之间');
+            }
+            $value = aes_encrypt($value);
+            $auditValue = '******（已更新密钥）';
         } else {
             if (!ctype_digit($value) || (int) $value < $min || (int) $value > $max) {
                 return $this->fail(4220, '参数 ' . $key . ' 需为 ' . $min . '~' . $max . ' 的整数');
@@ -478,7 +573,7 @@ class SystemController extends BaseController
         // 清理 CaptchaService 的配置缓存（cfg_*，10s TTL），保证保存后立即生效
         Cache::delete('cfg_' . $key);
 
-        $this->audit('system', 'security_save', '更新安全策略「' . $name . '」= ' . $value, ['key' => $key, 'value' => $value]);
+        $this->audit('system', 'security_save', '更新安全策略「' . $name . '」= ' . $auditValue, ['key' => $key, 'value' => $auditValue]);
         return $this->success(null, '安全策略已更新并实时生效');
     }
 }

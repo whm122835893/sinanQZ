@@ -6,9 +6,13 @@ namespace app\service;
 /**
  * 图形验证码服务
  *
- * 设计参考 gregwar/captcha（GitHub 20k+ stars，Packagist 500k+ 下载），
- * 但使用 PHP 内置 GD imagestring 作为后备驱动——在未编译 FreeType 的环境下仍可工作。
- * 生产环境如需更强抗 OCR 能力，可在 build() 中切换为 Gregwar\Captcha\CaptchaBuilder。
+ * 服务商（captcha.provider，后台「安全策略」可切换）：
+ *   local  = 自研图形验证码（GD 渲染，本类 build/verify，默认）
+ *   aliyun = 阿里云验证码 2.0（前端滑块拿 captcha_verify_param，
+ *            后端调 VerifyIntelligentCaptcha 二次校验，ACS3-HMAC-SHA256 签名）
+ *
+ * 总开关 captcha.enable 与场景开关 captcha.scenes 对两种服务商均生效
+ * （provider 只决定验证方式，不决定是否需要验证）。
  *
  * 存储：验证码明文 sha256 后存 file cache（不暴露原值给前端），
  *       前端只拿 captcha_id，提交时比对哈希。
@@ -16,6 +20,18 @@ namespace app\service;
  */
 final class CaptchaService
 {
+    /** 服务商：自研图形码 */
+    public const PROVIDER_LOCAL = 'local';
+
+    /** 服务商：阿里云验证码 2.0 */
+    public const PROVIDER_ALIYUN = 'aliyun';
+
+    /** 验证模式：滑块行为验证（aliyun 特有） */
+    public const MODE_SLIDER = 'slider';
+
+    /** 验证模式：图形字符码（local / aliyun 均支持） */
+    public const MODE_GRAPHIC = 'graphic';
+
     /** @var int 字符位数 */
     private int $length = 4;
 
@@ -62,28 +78,21 @@ final class CaptchaService
      */
     public static function isEnabled(?string $scene = null): bool
     {
-        // 1) 总开关
-        $key = 'captcha.enable';
-        $cached = \think\facade\Cache::get('cfg_' . $key);
-        if ($cached !== null) {
-            $enabled = (bool) $cached;
-        } else {
-            try {
-                $val = \think\facade\Db::name('system_configs')
-                    ->where('config_key', $key)
-                    ->value('config_value');
-                $enabled = $val !== null ? (bool) $val : true; // 没配置默认开启
-            } catch (\Throwable $e) {
-                \think\facade\Log::warning('[captcha] isEnabled 查询失败，按开启处理: ' . $e->getMessage());
-                $enabled = true;
-            }
-            \think\facade\Cache::set('cfg_' . $key, $enabled, 10);
+        // 1) 总开关（每次直查 DB，让后台切换即时生效）
+        try {
+            $val = \think\facade\Db::name('system_configs')
+                ->where('config_key', 'captcha.enable')
+                ->value('config_value');
+            $enabled = $val !== null ? (bool) $val : true; // 没配置默认开启
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[captcha] isEnabled 查询失败，按开启处理: ' . $e->getMessage());
+            $enabled = true;
         }
         if (!$enabled || $scene === null) {
             return $enabled;
         }
 
-        // 2) 场景开关（captcha.scenes JSON）
+        // 2) 场景开关
         return self::isSceneEnabled($scene);
     }
 
@@ -92,24 +101,19 @@ final class CaptchaService
      */
     public static function isSceneEnabled(string $scene): bool
     {
-        $key = 'captcha.scenes';
-        $cached = \think\facade\Cache::get('cfg_' . $key);
-        if ($cached === null) {
-            try {
-                $raw = \think\facade\Db::name('system_configs')
-                    ->where('config_key', $key)
-                    ->value('config_value');
-                $cached = (string) ($raw ?? '');
-            } catch (\Throwable $e) {
-                \think\facade\Log::warning('[captcha] scenes 查询失败，按开启处理: ' . $e->getMessage());
-                $cached = '';
-            }
-            \think\facade\Cache::set('cfg_' . $key, $cached, 10);
+        try {
+            $raw = \think\facade\Db::name('system_configs')
+                ->where('config_key', 'captcha.scenes')
+                ->value('config_value');
+            $scenesRaw = (string) ($raw ?? '');
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[captcha] scenes 查询失败，按开启处理: ' . $e->getMessage());
+            $scenesRaw = '';
         }
-        if ($cached === '') {
+        if ($scenesRaw === '') {
             return true; // 未配置 → 默认开启
         }
-        $map = json_decode($cached, true);
+        $map = json_decode($scenesRaw, true);
         if (!is_array($map) || !array_key_exists($scene, $map)) {
             return true; // 场景未单独配置 → 默认开启
         }
@@ -127,6 +131,189 @@ final class CaptchaService
             $result[$scene] = self::isEnabled($scene);
         }
         return $result;
+    }
+
+    // ============================================================
+    // 服务商（captcha.provider）：local / aliyun
+    // ============================================================
+
+    /**
+     * 当前验证码服务商（每次直查 DB，后台切换即时生效）。
+     * 未配置 / 非法值 → local（fail-safe：保证验证能力始终可用）。
+     */
+    public static function provider(): string
+    {
+        $key = 'captcha.provider';
+        try {
+            $val = \think\facade\Db::name('system_configs')
+                ->where('config_key', $key)
+                ->value('config_value');
+        } catch (\Throwable $e) {
+            $val = null;
+        }
+        return $val === self::PROVIDER_ALIYUN ? self::PROVIDER_ALIYUN : self::PROVIDER_LOCAL;
+    }
+
+    /**
+     * 当前验证模式（每次直查 DB）。
+     *   provider=local 时忽略该字段，实际固定为 graphic；
+     *   provider=aliyun 时可切 slider（滑块行为验证） / graphic（阿里云图形验证码）。
+     * 未配置 / 非法值 → graphic。
+     */
+    public static function mode(): string
+    {
+        try {
+            $val = \think\facade\Db::name('system_configs')
+                ->where('config_key', 'captcha.mode')
+                ->value('config_value');
+        } catch (\Throwable $e) {
+            $val = null;
+        }
+        if (self::provider() === self::PROVIDER_LOCAL) {
+            return self::MODE_GRAPHIC; // local 只支持 graphic
+        }
+        return $val === self::MODE_SLIDER ? self::MODE_SLIDER : self::MODE_GRAPHIC;
+    }
+
+    /**
+     * 读取阿里云验证码配置（每次直查库，securitySave 保存后即时生效）。
+     *
+     * @return array{scene_id: string, prefix: string, access_key_id: string, access_key_secret: string}
+     *         ak/sk 为 AES 解密后的明文；未配置项为空串
+     */
+    public static function aliyunConfig(): array
+    {
+        $keys = [
+            'captcha.aliyun.scene_id',
+            'captcha.aliyun.prefix',
+            'captcha.aliyun.access_key_id',
+            'captcha.aliyun.access_key_secret',
+        ];
+        try {
+            $rows = \think\facade\Db::name('system_configs')
+                ->whereIn('config_key', $keys)
+                ->column('config_value', 'config_key');
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[captcha] aliyunConfig 查询失败: ' . $e->getMessage());
+            $rows = [];
+        }
+
+        $decrypt = function (?string $encrypted): string {
+            if ($encrypted === null || $encrypted === '') {
+                return '';
+            }
+            return (string) (\aes_decrypt($encrypted) ?? '');
+        };
+
+        return [
+            'scene_id'          => trim((string) ($rows['captcha.aliyun.scene_id'] ?? '')),
+            'prefix'            => trim((string) ($rows['captcha.aliyun.prefix'] ?? '')),
+            'access_key_id'     => $decrypt(isset($rows['captcha.aliyun.access_key_id']) ? (string) $rows['captcha.aliyun.access_key_id'] : null),
+            'access_key_secret' => $decrypt(isset($rows['captcha.aliyun.access_key_secret']) ? (string) $rows['captcha.aliyun.access_key_secret'] : null),
+        ];
+    }
+
+    /**
+     * 统一校验入口：按当前服务商分流（供各业务前置校验点调用）。
+     *
+     * local ：请求携带 captcha_id + captcha_code（一次性消费防重放）
+     * aliyun：请求携带 captcha_verify_param（前端滑块回调透传，后端调阿里云二次校验）
+     *
+     * @param \think\Request $request 业务请求（param() 兼容 JSON body 与表单）
+     */
+    public static function verifyRequest(\think\Request $request): bool
+    {
+        if (self::provider() === self::PROVIDER_ALIYUN) {
+            $param = trim((string) $request->param('captcha_verify_param', ''));
+            return $param !== '' && self::aliyunVerify($param);
+        }
+
+        $captchaId   = trim((string) $request->param('captcha_id', ''));
+        $captchaCode = trim((string) $request->param('captcha_code', ''));
+        return $captchaId !== '' && $captchaCode !== ''
+            && (new self())->verify($captchaId, $captchaCode, true);
+    }
+
+    /**
+     * 调用阿里云验证码 2.0 服务端校验（VerifyIntelligentCaptcha，V3 签名）。
+     *
+     * fail-closed：配置缺失 / 网络异常 / 响应异常 / 校验不通过 一律返回 false。
+     *
+     * @param string $captchaVerifyParam 前端滑块验证通过回调透传的验证参数（禁止修改）
+     */
+    public static function aliyunVerify(string $captchaVerifyParam): bool
+    {
+        if (mb_strlen($captchaVerifyParam) > 8192) {
+            return false; // 防御：异常超长参数直接拒绝
+        }
+
+        $cfg = self::aliyunConfig();
+        if ($cfg['scene_id'] === '' || $cfg['access_key_id'] === '' || $cfg['access_key_secret'] === '') {
+            \think\facade\Log::error('[captcha] 阿里云验证码配置不完整（scene_id/ak/sk），拒绝放行');
+            return false;
+        }
+
+        $host = 'captcha.cn-shanghai.aliyuncs.com';
+        $body = 'CaptchaVerifyParam=' . rawurlencode($captchaVerifyParam)
+              . '&SceneId=' . rawurlencode($cfg['scene_id']);
+        $bodyHash = hash('sha256', $body);
+
+        // 参与签名的公共头（按名称升序）
+        $headers = [
+            'host'                   => $host,
+            'x-acs-action'           => 'VerifyIntelligentCaptcha',
+            'x-acs-content-sha256'   => $bodyHash,
+            'x-acs-date'             => gmdate('Y-m-d\TH:i:s\Z'),
+            'x-acs-signature-nonce'  => bin2hex(random_bytes(16)),
+            'x-acs-version'          => '2023-03-05',
+        ];
+
+        // CanonicalRequest = METHOD \n URI \n Query \n CanonicalHeaders \n SignedHeaders \n BodyHash
+        $canonicalHeaders = '';
+        foreach ($headers as $name => $value) {
+            $canonicalHeaders .= $name . ':' . trim($value) . "\n";
+        }
+        $signedHeaders = implode(';', array_keys($headers));
+        $canonicalRequest = "POST\n/\n\n" . $canonicalHeaders . "\n" . $signedHeaders . "\n" . $bodyHash;
+
+        // StringToSign = Algorithm \n HexEncode(Hash(CanonicalRequest))
+        $stringToSign = 'ACS3-HMAC-SHA256' . "\n" . hash('sha256', $canonicalRequest);
+
+        // Signature = HexEncode(HMAC-SHA256(Secret, StringToSign))
+        $signature = hash_hmac('sha256', $stringToSign, $cfg['access_key_secret']);
+        $headers['Authorization'] = 'ACS3-HMAC-SHA256 Credential=' . $cfg['access_key_id']
+            . ',SignedHeaders=' . $signedHeaders . ',Signature=' . $signature;
+        $headers['content-type'] = 'application/x-www-form-urlencoded';
+
+        $headerLines = [];
+        foreach ($headers as $name => $value) {
+            $headerLines[] = $name . ': ' . $value;
+        }
+
+        $ch = curl_init('https://' . $host . '/');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_HTTPHEADER     => $headerLines,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT        => 5,
+        ]);
+        $raw      = curl_exec($ch);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $curlErr  = curl_error($ch);
+
+        if ($raw === false || $httpCode !== 200) {
+            \think\facade\Log::error('[captcha] 阿里云校验请求失败：HTTP ' . $httpCode . ' ' . $curlErr);
+            return false;
+        }
+
+        $resp = json_decode((string) $raw, true);
+        $ok = is_array($resp) && ($resp['VerifyResult'] ?? null) === true;
+        if (!$ok) {
+            \think\facade\Log::warning('[captcha] 阿里云校验未通过：' . mb_substr((string) $raw, 0, 500));
+        }
+        return $ok;
     }
 
     /**

@@ -44,8 +44,10 @@ class Auth extends BaseController
     }
 
     /**
-     * 图形码前置校验（支持场景级开关）。开关关闭时直接通过。
-     * 校验成功后立即消费（consume=true），防重放。
+     * 图形码前置校验（支持场景级开关 + 服务商分流）。开关关闭时直接通过。
+     *
+     * local ：captcha_id + captcha_code，校验成功后立即消费（防重放）
+     * aliyun：captcha_verify_param，调阿里云 VerifyIntelligentCaptcha 二次校验
      *
      * @param string|null $scene 图形码场景 key（null 时只看总开关）
      * @return \think\Response|void 校验失败返回响应，成功继续执行
@@ -55,12 +57,22 @@ class Auth extends BaseController
         if (!CaptchaService::isEnabled($scene)) {
             return;
         }
+        if (CaptchaService::provider() === CaptchaService::PROVIDER_ALIYUN) {
+            $hasParam = trim((string) $this->request->post('captcha_verify_param', '')) !== '';
+            if (!$hasParam) {
+                return $this->fail(1001, '请先完成滑块验证');
+            }
+            if (!CaptchaService::verifyRequest($this->request)) {
+                return $this->fail(1001, '滑块验证未通过，请重试');
+            }
+            return;
+        }
         $captchaId   = trim((string) $this->request->post('captcha_id', ''));
         $captchaCode = trim((string) $this->request->post('captcha_code', ''));
         if ($captchaId === '' || $captchaCode === '') {
             return $this->fail(1001, '请先完成图形验证码');
         }
-        if (!(new CaptchaService())->verify($captchaId, $captchaCode, true)) {
+        if (!CaptchaService::verifyRequest($this->request)) {
             return $this->fail(1001, '图形验证码错误或已过期，请刷新重试');
         }
     }
