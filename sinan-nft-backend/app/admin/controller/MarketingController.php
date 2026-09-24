@@ -1974,17 +1974,9 @@ class MarketingController extends BaseController
             return $this->fail(4220, '没有待发放的用户（无资格记录或已全部发放，请先生成资格名单）');
         }
 
-        // 库存校验
+        // 库存校验（事务外预检仅为快速失败，权威判定在下方锁内重算）
         $c = Db::name('collectibles')->where('id', $act['collectible_id'])->find();
-        $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
-              - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
-        // 无总限量时仅按库存池与待发放人数计算（避免 PHP_INT_MAX 参与除法转 int 溢出）
-        $canIssue = (int) floor($pool / (int) $act['quantity_per_user']);
-        if ($act['total_limit'] !== null) {
-            $remainLimit = max(0, (int) $act['total_limit'] - (int) $act['issued_count']);
-            $canIssue = min($canIssue, (int) floor($remainLimit / (int) $act['quantity_per_user']));
-        }
-        $canIssue = min($canIssue, count($eligibles));
+        $canIssue = $this->airdropIssueCapacity($c, $act, count($eligibles));
         if ($canIssue <= 0) {
             return $this->fail(4220, '库存池或总限量不足以发放（可发放人数 ' . $canIssue . '）');
         }
@@ -1993,6 +1985,31 @@ class MarketingController extends BaseController
         $issued = 0;
         Db::startTrans();
         try {
+            // 锁内权威复核：活动行 → 资格行 → 藏品行依次加锁，
+            // 防两管理员（或双击重放）并发执行同一活动击穿库存池/总限量
+            $act = Db::name('airdrop_activities')->where('id', $activityId)->lock(true)->find();
+            if (!$act || $act['status'] !== 'active') {
+                Db::rollback();
+                return $this->fail(4220, '活动状态已变化，请刷新后重试');
+            }
+            $eligibles = Db::name('airdrop_eligibilities')
+                ->where('activity_id', $activityId)->where('status', 'eligible')
+                ->order('id')->lock(true)->select()->toArray();
+            if (!$eligibles) {
+                Db::rollback();
+                return $this->fail(4220, '没有待发放的用户（可能已被并发发放）');
+            }
+            $c = Db::name('collectibles')->where('id', $act['collectible_id'])->lock(true)->find();
+            if (!$c) {
+                Db::rollback();
+                return $this->fail(4040, '藏品不存在');
+            }
+            $canIssue = $this->airdropIssueCapacity($c, $act, count($eligibles));
+            if ($canIssue <= 0) {
+                Db::rollback();
+                return $this->fail(4220, '库存池或总限量不足以发放（可能已被并发消耗）');
+            }
+
             $taskNo = 'ADA' . date('ymdHis') . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
             $taskId = (int) Db::name('airdrop_tasks')->insertGetId([
                 'task_no'        => $taskNo,
@@ -2039,11 +2056,14 @@ class MarketingController extends BaseController
                         'updated_at'  => $now,
                     ]);
                 }
-                Db::name('airdrop_eligibilities')->where('id', $elig['id'])->update([
+                $affected = Db::name('airdrop_eligibilities')->where('id', $elig['id'])->where('status', 'eligible')->update([
                     'status'            => 'issued',
                     'airdrop_record_id' => $lastRecordId,
                     'updated_at'        => $now,
                 ]);
+                if ($affected !== 1) {
+                    throw new \Exception('资格状态已变化，发放中断');
+                }
                 $inboxRows[] = [
                     'user_id'        => (int) $elig['user_id'],
                     'type'           => 'airdrop',
@@ -2067,13 +2087,18 @@ class MarketingController extends BaseController
             }
 
             $issuedQty = $issued * (int) $act['quantity_per_user'];
-            Db::name('collectibles')->where('id', $act['collectible_id'])->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($issuedQty)),
-                'circulate'        => Db::raw('circulate + ' . (float)($issuedQty)),
-                'updated_at'       => $now,
-            ]);
+            $affected = Db::name('collectibles')->where('id', $act['collectible_id'])
+                ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . (int) $issuedQty)
+                ->update([
+                    'airdropped_count' => Db::raw('airdropped_count + ' . (int) $issuedQty),
+                    'circulate'        => Db::raw('circulate + ' . (int) $issuedQty),
+                    'updated_at'       => $now,
+                ]);
+            if ($affected !== 1) {
+                throw new \Exception('库存守恒校验失败，发放中断');
+            }
             Db::name('airdrop_activities')->where('id', $activityId)->update([
-                'issued_count' => Db::raw('issued_count + ' . (float)($issuedQty)),
+                'issued_count' => Db::raw('issued_count + ' . (int) $issuedQty),
                 'updated_at'   => $now,
             ]);
             Db::name('airdrop_tasks')->where('id', $taskId)->update(['success_count' => $issued * (int) $act['quantity_per_user']]);
@@ -2081,12 +2106,30 @@ class MarketingController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '发放失败：' . $e->getMessage());
+            \think\facade\Log::error('[admin][marketing][airdrop_issue] activity=' . $activityId . ' err=' . $e->getMessage());
+            return $this->fail(5000, '发放失败，请稍后重试');
         }
 
         $this->audit('marketing', 'airdrop_issue', '活动空投发放「' . $act['name'] . '」' . $issued . ' 人',
             ['task_no' => $taskNo], 'airdrop_activity', $activityId);
         return $this->success(['issued' => $issued, 'task_no' => $taskNo], '已向 ' . $issued . ' 位用户发放完成');
+    }
+
+    /**
+     * 活动空投可发放人数：min(库存池可发, 总限量可发, 待发放资格数)
+     */
+    private function airdropIssueCapacity(array $c, array $act, int $eligibleCount): int
+    {
+        $pool = (int) $c['edition'] - (int) $c['sold'] - (int) $c['locked_quantity']
+              - (int) $c['reserved_count'] - (int) $c['airdropped_count'] - (int) $c['destroyed_count'];
+        // 无总限量时仅按库存池与待发放人数计算（避免 PHP_INT_MAX 参与除法转 int 溢出）
+        $perUser  = max(1, (int) $act['quantity_per_user']);
+        $canIssue = (int) floor($pool / $perUser);
+        if ($act['total_limit'] !== null) {
+            $remainLimit = max(0, (int) $act['total_limit'] - (int) $act['issued_count']);
+            $canIssue = min($canIssue, (int) floor($remainLimit / $perUser));
+        }
+        return min($canIssue, $eligibleCount);
     }
 
     // ==================== 注册活动（实名前N名档位奖励） ====================

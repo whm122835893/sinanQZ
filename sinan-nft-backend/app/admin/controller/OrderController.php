@@ -357,35 +357,63 @@ class OrderController extends BaseController
             return $this->fail(4220, '退款金额不合法（0 < amount ≤ ' . $order['total_price'] . '）');
         }
 
-        // 持仓校验：订单资产仍在用户名下（未被转赠/寄售）
-        $heldCount = Db::name('user_collectibles')->where('order_id', $id)
-            ->whereIn('status', ['held', 'frozen', 'consigned'])->count();
-        $needCount = (int) Db::name('user_collectibles')->where('order_id', $id)->count();
-        if ($heldCount < $needCount) {
-            return $this->fail(4220, '订单资产已发生流转（转赠/消耗），不满足全额退款条件，请走人工工单');
-        }
-
         $now      = date('Y-m-d H:i:s');
         $refundNo = 'RF' . date('ymdHis') . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
-        $payment  = Db::name('payments')->where('order_id', $id)->where('status', 'success')->order('id', 'desc')->find();
 
-        $refundId = (int) Db::name('refunds')->insertGetId([
-            'refund_no'      => $refundNo,
-            'order_id'       => $id,
-            'payment_id'     => $payment ? (int) $payment['id'] : 0,
-            'user_id'        => $order['user_id'],
-            'amount'         => $amount,
-            'reason'         => mb_substr($reason, 0, 255),
-            'status'         => 1, // 待审批
-            'applicant_id'   => $this->adminId(),
-            'applicant_name' => $this->adminName(),
-            'ip'             => (string) $this->request->ip(),
-            'created_at'     => $now,
-            'updated_at'     => $now,
-        ]);
+        Db::startTrans();
+        try {
+            // 行锁内复查：check-then-insert 非原子时，并发双提交可各建一条退款单 → 双重退款
+            $locked = Db::name('orders')->where('id', $id)->lock(true)->find();
+            if (!$locked || $locked['status'] !== 'completed') {
+                Db::rollback();
+                return $this->fail(4220, '订单状态已变化，请刷新后重试');
+            }
+            // 复查含 4=已退款：原实现漏判，已完成退款单后可再建一笔造成双退
+            $existing = Db::name('refunds')->where('order_id', $id)->whereIn('status', [1, 2, 3, 4])->lock(true)->count();
+            if ($existing > 0) {
+                Db::rollback();
+                return $this->fail(4220, '该订单已存在处理中/已完成的退款申请');
+            }
 
-        // 订单进入退款中
-        Db::name('orders')->where('id', $id)->update(['status' => 'refunding', 'updated_at' => $now]);
+            // 持仓校验：订单资产仍在用户名下（未被转赠/寄售）
+            $heldCount = Db::name('user_collectibles')->where('order_id', $id)
+                ->whereIn('status', ['held', 'frozen', 'consigned'])->count();
+            $needCount = (int) Db::name('user_collectibles')->where('order_id', $id)->count();
+            if ($heldCount < $needCount) {
+                Db::rollback();
+                return $this->fail(4220, '订单资产已发生流转（转赠/消耗），不满足全额退款条件，请走人工工单');
+            }
+
+            $payment = Db::name('payments')->where('order_id', $id)->where('status', 'success')->order('id', 'desc')->find();
+
+            $refundId = (int) Db::name('refunds')->insertGetId([
+                'refund_no'      => $refundNo,
+                'order_id'       => $id,
+                'payment_id'     => $payment ? (int) $payment['id'] : 0,
+                'user_id'        => $locked['user_id'],
+                'amount'         => $amount,
+                'reason'         => mb_substr($reason, 0, 255),
+                'status'         => 1, // 待审批
+                'applicant_id'   => $this->adminId(),
+                'applicant_name' => $this->adminName(),
+                'ip'             => (string) $this->request->ip(),
+                'created_at'     => $now,
+                'updated_at'     => $now,
+            ]);
+
+            // 订单进入退款中（条件更新兜底，锁外状态漂移时中断）
+            $affected = Db::name('orders')->where('id', $id)->where('status', 'completed')
+                ->update(['status' => 'refunding', 'updated_at' => $now]);
+            if ($affected !== 1) {
+                Db::rollback();
+                return $this->fail(4220, '订单状态已变化，请刷新后重试');
+            }
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            \think\facade\Log::error('[admin][order][refund] order=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '退款发起失败，请稍后重试');
+        }
 
         $this->audit('order', 'refund_create', '发起退款 ' . $refundNo . '（订单 ' . $order['order_no'] . '，金额 ' . $amount . '）',
             ['reason' => $reason, 'amount' => $amount], 'refund', $refundId);

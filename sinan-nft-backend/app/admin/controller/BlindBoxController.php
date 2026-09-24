@@ -546,9 +546,14 @@ class BlindBoxController extends BaseController
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
-            Db::name('collectibles')->where('id', $c['id'])
+            // 守恒条件原子更新 + 影响行数校验：并发销毁时守卫失败必须中断，否则销毁记录与计数背离
+            $affected = Db::name('collectibles')->where('id', $c['id'])
                 ->whereRaw('edition - sold - locked_quantity - airdropped_count - destroyed_count >= ' . $quantity)
-                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (float)($quantity)), 'updated_at' => $now]);
+                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (int) $quantity), 'updated_at' => $now]);
+            if ($affected !== 1) {
+                Db::rollback();
+                return $this->fail(4220, '可销毁库存池不足（可能已被并发销毁），请刷新后重试');
+            }
 
             Db::name('destroy_records')->insert([
                 'target_type' => 2, // 2=盲盒
@@ -564,7 +569,8 @@ class BlindBoxController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '销毁失败：' . $e->getMessage());
+            \think\facade\Log::error('[admin][blindbox][destroy] id=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '销毁失败，请稍后重试');
         }
 
         $this->audit('blindbox', 'destroy', '销毁盲盒库存「' . $c['name'] . '」' . $quantity . ' 份',
@@ -659,6 +665,19 @@ class BlindBoxController extends BaseController
 
         Db::startTrans();
         try {
+            // 行锁 + 锁内复查：防并发空投双双通过事务外预检击穿 edition 守恒
+            $lockedC = Db::name('collectibles')->where('id', $c['id'])->lock(true)->find();
+            if (!$lockedC) {
+                Db::rollback();
+                return $this->fail(4040, '盲盒资产不存在');
+            }
+            $poolNow = (int) $lockedC['edition'] - (int) $lockedC['sold'] - (int) $lockedC['locked_quantity']
+                     - (int) $lockedC['airdropped_count'] - (int) $lockedC['destroyed_count'];
+            if ($poolNow < $need) {
+                Db::rollback();
+                return $this->fail(4220, '库存池不足：可空投 ' . $poolNow . ' 份，需要 ' . $need . ' 份（可能已被并发空投）');
+            }
+
             $taskId = (int) Db::name('airdrop_tasks')->insertGetId([
                 'task_no'        => $taskNo,
                 'target_type'    => 2,
@@ -720,11 +739,16 @@ class BlindBoxController extends BaseController
                 throw new \Exception('全部发放失败');
             }
 
-            Db::name('collectibles')->where('id', $c['id'])->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($success)),
-                'circulate'        => Db::raw('circulate + ' . (float)($success)),
-                'updated_at'       => $now,
-            ]);
+            $affected = Db::name('collectibles')->where('id', $c['id'])
+                ->whereRaw('edition - sold - locked_quantity - airdropped_count - destroyed_count >= ' . (int) $success)
+                ->update([
+                    'airdropped_count' => Db::raw('airdropped_count + ' . (int) $success),
+                    'circulate'        => Db::raw('circulate + ' . (int) $success),
+                    'updated_at'       => $now,
+                ]);
+            if ($affected !== 1) {
+                throw new \Exception('库存守恒校验失败，空投中断');
+            }
             Db::name('airdrop_tasks')->where('id', $taskId)->update([
                 'success_count' => $success,
                 'fail_count'    => $need - $success,
@@ -733,7 +757,8 @@ class BlindBoxController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '空投失败：' . $e->getMessage());
+            \think\facade\Log::error('[admin][blindbox][airdrop] id=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '空投失败，请稍后重试');
         }
 
         $this->audit('blindbox', 'airdrop', '独立空投盲盒「' . $c['name'] . '」' . $success . ' 份（' . $successUsers . ' 人 × ' . $quantity . ' 份）',

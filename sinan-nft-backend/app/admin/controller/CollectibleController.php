@@ -643,9 +643,14 @@ class CollectibleController extends BaseController
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
-            Db::name('collectibles')->where('id', $id)
+            // 守恒条件原子更新并校验影响行数：事务外预检在并发下双双通过会击穿 edition 守恒
+            $affected = Db::name('collectibles')->where('id', $id)
                 ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . $quantity)
-                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (float)($quantity)), 'updated_at' => $now]);
+                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (int) $quantity), 'updated_at' => $now]);
+            if ($affected !== 1) {
+                Db::rollback();
+                return $this->fail(4220, '可销毁库存池不足（可能已被并发销毁），请刷新后重试');
+            }
 
             Db::name('destroy_records')->insert([
                 'target_type' => 1, // 1=藏品
@@ -661,7 +666,8 @@ class CollectibleController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '销毁失败：' . $e->getMessage());
+            \think\facade\Log::error('[admin][collectible][destroy] id=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '销毁失败，请稍后重试');
         }
 
         $this->audit('collectible', 'destroy', '销毁库存「' . $c['name'] . '」' . $quantity . ' 份',
@@ -795,6 +801,19 @@ class CollectibleController extends BaseController
 
         Db::startTrans();
         try {
+            // 行锁 + 锁内复查：事务外预检在两个管理员并发空投同一藏品时会双双通过，击穿 edition 守恒
+            $lockedC = Db::name('collectibles')->where('id', $id)->lock(true)->find();
+            if (!$lockedC) {
+                Db::rollback();
+                return $this->fail(4040, '藏品不存在');
+            }
+            $poolNow = (int) $lockedC['edition'] - (int) $lockedC['sold'] - (int) $lockedC['locked_quantity']
+                     - (int) $lockedC['reserved_count'] - (int) $lockedC['airdropped_count'] - (int) $lockedC['destroyed_count'];
+            if ($poolNow < $need) {
+                Db::rollback();
+                return $this->fail(4220, '库存池不足：可空投 ' . $poolNow . ' 份，需要 ' . $need . ' 份（可能已被并发空投）');
+            }
+
             $taskId = (int) Db::name('airdrop_tasks')->insertGetId([
                 'task_no'        => $taskNo,
                 'target_type'    => 1,
@@ -860,12 +879,17 @@ class CollectibleController extends BaseController
                 throw new \Exception('全部发放失败');
             }
 
-            // 更新藏品统计
-            Db::name('collectibles')->where('id', $id)->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($success)),
-                'circulate'        => Db::raw('circulate + ' . (float)($success)),
-                'updated_at'       => $now,
-            ]);
+            // 更新藏品统计（守恒条件 + 影响行数校验，行锁保护下正常必为 1）
+            $affected = Db::name('collectibles')->where('id', $id)
+                ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . (int) $success)
+                ->update([
+                    'airdropped_count' => Db::raw('airdropped_count + ' . (int) $success),
+                    'circulate'        => Db::raw('circulate + ' . (int) $success),
+                    'updated_at'       => $now,
+                ]);
+            if ($affected !== 1) {
+                throw new \Exception('库存守恒校验失败，空投中断');
+            }
 
             Db::name('airdrop_tasks')->where('id', $taskId)->update([
                 'success_count' => $success,
@@ -906,7 +930,8 @@ class CollectibleController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '空投失败：' . $e->getMessage());
+            \think\facade\Log::error('[admin][collectible][airdrop] id=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '空投失败，请检查发放明细后重试');
         }
 
         $this->audit('collectible', 'airdrop', '独立空投「' . $c['name'] . '」' . $success . ' 份（' . $successUsers . ' 人 × ' . $quantity . ' 份）',
