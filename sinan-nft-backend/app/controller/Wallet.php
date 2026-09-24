@@ -62,15 +62,21 @@ class Wallet extends BaseController
 
     /**
      * POST /api/wallet/recharge
-     * 模拟充值
+     * 模拟充值（仅开发联调 APP_DEBUG=true；生产禁止，真实充值必须走支付渠道回调入账）
      */
     public function recharge()
     {
+        if (!(bool) env('APP_DEBUG', false)) {
+            return $this->fail(4003, '充值请通过第三方支付渠道');
+        }
+
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
-        $amount = (float) $this->request->post('amount', 0);
+        $amount = round((float) $this->request->post('amount', 0), 2);
         if ($amount < 1) return $this->fail(1001, '充值金额必须大于0');
+        // 联调环境单笔上限，防误操作产生脏巨额余额
+        if ($amount > 10000) return $this->fail(1001, '模拟充值单笔不得超过 10000 元');
 
         $now = date('Y-m-d H:i:s.v');
 
@@ -78,14 +84,14 @@ class Wallet extends BaseController
         try {
             $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
             Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'     => Db::raw('balance + ' . (float)($amount)),
-                'available'   => Db::raw('available + ' . (float)($amount)),
+                'balance'     => Db::raw('balance + ' . $amount),
+                'available'   => Db::raw('available + ' . $amount),
                 'updated_at'  => $now,
             ]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $userId,
                 'trans_type'    => 'recharge',
-                'title'         => '充值',
+                'title'         => '模拟充值(联调)',
                 'direction'     => 1,
                 'amount'        => $amount,
                 'balance_after' => (float) $wallet['balance'] + $amount,
@@ -102,7 +108,8 @@ class Wallet extends BaseController
             return $this->success(['transactionId' => $transactionId]);
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5001, '充值失败：' . $e->getMessage());
+            \think\facade\Log::error('[wallet][recharge] uid=' . $userId . ' err=' . $e->getMessage());
+            return $this->fail(5001, '充值失败，请稍后重试');
         }
     }
 }

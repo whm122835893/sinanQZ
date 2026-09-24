@@ -127,11 +127,33 @@ class BlindBoxes extends BaseController
             // 导致开盒后管理端「开盒对账」恒报 opened_count ≠ quantity_distributed）
             Db::name('blind_boxes')->where('id', (int) $uc['bb_id'])->inc('opened_count')->update();
 
-            // 更新奖品已发放
-            Db::name('blind_box_items')->where('id', $winner['id'])->update([
-                'quantity_distributed' => Db::raw('quantity_distributed + 1'),
-                'updated_at'           => $now,
-            ]);
+            // 更新奖品已发放：读-改-写在多用户并发开盒（各自锁自己的 uc 行，互不排斥）下会超发限量奖，
+            // 改为守恒条件原子扣减并校验影响行数；中奖奖品被抢完时按剩余候选顺延
+            $itemById = array_column($available, null, 'id');
+            $tryOrder = array_merge([$winner['id']], array_column($available, 'id'));
+            $pickedId = null;
+            $tried    = [];
+            foreach ($tryOrder as $itemId) {
+                $itemId = (int) $itemId;
+                if (isset($tried[$itemId])) continue;
+                $tried[$itemId] = true;
+                $affected = Db::name('blind_box_items')
+                    ->where('id', $itemId)
+                    ->whereRaw('(quantity_limit IS NULL OR quantity_distributed < quantity_limit)')
+                    ->update([
+                        'quantity_distributed' => Db::raw('quantity_distributed + 1'),
+                        'updated_at'           => $now,
+                    ]);
+                if ($affected) {
+                    $pickedId = $itemId;
+                    break;
+                }
+            }
+            if (!$pickedId) {
+                Db::rollback();
+                return $this->fail(3001, '盲盒奖品已发放完毕');
+            }
+            $winner = $itemById[$pickedId];
 
             // 生成奖品资产：先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
             $prizeCollectibleId = (int) $winner['prize_collectible_id'];
@@ -175,7 +197,8 @@ class BlindBoxes extends BaseController
             ]);
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5001, '开盒失败：' . $e->getMessage());
+            \think\facade\Log::error('[blindbox][open] uid=' . $userId . ' err=' . $e->getMessage());
+            return $this->fail(5001, '开盒失败，请稍后重试');
         }
     }
 }
