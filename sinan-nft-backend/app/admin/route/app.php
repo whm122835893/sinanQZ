@@ -19,6 +19,7 @@ Route::group('auth', function () {
 
 // 图形验证码（公开，无需登录）
 Route::get('captcha/image',   'CaptchaController/image');
+Route::post('captcha/verify', 'CaptchaController/verify');
 Route::get('captcha/enabled', 'CaptchaController/enabled');
 
 // 站点品牌（登录页展示站点名/头像，未登录可访问）

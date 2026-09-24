@@ -93,7 +93,7 @@ async function submitLocalCode() {
   if (!localId.value || !localCode.value) return
   try {
     // 预校验（不消费）
-    const res = await fetch('/api/captcha/verify', {
+    const res = await fetch('/api/admin/captcha/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ captcha_id: localId.value, captcha_code: localCode.value })

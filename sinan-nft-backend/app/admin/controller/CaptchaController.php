@@ -28,6 +28,23 @@ class CaptchaController extends BaseController
         return $this->success($result);
     }
 
+    /**
+     * POST /captcha/verify
+     * 预校验图形码（不消费），供前端登录弹窗即时反馈
+     */
+    public function verify()
+    {
+        $id   = (string) $this->request->post('captcha_id', '');
+        $code = (string) $this->request->post('captcha_code', '');
+
+        if (!CaptchaService::isEnabled('admin_login')) {
+            return $this->success(['ok' => true, 'skipped' => true]);
+        }
+        $svc = new CaptchaService();
+        $ok  = $svc->verify($id, $code, false);
+        return $this->success(['ok' => $ok, 'expired' => !$ok && !$svc->exists($id)]);
+    }
+
     public function enabled()
     {
         $scene = trim((string) $this->request->param('scene', 'admin_login'));
