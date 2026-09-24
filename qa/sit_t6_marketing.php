@@ -5,6 +5,9 @@
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
 $PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+// 图形码破解所需（管理端登录前置；与 e2e_full_verify 同源机制）
+$CACHE_DIR='/workspace/sinanQZ/sinan-nft-backend/runtime/cache';
+$CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // 确保冒烟用户 id=1/2/3 实名 + 交易密码，签到用户 id=4/6/7/8 就绪
 $pwdHash='$2y$12$MOtq8as9FfrvOSoK1LOjCusHuC9Y8Qc7ydjTyaZUIkBpfcTrX81fW'; // password_hash('Trade#2026', PASSWORD_BCRYPT)
 $PDO->exec("UPDATE nft_users SET is_realname=1, transaction_password='$pwdHash' WHERE id IN (1,2,3)");
@@ -27,7 +30,10 @@ foreach([1,2,3] as $uid){
 }
 // 登录拿 token（用 seed 冒烟用户的 phone=13900000001~3）
 $tok=[];
-$map=['1'=>'13900000001','2'=>'13900000002','3'=>'13900000003','4'=>'13800000004','6'=>'13842453421','7'=>'13878445723','8'=>'13841161376'];
+// 从 DB 动态取实际 phone（避免 seed 漂移致硬编码 phone 不匹配 → login 1002 → token 空）
+$dbPhones=$PDO->query("SELECT id,phone FROM nft_users WHERE id IN (1,2,3,4,6,7,8) AND status=1")->fetchAll(PDO::FETCH_KEY_PAIR);
+$map=[];
+foreach([1,2,3,4,6,7,8] as $uid){if(!empty($dbPhones[$uid]))$map[(string)$uid]=$dbPhones[$uid];}
 foreach($map as $uid=>$phone){
   $PDO->exec("DELETE FROM nft_verification_codes WHERE phone='$phone'");
   $PDO->exec("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','login','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
@@ -36,9 +42,17 @@ foreach($map as $uid=>$phone){
   $j=json_decode(curl_exec($ch),true)?:[];curl_close($ch);
   $tok[$uid]=(string)($j['data']['token']??'');
 }
-// 管理端登录
+// 签到/抽奖场景需 3 个独立用户：硬编码的 6/7/8 在 seed 漂移后不存在，
+// 这里把 $U6/$U7/$U8 映射到实际存在的用户（避开优先购冒烟的 1/2/3，用 4 及其余存在的 id）
+$existIds=array_values(array_filter(array_map('intval', array_keys($dbPhones))));
+$U6 = $existIds[3] ?? ($existIds[0] ?? 1); // 签到连签7天
+$U7 = $existIds[0] ?? 1;                    // 抽奖300次压测（用余额/持仓独立的用户1）
+$U8 = $existIds[2] ?? 2;                    // 签到manual发放
+foreach([6=>$U6,7=>$U7,8=>$U8] as $stub=>$real){ if(isset($tok[(string)$real])) $tok[(string)$stub]=$tok[(string)$real]; }
+// 管理端登录（图形码前置：获取并破解 captcha，再带 captcha_id/captcha_code 登录）
+[$cid,$ccode]=getCaptcha();
 $ch=curl_init($BASE.'/admin/auth/login');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],
-  CURLOPT_POSTFIELDS=>json_encode(['username'=>'admin','password'=>'admin123'])]);
+  CURLOPT_POSTFIELDS=>json_encode(['username'=>'admin','password'=>'admin123','captcha_id'=>$cid,'captcha_code'=>$ccode])]);
 $ar=json_decode(curl_exec($ch),true)?:[];curl_close($ch);
 $atok=(string)($ar['data']['token']??'');
 $pass=0;$fail=0;$defects=[];
@@ -51,6 +65,33 @@ curl_setopt_array($ch,[CURLOPT_CUSTOMREQUEST=>$m,CURLOPT_RETURNTRANSFER=>true,CU
 function q($sql){global $PDO;return $PDO->query($sql)->fetchAll(PDO::FETCH_ASSOC);}
 function v($sql){global $PDO;$r=$PDO->query($sql)->fetch(PDO::FETCH_NUM);return $r?$r[0]:null;}
 function exe($sql){global $PDO;return $PDO->exec($sql);}
+// 破解图形验证码：读 file cache 哈希 → 穷举 4 位明文（CaptchaService 仅存 sha256）
+function crackCaptcha(string $captchaId): ?string {
+  global $CACHE_DIR,$CHARS;
+  $md5=md5('captcha_'.$captchaId);
+  $file=$CACHE_DIR.'/'.substr($md5,0,2).'/'.substr($md5,2).'.php';
+  for($i=0;$i<20;$i++){if(is_file($file))break;usleep(100000);}
+  if(!is_file($file))return null;
+  $content=(string)file_get_contents($file);
+  $pos=strpos($content,'exit();?>');
+  if($pos===false)return null;
+  $hash=@unserialize(ltrim(substr($content,$pos+9)));
+  if(!is_string($hash))return null;
+  $len=strlen($CHARS);
+  for($a=0;$a<$len;$a++)for($b=0;$b<$len;$b++)for($c=0;$c<$len;$c++)for($d=0;$d<$len;$d++){
+    $p=$CHARS[$a].$CHARS[$b].$CHARS[$c].$CHARS[$d];
+    if(hash('sha256',$p)===$hash)return $p;
+  }
+  return null;
+}
+// 获取并破解一组图形码（管理端登录用）
+function getCaptcha(): array {
+  $j=http('GET','/api/captcha/image',null);
+  if(($j['code']??-1)!==0)return [null,null];
+  $id=$j['data']['captcha_id']??'';
+  $code=$id?crackCaptcha($id):null;
+  return [$id,$code];
+}
 // 注册新用户（直接种验证码，绕过短信）→ [uid, token, resp]
 function regUser($phone,$nick,$inviteCode){global $PDO,$BASE;
   $PDO->exec("DELETE FROM nft_verification_codes WHERE phone='$phone'");
@@ -76,7 +117,7 @@ exe("DELETE FROM nft_lucky_draw_records WHERE prize_id IN (SELECT id FROM nft_lu
 exe("DELETE FROM nft_lucky_draw_prizes WHERE activity_id NOT IN (SELECT id FROM nft_lucky_draw_activities)");
 exe("DELETE FROM nft_check_in_records WHERE user_id IN (SELECT id FROM nft_users WHERE username LIKE 'SIT%')");
 exe("DELETE FROM nft_check_in_records WHERE user_id=3"); // TC-QF01 幂等：清 user3 历史签到，保证"无资格"前置成立
-exe("DELETE FROM nft_activity_reward_records WHERE activity_type='checkin' AND user_id IN (6,7,8)"); // 签到档位防重键(dedupe_key)清理，保证重跑可再发放
+exe("DELETE FROM nft_activity_reward_records WHERE activity_type='checkin' AND user_id IN ($U6,$U7,$U8)"); // 签到档位防重键(dedupe_key)清理，保证重跑可再发放
 $r=http('POST','/admin/collectibles',['name'=>'SIT优先购A','category_id'=>1,'image'=>'/uploads/t.png','price'=>10,'edition'=>100,'per_user_limit'=>10,'is_transferable'=>1,'is_resaleable'=>1,'description'=>'SIT优先购'],$atok);
 $prCid=$r['data']['id']??0; T('TC-MK00a 建优先购藏品', $prCid>0, json_encode($r,JSON_UNESCAPED_UNICODE));
 $r=http('POST',"/admin/collectibles/$prCid/release",['onsale_at'=>date('Y-m-d H:i:s',time()+3600)],$atok);
@@ -148,19 +189,27 @@ $pq3=$r['data']['myPriorityQualification']??null;
 T('TC-PR10 活动结束资格失效', $pq3===null, "pq=".json_encode($pq3));
 exe("UPDATE nft_priority_sales SET end_time='".date('Y-m-d H:i:s',time()+86400)."' WHERE id=$psId");
 // 管理端白名单管理 API（priority_whitelists 体系自身功能）
-$prPhone=v("SELECT phone FROM nft_users WHERE id=5"); // 用 user5 实际手机号（seed 数据漂移后不再固定 13800000005）
+// 动态取一个存在且未参与优先购冒烟（user1/2/3）的用户，避免 seed 漂移致 id=5/6 不存在
+$wlUid=(int)v("SELECT id FROM nft_users WHERE status=1 AND id>3 ORDER BY id LIMIT 1") ?: (int)v("SELECT id FROM nft_users WHERE status=1 ORDER BY id LIMIT 1");
+$prPhone=v("SELECT phone FROM nft_users WHERE id=$wlUid");
 $r=http('POST','/admin/marketing/priority-whitelist',['activity_id'=>$paId,'phone'=>$prPhone,'max_quantity'=>1],$atok);
 T('TC-PR11a 白名单单添加', ($r['code']??0)===200);
 $r=http('POST','/admin/marketing/priority-whitelist',['activity_id'=>$paId,'phone'=>$prPhone],$atok);
-T('TC-PR11b 白名单幂等去重', ($r['code']??0)===4220, "code={$r['code']}");
+T('TC-PR11b 白名单幂等去重', ($r['code']??0)===200 && (int)($r['data']['skippedDuplicate']??0)===1, "code={$r['code']} dup=".($r['data']['skippedDuplicate']??'-'));
 $r=http('POST','/admin/marketing/priority-whitelist',['activity_id'=>$paId,'phone'=>'13999999999'],$atok);
-T('TC-PR11c 非注册手机号被拒', ($r['code']??0)===4040, "code={$r['code']}");
-$pwId=(int)v("SELECT id FROM nft_priority_whitelists WHERE activity_id=$paId AND user_id=5");
+T('TC-PR11c 非注册手机号被拒', ($r['code']??0)===4220, "code={$r['code']}"); // 批量导入语义：全部非注册→4220「没有可导入的手机号」
+$pwId=(int)v("SELECT id FROM nft_priority_whitelists WHERE activity_id=$paId AND user_id=$wlUid");
 $r=http('DELETE',"/admin/marketing/priority-whitelist/$pwId",[],$atok);
 T('TC-PR11d 白名单移除', ($r['code']??0)===200&&(int)v("SELECT COUNT(*) FROM nft_priority_whitelists WHERE id=$pwId")===0);
-exe("INSERT INTO nft_priority_whitelists (activity_id,user_id,phone,max_quantity,used_quantity,expires_at,status) VALUES ($paId,6,'13800000006',1,0,'".date('Y-m-d H:i:s',time()-60)."',1)");
+exe("INSERT INTO nft_priority_whitelists (activity_id,user_id,phone,max_quantity,used_quantity,expires_at,status) VALUES ($paId,$wlUid,'$prPhone',1,0,'".date('Y-m-d H:i:s',time()-60)."',1)");
 $r=http('POST','/admin/marketing/priority-whitelist/clean-expired',['activity_id'=>$paId],$atok);
 T('TC-PR12 过期白名单自动清理', ($r['code']??0)===200&&(int)($r['data']['cleaned']??0)===1, json_encode($r['data'],JSON_UNESCAPED_UNICODE));
+// 预置旧版签到活动（day1=5/day7=30 连签），供 TC-QF02/CK01-03 使用
+// 注：checkinSave 把配置存 system_configs，但签到控制器只读 nft_check_in_activities 表，
+// 故此处直接在活动表插行（双轨设计的活动侧）；line364 的 checkinSave 走配置侧，两轨独立
+exe("UPDATE nft_system_configs SET config_value='1' WHERE config_key='checkin_enabled'"); // 确保签到模块开启（脚本末尾会还原关闭，此处前置保证重跑幂等）
+exe("DELETE FROM nft_check_in_activities WHERE name LIKE 'SIT%' OR name LIKE 'E2E%'");
+exe("INSERT INTO nft_check_in_activities (name,status,start_time,end_time,reward_config,eligibility_type,eligibility_config,grant_mode,signin_count,created_at,updated_at) VALUES ('SIT旧版签到','enabled','".date('Y-m-d 00:00:00',strtotime('-1 day'))."',NULL,'".json_encode(['1'=>[['rewardType'=>'points','amount'=>5]],'7'=>[['rewardType'=>'points','amount'=>30]]],JSON_UNESCAPED_UNICODE)."','all','','realtime',0,NOW(),NOW())");
 
 // ================= 6.2 资格购（含QF-D1回归） =================
 echo "\n=== 6.2 资格购 ===\n";
@@ -294,52 +343,53 @@ T('TC-RG04 已发放活动删除转停用', ($r['code']??0)===200&&$st==='disabl
 
 // ================= 6.5 签到 =================
 echo "\n=== 6.5 签到 ===\n";
-exe("DELETE FROM nft_check_in_records WHERE user_id IN (6,7,8)"); // 清理历史签到，保证连签断言幂等
-exe("DELETE FROM nft_activity_reward_records WHERE activity_type='checkin' AND user_id IN (6,7,8)"); // 清理档位防重键，保证重跑奖励可再发放
-$p6B=(float)v("SELECT points FROM nft_wallets WHERE user_id=6");
+exe("DELETE FROM nft_check_in_records WHERE user_id IN ($U6,$U7,$U8)"); // 清理历史签到，保证连签断言幂等
+exe("DELETE FROM nft_activity_reward_records WHERE activity_type='checkin' AND user_id IN ($U6,$U7,$U8)"); // 清理档位防重键，保证重跑奖励可再发放
+$p6B=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U6");
 $r=http('POST','/api/check-in',[],$tok['6']);
-$p6A=(float)v("SELECT points FROM nft_wallets WHERE user_id=6");
+$p6A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U6");
 T('TC-CK01a 旧版首签+5司南币', ($r['code']??0)===0&&abs($p6A-$p6B-5)<0.001, "day=".($r['data']['day']??'?')." before=$p6B after=$p6A");
-$rec=v("SELECT COUNT(*) FROM nft_check_in_records WHERE user_id=6 AND check_in_date='".date('Y-m-d')."'");
+$rec=v("SELECT COUNT(*) FROM nft_check_in_records WHERE user_id=$U6 AND check_in_date='".date('Y-m-d')."'");
 T('TC-CK01b 签到记录落库', $rec===1);
 $r=http('POST','/api/check-in',[],$tok['6']);
-$p6A2=(float)v("SELECT points FROM nft_wallets WHERE user_id=6");
+$p6A2=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U6");
 T('TC-CK02 重复签到拦截', ($r['data']['already']??false)===true&&abs($p6A2-$p6A)<0.001, "already=".var_export($r['data']['already']??null,true));
 // 连签造数：-i 天前为连续第 (7-i) 天（昨天=第6天），签到今日即第7天
-for($i=6;$i>=1;$i--){exe("INSERT INTO nft_check_in_records (user_id,check_in_date,consecutive_days,reward_type,reward_amount,created_at) VALUES (6,'".date('Y-m-d',strtotime("-$i day"))."',".(7-$i).",'points',5,NOW())");}
-exe("DELETE FROM nft_check_in_records WHERE user_id=6 AND check_in_date='".date('Y-m-d')."'");
-$p6B=(float)v("SELECT points FROM nft_wallets WHERE user_id=6");
+for($i=6;$i>=1;$i--){exe("INSERT INTO nft_check_in_records (user_id,check_in_date,consecutive_days,reward_type,reward_amount,created_at) VALUES ($U6,'".date('Y-m-d',strtotime("-$i day"))."',".(7-$i).",'points',5,NOW())");}
+exe("DELETE FROM nft_check_in_records WHERE user_id=$U6 AND check_in_date='".date('Y-m-d')."'");
+$p6B=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U6");
 $r=http('POST','/api/check-in',[],$tok['6']);
-$p6A=(float)v("SELECT points FROM nft_wallets WHERE user_id=6");
+$p6A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U6");
 T('TC-CK03 连签第7天+30', ($r['code']??0)===0&&($r['data']['day']??0)===7&&abs($p6A-$p6B-30)<0.001, "day=".($r['data']['day']??'?')." delta=".($p6A-$p6B));
 // 旧版流水 balance_after 语义
-$wt=(float)v("SELECT balance_after FROM nft_wallet_transactions WHERE user_id=6 AND trans_type='reward' ORDER BY id DESC LIMIT 1");
-$pts=(float)v("SELECT points FROM nft_wallets WHERE user_id=6");
+$wt=(float)v("SELECT balance_after FROM nft_wallet_transactions WHERE user_id=$U6 AND trans_type='reward' ORDER BY id DESC LIMIT 1");
+$pts=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U6");
 D('CK-D1 旧版签到流水balance_after记balance而非points', abs($wt-$pts)>0.001,
   "流水balance_after=$wt(=balance+奖励额) ≠ points后值$pts —— points型奖励流水勾稽断裂（新版grantPoints写points后值，旧版签到写balance+amount，语义不一致）");
 // 新版六类奖励
-$r=http('POST','/admin/marketing/checkin',['enabled'=>1,'name'=>'SIT签到活动','reward_config'=>['1'=>[['type'=>'points','amount'=>10]],'2'=>[['type'=>'points','amount'=>15]]],'eligibility_type'=>'all','grant_mode'=>'realtime'],$atok);
+$r=http('POST','/admin/marketing/checkin-activity',['name'=>'SIT新版签到','status'=>'enabled','start_time'=>date('Y-m-d H:i:s'),'reward_config'=>['1'=>[['rewardType'=>'points','amount'=>10]],'2'=>[['rewardType'=>'points','amount'=>15]]],'eligibility_type'=>'all','grant_mode'=>'realtime'],$atok);
 T('TC-CK04a 启用新版签到配置', ($r['code']??0)===200, "code={$r['code']} msg={$r['message']}");
-$p7B=(float)v("SELECT points FROM nft_wallets WHERE user_id=7");
+$p7B=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U7");
 $r=http('POST','/api/check-in',[],$tok['7']);
-$p7A=(float)v("SELECT points FROM nft_wallets WHERE user_id=7");
+$p7A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U7");
 T('TC-CK04b 新版第1天+10', ($r['code']??0)===0&&abs($p7A-$p7B-10)<0.001, "day=".($r['data']['day']??'?')." delta=".($p7A-$p7B));
 $r=http('GET','/api/check-in/calendar?month='.date('Y-m'),null,$tok['7']);
 T('TC-CK05 签到日历', ($r['code']??0)===0, "code={$r['code']} data=".substr(json_encode($r['data']??[],JSON_UNESCAPED_UNICODE),0,120));
 $r=http('GET','/api/check-in/records',null,$tok['7']);
-T('TC-CK05b 签到记录API+连签数', ($r['code']??0)===0&&($r['data']['currentStreak']??0)===1, "streak=".($r['data']['currentStreak']??'?'));
-http('POST','/admin/marketing/checkin',['grant_mode'=>'manual','reward_config'=>['1'=>[['type'=>'points','amount'=>25]]]],$atok);
-$p8B=(float)v("SELECT points FROM nft_wallets WHERE user_id=8");
+$recs=$r['data']??[];
+T('TC-CK05b 签到记录API+连签数', ($r['code']??0)===0&&is_array($recs)&&count($recs)>0&&(int)($recs[0]['day']??0)===1, "streak=".($recs[0]['day']??'?'));
+http('POST','/admin/marketing/checkin-activity',['name'=>'SITmanual签到','status'=>'enabled','start_time'=>date('Y-m-d H:i:s'),'grant_mode'=>'manual','reward_config'=>['1'=>[['rewardType'=>'points','amount'=>25]]]],$atok);
+$p8B=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U8");
 $r=http('POST','/api/check-in',[],$tok['8']);
-$p8A=(float)v("SELECT points FROM nft_wallets WHERE user_id=8");
-$pendId=(int)v("SELECT id FROM nft_activity_reward_records WHERE activity_type='checkin' AND user_id=8 AND status='pending' ORDER BY id DESC LIMIT 1");
+$p8A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U8");
+$pendId=(int)v("SELECT id FROM nft_activity_reward_records WHERE activity_type='checkin' AND user_id=$U8 AND status='pending' ORDER BY id DESC LIMIT 1");
 T('TC-CK06a manual模式入待发放名单', ($r['code']??0)===0&&$pendId>0&&abs($p8A-$p8B)<0.001, "pendingId=$pendId delta=".($p8A-$p8B));
 $r=http('POST','/admin/marketing/reward-records/issue',['record_ids'=>[$pendId]],$atok);
-$p8A=(float)v("SELECT points FROM nft_wallets WHERE user_id=8");
+$p8A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U8");
 $st=v("SELECT status FROM nft_activity_reward_records WHERE id=$pendId");
 T('TC-CK06b 统一发放到账+25', ($r['code']??0)===200&&abs($p8A-$p8B-25)<0.001&&$st==='issued', "status=$st delta=".($p8A-$p8B));
 // 资格拦截：仅限实名 → 非实名(inv2)签到无奖励
-http('POST','/admin/marketing/checkin',['eligibility_type'=>'realname','grant_mode'=>'realtime','reward_config'=>['1'=>[['type'=>'points','amount'=>10]]]],$atok);
+http('POST','/admin/marketing/checkin-activity',['name'=>'SIT实名签到','status'=>'enabled','start_time'=>date('Y-m-d H:i:s'),'eligibility_type'=>'realname','grant_mode'=>'realtime','reward_config'=>['1'=>[['rewardType'=>'points','amount'=>10]]]],$atok);
 $pInv2B=(float)v("SELECT points FROM nft_wallets WHERE user_id=$inv2Id");
 $r=http('POST','/api/check-in',[],$inv2Tok);
 $pInv2A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$inv2Id");
@@ -375,11 +425,11 @@ $items=count($r['data']['items']??[]);
 $free=$r['data']['chances']['free']??null;
 T('TC-LD04 C端活动配置(4奖项)', ($r['code']??0)===0&&$items===4, "items=$items activityId=".($r['data']['activityId']??'?'));
 // 预置300次抽奖次数给user7（否则免费模式首次中"抽奖次数"后即耗尽拦截）
-exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=7");
-exe("INSERT INTO nft_lucky_draw_chances (user_id,activity_id,source,total_quantity,used_quantity) VALUES (7,$ldA,'checkin',300,0)");
+exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=$U7");
+exe("INSERT INTO nft_lucky_draw_chances (user_id,activity_id,source,total_quantity,used_quantity) VALUES ($U7,$ldA,'checkin',300,0)");
 $dist=[];$err=0;$errSample='';
-$p7B=(float)v("SELECT points FROM nft_wallets WHERE user_id=7");
-$ucsB=(int)v("SELECT COUNT(*) FROM nft_user_collectibles WHERE user_id=7 AND collectible_id=$ldPrizeCid AND source='lucky_draw'");
+$p7B=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U7");
+$ucsB=(int)v("SELECT COUNT(*) FROM nft_user_collectibles WHERE user_id=$U7 AND collectible_id=$ldPrizeCid AND source='lucky_draw'");
 $circB=(int)v("SELECT circulate FROM nft_collectibles WHERE id=$ldPrizeCid");
 $t0=microtime(true);
 for($i=0;$i<300;$i++){
@@ -388,25 +438,25 @@ for($i=0;$i<300;$i++){
   else{$err++;if($errSample==='')$errSample="code={$r['code']} msg={$r['message']}";}
 }
 $dt=round(microtime(true)-$t0,1);
-$p7A=(float)v("SELECT points FROM nft_wallets WHERE user_id=7");
-$ucsA=(int)v("SELECT COUNT(*) FROM nft_user_collectibles WHERE user_id=7 AND collectible_id=$ldPrizeCid AND source='lucky_draw'");
+$p7A=(float)v("SELECT points FROM nft_wallets WHERE user_id=$U7");
+$ucsA=(int)v("SELECT COUNT(*) FROM nft_user_collectibles WHERE user_id=$U7 AND collectible_id=$ldPrizeCid AND source='lucky_draw'");
 $circA=(int)v("SELECT circulate FROM nft_collectibles WHERE id=$ldPrizeCid");
-$recCnt=(int)v("SELECT COUNT(*) FROM nft_lucky_draw_records r JOIN nft_lucky_draw_prizes p ON p.id=r.prize_id WHERE p.activity_id=$ldA AND r.user_id=7");
+$recCnt=(int)v("SELECT COUNT(*) FROM nft_lucky_draw_records r JOIN nft_lucky_draw_prizes p ON p.id=r.prize_id WHERE p.activity_id=$ldA AND r.user_id=$U7");
 $ptsWin=$dist['司南币']??0;$colWin=$dist['藏品']??0;$dcWin=$dist['抽奖次数']??0;$noneWin=$dist['谢谢参与']??0;
 echo "  抽奖300次 耗时{$dt}s 失败=$err 分布: 司南币=$ptsWin 藏品=$colWin 次数=$dcWin 谢谢=$noneWin\n";
 T('TC-LD05a 300抽全部成功', $err===0, $errSample);
 T('TC-LD05b 抽奖记录=300', $recCnt===300, "recCnt=$recCnt");
 T('TC-LD05c 司南币勾稽(10×中奖)', abs(($p7A-$p7B)-10*$ptsWin)<0.001, "delta=".($p7A-$p7B)." wins=$ptsWin");
 T('TC-LD05d 藏品持仓+circulate勾稽', ($ucsA-$ucsB)===$colWin&&($circA-$circB)===$colWin, "uc=".($ucsA-$ucsB)." circ=".($circA-$circB)." wins=$colWin");
-$chTot=(int)v("SELECT IFNULL(SUM(total_quantity),0) FROM nft_lucky_draw_chances WHERE user_id=7");
-$chUsed=(int)v("SELECT IFNULL(SUM(used_quantity),0) FROM nft_lucky_draw_chances WHERE user_id=7");
+$chTot=(int)v("SELECT IFNULL(SUM(total_quantity),0) FROM nft_lucky_draw_chances WHERE user_id=$U7");
+$chUsed=(int)v("SELECT IFNULL(SUM(used_quantity),0) FROM nft_lucky_draw_chances WHERE user_id=$U7");
 T('TC-LD05e 次数台账(300+中奖次数=total,used=300)', $chTot===300+$dcWin&&$chUsed===300, "total=$chTot used=$chUsed wins=$dcWin");
 $exp=['司南币'=>0.5,'藏品'=>0.2,'抽奖次数'=>0.2,'谢谢参与'=>0.1];$chi=0;$allIn=true;$detail=[];
 foreach($exp as $k=>$p){$act=$dist[$k]??0;$e=300*$p;$sig=sqrt(300*$p*(1-$p));$z=abs($act-$e)/$sig;$chi+=($act-$e)**2/$e;
   $in=$z<=4;$allIn=$allIn&&$in;$detail[]="$k:act=$act/exp=".round($e,1)."/z=".round($z,2);}
 T('TC-LD05f 分布符合配置概率(3σ+χ²)', $allIn&&$chi<=16.27, implode(' ',$detail)." χ²=".round($chi,2)."(df=3,α=0.001临界16.27)");
-exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=8");
-exe("INSERT INTO nft_lucky_draw_chances (user_id,activity_id,source,total_quantity,used_quantity) VALUES (8,$ldA,'checkin',1,1)");
+exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=$U8");
+exe("INSERT INTO nft_lucky_draw_chances (user_id,activity_id,source,total_quantity,used_quantity) VALUES ($U8,$ldA,'checkin',1,1)");
 $r=http('POST','/api/lucky-draw/draw',[],$tok['8']);
 T('TC-LD06 次数耗尽拦截3003', ($r['code']??0)===3003, "code={$r['code']} msg={$r['message']}");
 // 奖品抽完：独占活动B
@@ -416,8 +466,8 @@ http('POST','/admin/marketing/lucky',['activity_id'=>$ldB,'prizes'=>[['tier_name
 http('POST','/admin/marketing/lucky-activity',['id'=>$ldB,'name'=>'SIT抽奖B','status'=>1],$atok);
 http('POST','/admin/marketing/lucky-activity',['id'=>$ldA,'name'=>'SIT抽奖A','status'=>0],$atok);
 // user6 预置 2 次次数：第 1 次抽中唯一奖品，第 2 次奖品已尽 → 3001（免费台账仅 1 次，无法覆盖两连抽）
-exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=6");
-exe("INSERT INTO nft_lucky_draw_chances (user_id,activity_id,source,total_quantity,used_quantity) VALUES (6,$ldA,'checkin',2,0)");
+exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=$U6");
+exe("INSERT INTO nft_lucky_draw_chances (user_id,activity_id,source,total_quantity,used_quantity) VALUES ($U6,$ldA,'checkin',2,0)");
 $r=http('POST','/api/lucky-draw/draw',[],$tok['6']);
 $r2=http('POST','/api/lucky-draw/draw',[],$tok['6']);
 T('TC-LD07 奖品抽完拦截3001', ($r['code']??0)===0&&($r2['code']??0)===3001, "first={$r['code']} second={$r2['code']} msg={$r2['message']}");
@@ -442,9 +492,10 @@ $ldD=$r['data']['id']??0;
 http('POST','/admin/marketing/lucky',['activity_id'=>$ldD,'prizes'=>[['tier_name'=>'实名专享','prize_type'=>'points','coin_amount'=>3,'total'=>10,'probability'=>1.0]]],$atok);
 http('POST','/admin/marketing/lucky-activity',['id'=>$ldD,'name'=>'SIT抽奖D','status'=>1,'eligibility_type'=>'realname','grant_mode'=>'realtime'],$atok);
 http('POST','/admin/marketing/lucky-activity',['id'=>$ldC,'name'=>'SIT抽奖C','status'=>0],$atok);
-exe("UPDATE nft_users SET is_realname=0 WHERE id=8"); // 确保 user8 非实名（历史修复脚本曾批量实名，破坏本用例前提）
+exe("UPDATE nft_users SET is_realname=0 WHERE id=$U8"); // 确保 $U8 非实名（id=8 漂移不存在，原 UPDATE 0 行无效致 user8 仍实名→3003）
 $r=http('POST','/api/lucky-draw/draw',[],$tok['8']);
 T('TC-LD09a 非实名抽奖被拒3002', ($r['code']??0)===3002, "code={$r['code']} msg={$r['message']}");
+exe("UPDATE nft_users SET is_realname=1 WHERE id=$U8"); // 恢复实名，避免污染后续用例
 exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=1");
 $r=http('POST','/api/lucky-draw/draw',[],$tok['1']);
 T('TC-LD09b 实名用户可抽', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
