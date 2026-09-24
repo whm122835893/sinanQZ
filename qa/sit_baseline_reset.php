@@ -1,10 +1,12 @@
 <?php
 /** 测试基线重置：清空全部业务数据（保留管理端 RBAC / 系统配置 / 分类 / 链网络等基础设施），
  *  重建标准冒烟用户 id=1~8（固定手机号），供所有 sit_t* 脚本共享。
- *  用法：php sit_baseline_reset.php
+ *  用法：APP_ENV=sit QA_DB_USER=xxx QA_DB_PASS=xxx [QA_DB_HOST=... QA_DB_NAME=...] php sit_baseline_reset.php
+ *  护栏：bootstrap_db.php 要求 APP_ENV 为 sit/test/dev 且 DB 凭据走环境变量，
+ *  防止误连生产库执行清库。
  */
 date_default_timezone_set('Asia/Shanghai');
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+require __DIR__ . '/bootstrap_db.php';
 $PDO->exec("SET NAMES utf8mb4");
 
 // ---- 1. 业务数据表全清（含 users，重置自增） ----

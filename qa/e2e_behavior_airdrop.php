@@ -1,6 +1,6 @@
 <?php
 /** 行为型空投 E2E 验证（checkin 累计签到 / register 注册行为 / login 登录行为 / invite 邀请行为）
- *  前置：后端 127.0.0.1:8080、MySQL sinan_nft（sinan/sinan123456）
+ *  前置：后端 127.0.0.1:8080、MySQL sinan_nft（QA_DB_USER/QA_DB_PASS 环境变量注入）
  *  造数：签到甲(3天)/签到乙(1天)/未签到丙/邀请丁(2成功)/高频登录戊(5次)/低频登录己(1次)/窗口内注册庚/老用户辛
  *  期望值动态计算（与后端同一 SQL 口径），兼容库内既有用户行为数据
  */
@@ -47,7 +47,7 @@ function getCaptcha(): array {
     return [$id, $code, $code ? null : '破解失败'];
 }
 
-$PDO = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+require __DIR__ . '/bootstrap_db.php';
 $PDO->exec("SET NAMES utf8mb4");
 $q = fn($s) => $PDO->query($s)->fetch(PDO::FETCH_NUM)[0] ?? null;
 

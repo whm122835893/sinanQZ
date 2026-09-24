@@ -14,7 +14,9 @@ const adminStore = useAdminStore()
 const site = useSiteStore()
 
 const formRef = ref(null)
-const form = ref({ username: 'admin', password: 'admin123' })
+// 生产严禁预填/展示默认账号（构建产物会原样暴露超管口令）；仅本地 dev server 预填
+const isDev = import.meta.env.DEV
+const form = ref(isDev ? { username: 'admin', password: 'admin123' } : { username: '', password: '' })
 const submitting = ref(false)
 const year = new Date().getFullYear()
 
@@ -216,9 +218,9 @@ async function onSubmit() {
       </el-form>
 
       <div class="login__hint">
-        默认账号：admin / admin123
+        <template v-if="isDev">默认账号：admin / admin123｜</template>
         <template v-if="captchaEnabled">
-          ｜验证码：{{ captchaProvider === 'aliyun' ? '阿里云' : '本地图形' }}
+          验证码：{{ captchaProvider === 'aliyun' ? '阿里云' : '本地图形' }}
           （{{ captchaMode === 'slider' ? '滑块' : '图形' }}）模式
         </template>
       </div>

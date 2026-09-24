@@ -11,9 +11,12 @@
 --       默认短信配置（mock）、默认支付渠道
 -- 说明   :
 --   1. 本脚本可重复执行：新表 DROP 后重建；ALTER 通过 information_schema
---      条件判断，已存在则跳过（兼容 MySQL 8 与 MariaDB）
+--      条件判断，已存在则跳过（兼容 MySQL 8 与 MariaDB）；
+--      安全护栏：nft_admin_users 已存在时默认中止，防误删已初始化环境，
+--      开发重建需显式 SET @FORCE_RESET:=1（见 USE 后护栏注释）
 --   2. 管理员与 C 端用户完全隔离：独立表、独立 JWT 密钥
---   3. 默认超管账号 admin / admin123（首次登录后请立即修改）
+--   3. 默认超管账号 admin / admin123 仅供开发联调；部署到任何可访问环境
+--      后必须立即修改密码并关闭默认账号，否则存在接管后台风险
 --   4. 敏感配置（短信密钥、支付密钥）通过应用层 AES-256-CBC 加密存储，
 --      本脚本仅写入明文占位，由后台页面保存时加密
 -- ============================================================================
@@ -25,6 +28,20 @@ CREATE DATABASE IF NOT EXISTS `sinan_nft`
   DEFAULT CHARACTER SET utf8mb4
   DEFAULT COLLATE utf8mb4_unicode_ci;
 USE `sinan_nft`;
+
+-- ----------------------------------------------------------------------------
+-- 破坏性重建护栏：本脚本会 DROP 重建全部管理后台表（含操作日志/退款等）。
+-- 若 nft_admin_users 已存在（疑似已初始化的环境），默认中止执行。
+-- 开发/联调确需重建时显式解除：
+--   mysql -u<user> -p -e "SET @FORCE_RESET:=1; SOURCE database/admin_init.sql;"
+-- ----------------------------------------------------------------------------
+SET @guard := CASE
+    WHEN IFNULL(@FORCE_RESET, 0) = 1 THEN 'SELECT 1'
+    WHEN NOT EXISTS (SELECT 1 FROM information_schema.TABLES
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_admin_users') THEN 'SELECT 1'
+    ELSE 'CALL `__ABORT_admin_init_sql_DROP重建已中止_已有管理后台数据_开发重建请SET_FORCE_RESET_1__`'
+END;
+PREPARE stmt FROM @guard; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- ----------------------------------------------------------------------------
 -- 一、管理后台 RBAC 基础表（6 张）

@@ -5,7 +5,7 @@
  *  χ²(0.01,3)=11.345, χ²(0.01,4)=13.277
  */
 date_default_timezone_set('Asia/Shanghai');
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function q1($s){global $PDO;$r=$PDO->query($s);return $r?$r->fetchColumn():null;}

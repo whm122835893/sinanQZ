@@ -20,7 +20,9 @@
 --   5. 以下约束按设计文档由业务层保证，不落库：
 --      - 钱包恒等式 balance=available+frozen（事务中间态会瞬时违反）
 --      - 盲盒概率跨行合计=1；合成产物不得出现在自身材料中（跨表）
---   6. 脚本可重复执行（开头 DROP + FK_CHECKS=0，结尾恢复）
+--   6. 脚本可重复执行（开头 DROP + FK_CHECKS=0，结尾恢复）；
+--      安全护栏：nft_users 存在且非空时默认中止，防误清真实数据；
+--      开发清库需显式 SET @FORCE_RESET:=1（见 USE 后护栏注释）
 --   7. v2.2.2 修正（沙箱实测 ERROR 1901）：被存储生成列引用的列
 --      （resale_listings / transfers 的 user_collectible_id）上的外键
 --      ON UPDATE 由 CASCADE 改为 RESTRICT —— MySQL/MariaDB 均禁止存储
@@ -39,6 +41,21 @@ CREATE DATABASE IF NOT EXISTS `sinan_nft`
   DEFAULT CHARACTER SET utf8mb4
   DEFAULT COLLATE utf8mb4_unicode_ci;
 USE `sinan_nft`;
+
+-- ----------------------------------------------------------------------------
+-- 破坏性重建护栏：本脚本会 DROP 全部业务表。
+-- 若 nft_users 已存在且非空（疑似真实数据环境），默认中止执行。
+-- 开发/联调确需清库时显式解除：
+--   mysql --local-infile=0 -u<user> -p -e "SET @FORCE_RESET:=1; SOURCE database/init.sql;"
+-- ----------------------------------------------------------------------------
+SET @guard := CASE
+    WHEN IFNULL(@FORCE_RESET, 0) = 1 THEN 'SELECT 1'
+    WHEN NOT EXISTS (SELECT 1 FROM information_schema.TABLES
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_users') THEN 'SELECT 1'
+    WHEN (SELECT COUNT(*) FROM `nft_users`) = 0 THEN 'SELECT 1'
+    ELSE 'CALL `__ABORT_init_sql_DROP重建已中止_数据非空_开发清库请SET_FORCE_RESET_1__`'
+END;
+PREPARE stmt FROM @guard; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 逆序清理（配合 FOREIGN_KEY_CHECKS=0，可重复执行）
 DROP TABLE IF EXISTS `nft_site_settings`;

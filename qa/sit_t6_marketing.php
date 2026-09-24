@@ -4,7 +4,8 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
+require __DIR__ . '/bootstrap_db.php';
 // 图形码破解所需（管理端登录前置；与 e2e_full_verify 同源机制）
 $CACHE_DIR='/workspace/sinanQZ/sinan-nft-backend/runtime/cache';
 $CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

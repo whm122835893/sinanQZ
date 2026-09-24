@@ -5,7 +5,8 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
+require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;$defects=[];
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function D($n,$c,$d=''){global $defects;if($c){$defects[]=$n.($d?" | $d":"");echo "  DEFECT $n".($d?" | $d":"")."\n";}}

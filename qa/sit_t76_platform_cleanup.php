@@ -9,7 +9,8 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
+require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;$fails=[];
 function T($n,$c,$d=''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function http($m,$u,$b=null,$t=null){global $BASE;$ch=curl_init($BASE.$u);$h=['Content-Type: application/json','User-Agent: SIT-TestAgent/1.0'];if($t)$h[]="Authorization: Bearer $t";
@@ -213,7 +214,7 @@ $dump=$bp!==''?(string)file_get_contents($bp):'';
 T('7.6.5c 备份含全量结构与数据（users/admin_users）',
   strpos($dump,'CREATE TABLE `nft_users`')!==false && strpos($dump,'INSERT INTO `nft_users`')!==false
   && strpos($dump,'CREATE TABLE `nft_admin_users`')!==false);
-$out=(string)shell_exec('mysql -h127.0.0.1 -usinan -psinan123456 sinan_nft < '.escapeshellarg($bp).' 2>&1');
+$out=(string)shell_exec('MYSQL_PWD='.escapeshellarg(getenv('QA_DB_PASS')).' mysql -h127.0.0.1 -u'.escapeshellarg(getenv('QA_DB_USER')).' '.escapeshellarg(getenv('QA_DB_NAME')?:'sinan_nft').' < '.escapeshellarg($bp).' 2>&1');
 $rest=snap();$ok=true;$diff2=[];
 // 备份为清库执行前瞬间快照：演练自身产生的验证码行与审计留痕合法包含在备份内（≥基线即可）
 $volatile=['verification_codes','admin_operation_logs','platform_cleanup_logs','admin_login_logs'];

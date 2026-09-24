@@ -37,7 +37,7 @@ function crackCaptcha(string $captchaId): ?string {
     return null;
 }
 
-$PDO = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+require __DIR__ . '/bootstrap_db.php';
 $PDO->exec("SET NAMES utf8mb4");
 $q = fn($s) => $PDO->query($s)->fetch(PDO::FETCH_NUM)[0] ?? null;
 
