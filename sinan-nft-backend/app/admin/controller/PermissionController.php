@@ -93,6 +93,10 @@ class PermissionController extends BaseController
         if (!$role) {
             return $this->fail(4040, '角色不存在');
         }
+        // 防垂直提权：仅超管可创建/挂接 super_admin 角色账号
+        if ($role['code'] === 'super_admin' && empty($this->admin()['is_super'])) {
+            return $this->fail(4003, '仅超级管理员可操作超级管理员账号');
+        }
         if (Db::name('admin_users')->where('username', $username)->whereNull('deleted_at')->count() > 0) {
             return $this->fail(4220, '账号已存在');
         }
@@ -130,6 +134,10 @@ class PermissionController extends BaseController
         if (!$admin) {
             return $this->fail(4040, '管理员不存在');
         }
+        // 防提权链：非超管不可编辑超管账号（否则可通过改其角色/状态间接瘫痪或劫持）
+        if (!$this->canManageTarget((int) $admin['role_id'])) {
+            return $this->fail(4003, '仅超级管理员可操作超级管理员账号');
+        }
 
         $update = ['updated_at' => date('Y-m-d H:i:s')];
 
@@ -151,6 +159,10 @@ class PermissionController extends BaseController
             $role = Db::name('admin_roles')->where('id', $newRoleId)->find();
             if (!$role) {
                 return $this->fail(4040, '角色不存在');
+            }
+            // 防垂直提权：非超管不可把任何账号升级为 super_admin 角色
+            if ($role['code'] === 'super_admin' && empty($this->admin()['is_super'])) {
+                return $this->fail(4003, '仅超级管理员可授予超级管理员角色');
             }
             $update['role_id'] = $newRoleId;
         }
@@ -186,6 +198,10 @@ class PermissionController extends BaseController
         $admin = Db::name('admin_users')->where('id', $id)->whereNull('deleted_at')->find();
         if (!$admin) {
             return $this->fail(4040, '管理员不存在');
+        }
+        // 防提权：非超管重置超管密码 = 接管超管账号
+        if (!$this->canManageTarget((int) $admin['role_id'])) {
+            return $this->fail(4003, '仅超级管理员可操作超级管理员账号');
         }
 
         $newPassword = (string) $this->request->param('new_password', '');
@@ -251,6 +267,9 @@ class PermissionController extends BaseController
 
         $roleCode = Db::name('admin_roles')->where('id', $admin['role_id'])->value('code');
         if ($roleCode === 'super_admin') {
+            if (empty($this->admin()['is_super'])) {
+                return $this->fail(4003, '仅超级管理员可操作超级管理员账号');
+            }
             $err = $this->checkLastSuperAdmin($id, '删除');
             if ($err !== '') {
                 return $this->fail(4220, $err);
@@ -516,6 +535,18 @@ class PermissionController extends BaseController
             array_map(fn ($v) => (int) $v, $permissionIds), $validIds
         ))));
 
+        // 防提权：非超管仅能授予自身已持有的权限码，阻断「自建新角色塞满高权码→ self-assign」路径
+        if (empty($this->admin()['is_super'])) {
+            $ownCodes = $this->admin()['permissions'] ?? [];
+            $ownIds   = $ownCodes
+                ? Db::name('admin_permissions')->whereIn('code', $ownCodes)->where('status', 1)->column('id')
+                : [];
+            $escalation = array_values(array_diff($permissionIds, array_map('intval', $ownIds)));
+            if ($escalation !== []) {
+                throw new \RuntimeException('不可授予超出自身权限范围的权限');
+            }
+        }
+
         Db::name('admin_role_permissions')->where('role_id', $roleId)->delete();
         if ($permissionIds !== []) {
             $now = date('Y-m-d H:i:s');
@@ -646,6 +677,18 @@ class PermissionController extends BaseController
             return null;
         }
         return filter_var($email, FILTER_VALIDATE_EMAIL) ? mb_substr($email, 0, 100) : null;
+    }
+
+    /**
+     * 当前操作者能否管理挂指定角色的账号：目标为 super_admin 角色时仅超管可操作
+     */
+    private function canManageTarget(int $targetRoleId): bool
+    {
+        if (!empty($this->admin()['is_super'])) {
+            return true;
+        }
+        $code = Db::name('admin_roles')->where('id', $targetRoleId)->value('code');
+        return $code !== 'super_admin';
     }
 
     /**

@@ -34,8 +34,17 @@ class AdminPermission
             return $next($request);
         }
 
-        if (!empty($admin['is_super']) || in_array($permission, $admin['permissions'] ?? [], true)) {
+        if (!empty($admin['is_super'])) {
             return $next($request);
+        }
+
+        // 支持逗号分隔多权限码：命中任一即放行（组粗码 + 路由细码 OR 语义）
+        $required = array_filter(array_map('trim', explode(',', $permission)));
+        $owned    = $admin['permissions'] ?? [];
+        foreach ($required as $code) {
+            if (in_array($code, $owned, true)) {
+                return $next($request);
+            }
         }
 
         return json([

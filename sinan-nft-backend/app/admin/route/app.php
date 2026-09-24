@@ -296,28 +296,29 @@ Route::group('system', function () {
 })->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'system:config');
 
 // ---------------------------------------------------------------------------
-// 权限管理（permission:*）
+// 权限管理（permission:*）——按子域精确分层（原组级单一 permission:admin，
+// 持 permission:admin 即可改角色/日志，与控制器注释声明的 permission:role/log 不一致）
 // ---------------------------------------------------------------------------
 Route::group('permission', function () {
-    // 管理员
-    Route::get('admins', 'PermissionController/adminList');
-    Route::post('admins', 'PermissionController/adminCreate');
-    Route::put('admins/:id', 'PermissionController/adminUpdate');
-    Route::post('admins/:id/reset-password', 'PermissionController/adminResetPassword');
-    Route::post('admins/:id/unlock', 'PermissionController/adminUnlock');
-    Route::delete('admins/:id', 'PermissionController/adminDelete');
-    // 角色
-    Route::get('roles', 'PermissionController/roleList');
-    Route::get('roles/:id', 'PermissionController/roleDetail');
-    Route::get('tree', 'PermissionController/permissionTree');
-    Route::post('roles', 'PermissionController/roleCreate');
-    Route::put('roles/:id', 'PermissionController/roleUpdate');
-    Route::delete('roles/:id', 'PermissionController/roleDelete');
-    // 日志
-    Route::get('operation-logs', 'PermissionController/operationLogs');
-    Route::get('login-logs', 'PermissionController/loginLogs');
-    Route::get('log-modules', 'PermissionController/logModules');
-})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'permission:admin');
+    // 管理员（permission:admin）
+    Route::get('admins', 'PermissionController/adminList')->middleware(AdminPermission::class, 'permission:admin');
+    Route::post('admins', 'PermissionController/adminCreate')->middleware(AdminPermission::class, 'permission:admin');
+    Route::put('admins/:id', 'PermissionController/adminUpdate')->middleware(AdminPermission::class, 'permission:admin');
+    Route::post('admins/:id/reset-password', 'PermissionController/adminResetPassword')->middleware(AdminPermission::class, 'permission:admin');
+    Route::post('admins/:id/unlock', 'PermissionController/adminUnlock')->middleware(AdminPermission::class, 'permission:admin');
+    Route::delete('admins/:id', 'PermissionController/adminDelete')->middleware(AdminPermission::class, 'permission:admin');
+    // 角色（permission:role；组 permission:admin 亦兼容放行）
+    Route::get('roles', 'PermissionController/roleList')->middleware(AdminPermission::class, 'permission:role,permission:admin');
+    Route::get('roles/:id', 'PermissionController/roleDetail')->middleware(AdminPermission::class, 'permission:role,permission:admin');
+    Route::get('tree', 'PermissionController/permissionTree')->middleware(AdminPermission::class, 'permission:role,permission:admin');
+    Route::post('roles', 'PermissionController/roleCreate')->middleware(AdminPermission::class, 'permission:role');
+    Route::put('roles/:id', 'PermissionController/roleUpdate')->middleware(AdminPermission::class, 'permission:role');
+    Route::delete('roles/:id', 'PermissionController/roleDelete')->middleware(AdminPermission::class, 'permission:role');
+    // 日志（permission:log）
+    Route::get('operation-logs', 'PermissionController/operationLogs')->middleware(AdminPermission::class, 'permission:log,permission:admin');
+    Route::get('login-logs', 'PermissionController/loginLogs')->middleware(AdminPermission::class, 'permission:log,permission:admin');
+    Route::get('log-modules', 'PermissionController/logModules')->middleware(AdminPermission::class, 'permission:log,permission:admin');
+})->middleware(AdminAuth::class);
 
 // ---------------------------------------------------------------------------
 // 风控安全（security:*）

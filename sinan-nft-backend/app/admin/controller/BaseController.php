@@ -5,6 +5,7 @@ namespace app\admin\controller;
 
 use app\admin\service\AdminLogService;
 use app\admin\traits\AdminResponse;
+use think\exception\HttpResponseException;
 use think\Request;
 
 /**
@@ -23,9 +24,34 @@ abstract class BaseController
 
     protected Request $request;
 
+    /**
+     * 公开端点白名单（小写 控制器 => 方法）：仅这些方法允许在无 AdminAuth 上下文时执行。
+     * 与 route/app.php 公开路由一一对应，新增公开路由必须同步登记。
+     */
+    private const PUBLIC_ALLOWLIST = [
+        'authcontroller'    => ['login', 'refresh'],
+        'captchacontroller' => ['image', 'verify', 'enabled'],
+        'cmscontroller'     => ['sitebrand'],
+    ];
+
     public function __construct(Request $request)
     {
         $this->request = $request;
+
+        // fail-closed 兜底：管理端认证授权全部挂在路由级中间件上，一旦框架在路由
+        // 未匹配（HTTP 动词不匹配、大小写/路径变体）时回退到 控制器/方法 默认分发，
+        // 中间件将被整体旁路。此处强制要求非公开端点必须携带 AdminAuth 注入的
+        // 认证上下文，旁路请求一律拒绝。
+        $controller = strtolower(str_replace('.', '', $request->controller()));
+        $action     = strtolower($request->action());
+        $isPublic   = in_array($action, self::PUBLIC_ALLOWLIST[$controller] ?? [], true);
+        if (!$isPublic && empty($request->admin)) {
+            throw new HttpResponseException(json([
+                'code'    => 4001,
+                'message' => '未登录或令牌缺失',
+                'data'    => null,
+            ]));
+        }
     }
 
     /**
