@@ -115,10 +115,12 @@ class ActivityRewardService
                     return ['eligible' => false, 'reason' => "该活动限签到前 {$rank} 名用户参与，您还未签到"];
                 }
                 // 排位 = 首次签到时间早于当前用户的去重用户数 + 1
+                // 修复：first_at 是 DATETIME，原实现与 strtotime 的 unix 时间戳比较，
+                // MySQL 隐式转换恒为假 → $ahead 恒 0，人人「排名第 1」全员达标
                 $ahead = (int) Db::name('check_in_records')
                     ->field('user_id, MIN(created_at) AS first_at')
                     ->group('user_id')
-                    ->having('first_at < ' . strtotime((string) $firstAt))
+                    ->having('MIN(created_at)', '<', (string) $firstAt)
                     ->count();
                 $myRank = $ahead + 1;
                 return $myRank <= $rank

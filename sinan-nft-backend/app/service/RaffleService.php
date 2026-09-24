@@ -403,7 +403,9 @@ class RaffleService
                 // 失败时保持原状态，下一轮 tick 自动重试
                 $results[(int) $activity['id']] = self::draw((int) $activity['id']);
             } catch (\Throwable $e) {
-                Db::name('raffle_activities')->where('id', $activity['id'])->update(['status' => 4]);
+                // 瞬时异常（锁等待/DB 闪断）不得把已收钱的活动置为「已取消」（status=4），
+                // 保持原状态由下一轮 tick 重试；留痕便于告警与人工排查
+                \think\facade\Log::error('[raffle][tick] draw failed activity=' . $activity['id'] . ' err=' . $e->getMessage());
                 $results[(int) $activity['id']] = ['error' => $e->getMessage()];
             }
         }
