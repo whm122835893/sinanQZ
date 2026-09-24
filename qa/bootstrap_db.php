@@ -21,9 +21,8 @@ function qa_env(string $key, ?string $default = null): ?string
 
 function qa_pdo(int $errmode = PDO::ERRMODE_EXCEPTION): PDO
 {
-    static $guarded = false;
-    if (!$guarded) {
-        $guarded = true;
+    static $cred = null;
+    if ($cred === null) {
         $env = (string) qa_env('APP_ENV', '');
         if (!in_array($env, ['sit', 'test', 'dev'], true)) {
             fwrite(STDERR, "[qa] 拒绝执行：本目录脚本仅允许在 APP_ENV=sit|test|dev 环境运行（当前 APP_ENV='{$env}'），防止误操作生产数据\n");
@@ -35,7 +34,9 @@ function qa_pdo(int $errmode = PDO::ERRMODE_EXCEPTION): PDO
             fwrite(STDERR, "[qa] 拒绝执行：请通过环境变量 QA_DB_USER / QA_DB_PASS 注入数据库凭据（仓库禁止明文口令）\n");
             exit(1);
         }
+        $cred = [$user, $pass];
     }
+    [$user, $pass] = $cred;
     $host = (string) qa_env('QA_DB_HOST', '127.0.0.1');
     $name = (string) qa_env('QA_DB_NAME', 'sinan_nft');
     return new PDO("mysql:host={$host};dbname={$name}", $user, $pass, [PDO::ATTR_ERRMODE => $errmode]);

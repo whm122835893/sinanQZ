@@ -38,6 +38,20 @@
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
+-- ----------------------------------------------------------------------------
+-- 破坏性重建护栏：本文件为 DROP 重建型全量快照，误对含数据的库执行会清空业务数据。
+-- 若当前库 nft_users 已存在且非空，默认中止执行（防覆盖线上/联调库）。
+-- 开发确需重建：mysql -u<user> -p -e "SET @FORCE_RESET:=1; SOURCE database/full_init.sql;"
+-- ----------------------------------------------------------------------------
+SET @guard := CASE
+    WHEN IFNULL(@FORCE_RESET, 0) = 1 THEN 'SELECT 1'
+    WHEN NOT EXISTS (SELECT 1 FROM information_schema.TABLES
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_users') THEN 'SELECT 1'
+    WHEN (SELECT COUNT(*) FROM `nft_users`) = 0 THEN 'SELECT 1'
+    ELSE 'CALL `__ABORT_full_init_sql_DROP重建已中止_数据非空_开发重建请SET_FORCE_RESET_1__`'
+END;
+PREPARE stmt FROM @guard; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 --
 -- Table structure for table `nft_activity_reward_records`
 --

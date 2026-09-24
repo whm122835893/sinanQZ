@@ -25,14 +25,25 @@ abstract class BaseController
     protected Request $request;
 
     /**
-     * 公开端点白名单（小写 控制器 => 方法）：仅这些方法允许在无 AdminAuth 上下文时执行。
+     * 公开端点白名单（归一化控制器名 => 方法）：仅这些方法允许在无 AdminAuth 上下文时执行。
      * 与 route/app.php 公开路由一一对应，新增公开路由必须同步登记。
      */
     private const PUBLIC_ALLOWLIST = [
-        'authcontroller'    => ['login', 'refresh'],
-        'captchacontroller' => ['image', 'verify', 'enabled'],
-        'cmscontroller'     => ['sitebrand'],
+        'auth'    => ['login', 'refresh'],
+        'captcha' => ['image', 'verify', 'enabled'],
+        'cms'     => ['sitebrand'],
     ];
+
+    /**
+     * 控制器名归一化：TP 的 request->controller() 在不同分发路径下可能返回
+     * 'AuthController' / 'auth_controller' / 'auth' 等形态，统一去掉分隔符与
+     * controller 后缀后再与白名单比对，避免因大小写/蛇形差异误拦公开端点。
+     */
+    private static function normalizeController(string $name): string
+    {
+        $s = strtolower(preg_replace('/[^a-z0-9]/i', '', $name));
+        return str_ends_with($s, 'controller') ? substr($s, 0, -10) : $s;
+    }
 
     public function __construct(Request $request)
     {
@@ -42,7 +53,7 @@ abstract class BaseController
         // 未匹配（HTTP 动词不匹配、大小写/路径变体）时回退到 控制器/方法 默认分发，
         // 中间件将被整体旁路。此处强制要求非公开端点必须携带 AdminAuth 注入的
         // 认证上下文，旁路请求一律拒绝。
-        $controller = strtolower(str_replace('.', '', $request->controller()));
+        $controller = self::normalizeController($request->controller());
         $action     = strtolower($request->action());
         $isPublic   = in_array($action, self::PUBLIC_ALLOWLIST[$controller] ?? [], true);
         if (!$isPublic && empty($request->admin)) {
