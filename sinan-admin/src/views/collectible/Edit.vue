@@ -175,9 +175,18 @@ async function onSubmit() {
         </el-form-item>
 
         <el-form-item label="发售时间">
-          <el-input v-model="form.saleTime" placeholder="2026-09-07 18:00（可留空，上架后即时开售）" style="width: 280px" />
+          <el-date-picker
+            v-model="form.saleTime"
+            type="datetime"
+            format="YYYY-MM-DD HH:mm"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="可留空，留空表示上架后即时开售"
+            clearable
+            style="width: 280px"
+          />
           <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
-            藏品创建后为「待发售」状态，需在藏品列表或详情中开启上架售卖后 C 端才可见
+            可选项。留空则在藏品开启「上架售卖」后即时开售；选择未来时间即定时开售，C 端在到点前显示发售倒计时且不可购买。
+            藏品创建后仍为「待发售」状态，需在藏品列表或详情中开启上架售卖后 C 端才可见
           </div>
         </el-form-item>
 

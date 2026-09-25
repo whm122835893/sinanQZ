@@ -258,7 +258,8 @@ class CollectibleController extends BaseController
             'contract'       => mb_substr(trim((string) $this->request->param('contract', '')), 0, 100) ?: null,
             'chain_type'     => mb_substr(trim((string) $this->request->param('chain_type', '')), 0, 20) ?: null,
             'token_standard' => mb_substr(trim((string) $this->request->param('token_standard', '')), 0, 20) ?: null,
-            'release_date'   => $this->optionalDate('release_date'),
+            // 开售时间（可空）：C 端 saleTime 与下单校验均读 onsale_at，留空表示上架时即时开售
+            'onsale_at'      => $this->optionalDate('onsale_at'),
             'is_scheduled'   => (int) $this->request->param('is_scheduled', 0) === 1 ? 1 : 0,
             'schedule_time'  => $this->optionalDate('schedule_time'),
             'tag'            => mb_substr(trim((string) $this->request->param('tag', '')), 0, 50) ?: null,
@@ -338,6 +339,7 @@ class CollectibleController extends BaseController
             'chain_type' => fn ($v) => trim((string) $v),
             'token_standard' => fn ($v) => trim((string) $v),
             'release_date' => fn ($v) => $v,
+            'onsale_at' => fn ($v) => $this->normalizeDate($v),
             'is_scheduled' => fn ($v) => (int) $v === 1 ? 1 : 0,
             'schedule_time' => fn ($v) => $v,
             'tag' => fn ($v) => trim((string) $v),
@@ -363,6 +365,12 @@ class CollectibleController extends BaseController
         $mode = (int) ($update['resale_price_mode'] ?? $c['resale_price_mode']);
         if ($mode === 2 && $min !== null && $max !== null && (float) $min > (float) $max) {
             return $this->fail(4220, '寄售价格区间下限不能大于上限');
+        }
+
+        // 发售窗口校验：开售时间不得晚于已有的发售结束时间
+        if (array_key_exists('onsale_at', $update) && $update['onsale_at'] && $c['off_sale_at']
+            && strtotime((string) $c['off_sale_at']) <= strtotime((string) $update['onsale_at'])) {
+            return $this->fail(4220, '开售时间必须早于现有发售结束时间（' . $c['off_sale_at'] . '）');
         }
 
         $update['updated_at'] = date('Y-m-d H:i:s');
@@ -459,14 +467,27 @@ class CollectibleController extends BaseController
         if ($updateReleaseQty) {
             $update['release_quantity'] = $newReleaseQty;
         }
-        foreach (['onsale_at', 'off_sale_at', 'release_date'] as $field) {
-            $value = $this->optionalDate($field);
-            if ($value !== null) {
-                $update[$field] = $value;
-            }
-        }
-        if ($status === 'onsale' && empty($update['onsale_at'])) {
+
+        // 开售时间：显式传入 > 保留已设定的未来时间（定时开售）> 立即开售
+        $onsaleAt = $this->optionalDate('onsale_at');
+        if ($onsaleAt !== null) {
+            $update['onsale_at'] = $onsaleAt;
+        } elseif ($status === 'onsale' && strtotime((string) $c['onsale_at']) <= time()) {
             $update['onsale_at'] = date('Y-m-d H:i:s');
+        }
+        // 结束时间：显式传入 > 清掉已失效的旧值（强制下架会把 off_sale_at 写成下架那一刻，
+        // 重新上架若不清除，C 端会按已过期的结束时间判定为"已售罄"）
+        $offSaleAt = $this->optionalDate('off_sale_at');
+        if ($offSaleAt !== null) {
+            $update['off_sale_at'] = $offSaleAt;
+        } elseif ($status === 'onsale' && !empty($c['off_sale_at']) && strtotime((string) $c['off_sale_at']) <= time()) {
+            $update['off_sale_at'] = null;
+        }
+
+        $finalOn  = $update['onsale_at']     ?? $c['onsale_at'];
+        $finalOff = array_key_exists('off_sale_at', $update) ? $update['off_sale_at'] : $c['off_sale_at'];
+        if ($finalOn && $finalOff && strtotime((string) $finalOff) <= strtotime((string) $finalOn)) {
+            return $this->fail(4220, '发售结束时间必须晚于开售时间');
         }
 
         Db::name('collectibles')->where('id', $id)->update(array_merge($update, $cUpdate));
@@ -1763,7 +1784,13 @@ class CollectibleController extends BaseController
 
     private function optionalDate(string $key): ?string
     {
-        $value = trim((string) $this->request->param($key, ''));
+        return $this->normalizeDate($this->request->param($key, ''));
+    }
+
+    /** 时间入参归一为 datetime 字符串；空值或非法格式返回 null */
+    private function normalizeDate(mixed $value): ?string
+    {
+        $value = is_string($value) ? trim($value) : '';
         if ($value === '') {
             return null;
         }

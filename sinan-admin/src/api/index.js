@@ -328,7 +328,7 @@ const adaptCollectible = (c) => ({
   status: statusToFront(s(c.status)),
   tag: s(c.tag),
   issuer: s(c.issuer),
-  saleTime: s(c.onsaleAt),
+  saleTime: s(c.onsaleAt).replace(/\.\d+$/, ''),
   description: s(c.description),
   featured: n(c.featured) === 1,
   isBlindBox: n(c.isBlindBox) === 1,
@@ -420,7 +420,7 @@ export function saveCollectible(payload) {
     creator: payload.creator || '',
     description: payload.description || '',
     featured: payload.featured ? 1 : 0,
-    release_date: payload.saleTime || '',
+    onsale_at: payload.saleTime || '',
     // 链上配置
     ...(payload.chainType ? { chain_type: payload.chainType } : {}),
     ...(payload.contract ? { contract: payload.contract } : {})
