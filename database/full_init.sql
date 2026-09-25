@@ -1320,6 +1320,7 @@ CREATE TABLE `nft_inventory_quotas` (
   KEY `idx_collectible` (`collectible_id`),
   KEY `idx_type` (`quota_type`),
   KEY `idx_status` (`status`),
+  KEY `idx_activity` (`activity_id`),
   CONSTRAINT `fk_quota_collectible` FOREIGN KEY (`collectible_id`) REFERENCES `nft_collectibles` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `chk_quota_used` CHECK ((`used_quantity` <= `planned_quantity`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='库存配额预留表（配置时从库存池冻结）';
@@ -2073,7 +2074,7 @@ CREATE TABLE `nft_refunds` (
   UNIQUE KEY `uk_refund_no` (`refund_no`),
   KEY `idx_order` (`order_id`),
   KEY `idx_user` (`user_id`),
-  KEY `idx_status` (`status`),
+  KEY `idx_status_refunded` (`status`, `refunded_at`),
   KEY `idx_created` (`created_at`),
   KEY `fk_refund_payment` (`payment_id`),
   CONSTRAINT `fk_refund_order` FOREIGN KEY (`order_id`) REFERENCES `nft_orders` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
