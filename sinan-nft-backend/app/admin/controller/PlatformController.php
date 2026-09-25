@@ -275,11 +275,14 @@ class PlatformController extends BaseController
         chmod($cnf, 0600);
 
         try {
+            // Windows 下 PHP exec 走 cmd.exe，2>/dev/null 会被解析为非法路径导致 exit=1 误判备份失败
+            $devNull = str_starts_with(strtoupper(PHP_OS), 'WIN') ? 'NUL' : '/dev/null';
             $cmd = sprintf(
-                'mysqldump --defaults-extra-file=%s %s --single-transaction --routines --triggers > %s 2>/dev/null',
+                'mysqldump --defaults-extra-file=%s %s --single-transaction --routines --triggers > %s 2>%s',
                 escapeshellarg($cnf),
                 escapeshellarg($database),
-                escapeshellarg($file)
+                escapeshellarg($file),
+                $devNull
             );
             exec($cmd, $output, $code);
         } finally {
