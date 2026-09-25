@@ -85,7 +85,7 @@ CREATE TABLE `nft_activity_reward_records` (
   KEY `idx_activity` (`activity_type`,`activity_id`,`status`),
   KEY `idx_user` (`user_id`),
   KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='活动奖励名单：manual 模式记录→导出→统一发放';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='活动奖励名单：manual 模式记录→导出→统一发放';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -796,7 +796,7 @@ CREATE TABLE `nft_buy_requests` (
   KEY `idx_collectible` (`collectible_id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='求购挂单';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='求购挂单';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1109,7 +1109,7 @@ CREATE TABLE `nft_decompose_items` (
   `quantity_per` int unsigned NOT NULL DEFAULT '1' COMMENT '每分解 1 件源藏品产出的数量',
   PRIMARY KEY (`id`),
   KEY `idx_rule` (`rule_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分解产出明细';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分解产出明细';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1138,7 +1138,7 @@ CREATE TABLE `nft_decompose_records` (
   PRIMARY KEY (`id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_rule` (`rule_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分解执行记录';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分解执行记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1172,7 +1172,7 @@ CREATE TABLE `nft_decompose_rules` (
   PRIMARY KEY (`id`),
   KEY `idx_source` (`source_collectible_id`),
   KEY `idx_enabled` (`enabled`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='分解规则';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='分解规则';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1440,7 +1440,7 @@ CREATE TABLE `nft_lucky_draw_activities` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (`id`),
   KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='抽奖活动（奖项挂在 activity_id 下）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抽奖活动（奖项挂在 activity_id 下）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1471,7 +1471,7 @@ CREATE TABLE `nft_lucky_draw_chances` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_activity` (`user_id`,`activity_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='抽奖次数台账表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抽奖次数台账表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1769,7 +1769,7 @@ CREATE TABLE `nft_priority_sale_whitelists` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_sale_user` (`priority_sale_id`,`user_id`),
   KEY `idx_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='优先购白名单表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优先购白名单表';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1799,7 +1799,7 @@ CREATE TABLE `nft_priority_sales` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_collectible_status` (`collectible_id`,`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='优先购活动表（奖励发放自动落位）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优先购活动表（奖励发放自动落位）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1956,7 +1956,7 @@ CREATE TABLE `nft_raffle_activities` (
   KEY `idx_collectible` (`collectible_id`),
   KEY `idx_status` (`status`),
   KEY `idx_draw_time` (`draw_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='抽签发售活动';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抽签发售活动';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1989,7 +1989,7 @@ CREATE TABLE `nft_raffle_operation_logs` (
   KEY `idx_activity` (`activity_id`),
   KEY `idx_admin` (`admin_id`),
   KEY `idx_action` (`action`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='抽签独立操作日志（不可删除）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抽签独立操作日志（不可删除）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2030,7 +2030,7 @@ CREATE TABLE `nft_raffle_registrations` (
   UNIQUE KEY `uk_activity_user` (`activity_id`,`user_id`),
   KEY `idx_user` (`user_id`),
   KEY `idx_draw_status` (`draw_status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='抽签发售报名记录';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抽签发售报名记录';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2114,7 +2114,7 @@ CREATE TABLE `nft_register_activities` (
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='注册活动表：实名前N名档位奖励';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='注册活动表：实名前N名档位奖励';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2852,7 +2852,7 @@ CREATE TABLE `nft_user_draw_codes` (
   KEY `idx_user` (`user_id`),
   KEY `idx_activity_user` (`activity_id`,`user_id`),
   KEY `idx_activity_status` (`activity_id`,`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户抽签码（报名/邀请/购买发放）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户抽签码（报名/邀请/购买发放）';
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
