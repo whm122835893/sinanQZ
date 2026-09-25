@@ -41,7 +41,7 @@ function crackCaptcha(string $captchaId): ?string {
 }
 function getCaptcha(): array {
     $j = http('GET', '/api/captcha/image');
-    if (($j['code'] ?? -1) !== 0) return [null, null, 'captcha/image 失败'];
+    if (($j['code'] ?? -1) !== 0) return [null, null, 'captcha/image 失败: ' . ($j['message'] ?? '')];
     $id = $j['data']['captcha_id'] ?? '';
     $code = $id ? crackCaptcha($id) : null;
     return [$id, $code, $code ? null : '破解失败'];
@@ -54,7 +54,8 @@ $q = fn($s) => $PDO->query($s)->fetch(PDO::FETCH_NUM)[0] ?? null;
 echo "========== 阶段一：管理端登录 ==========\n";
 $T0 = microtime(true);
 [$cid, $ccode, $cerr] = getCaptcha();
-T('管理端图形验证码获取+破解', $cid && $ccode, $cerr ?: '');
+// SIT 基线夹具默认关闭 admin_login 图形码场景：此时跳过破解直接登录
+T('管理端图形验证码获取+破解（场景关闭时跳过）', str_contains((string)$cerr, '关闭') || ($cid && $ccode), $cerr ?: '');
 $login = http('POST', '/admin/auth/login', ['username' => 'admin', 'password' => 'admin123', 'captcha_id' => $cid, 'captcha_code' => $ccode]);
 $adminToken = $login['data']['token'] ?? '';
 T('管理端登录', ($login['code'] ?? -1) === 200 && $adminToken, $login['message'] ?? '');
@@ -69,16 +70,34 @@ $PDO->exec("DELETE e FROM nft_airdrop_eligibilities e JOIN nft_airdrop_activitie
 $PDO->exec("DELETE t FROM nft_airdrop_tasks t JOIN nft_airdrop_activities a ON a.id=t.target_id WHERE t.target_type=3 AND a.name LIKE '空投管理E2E%'");
 $PDO->exec("DELETE FROM nft_airdrop_activities WHERE name LIKE '空投管理E2E%'");
 $PDO->exec("DELETE t FROM nft_airdrop_tasks t JOIN nft_collectibles c ON c.id=t.target_id WHERE t.target_type IN (1,2) AND c.name='空投管理E2E藏品'");
+// user_collectibles 的全部 RESTRICT 子表必须先于资产行清理（1451），extraJoin/where 均以 uc 为别名
+$ucRefDel = function(string $extraJoin, string $where) use ($PDO){
+  foreach ([
+    'nft_synthesis_record_items:user_collectible_id',
+    'nft_synthesis_records:result_user_collectible_id',
+    'nft_resale_listings:user_collectible_id',
+    'nft_transfers:user_collectible_id',
+    'nft_airdrop_snapshots:user_collectible_id',
+  ] as $x) {
+    [$tb,$col]=explode(':', $x);
+    $PDO->exec("DELETE r FROM $tb r JOIN nft_user_collectibles uc ON uc.id=r.$col $extraJoin WHERE $where");
+  }
+};
 $PDO->exec("DELETE r FROM nft_airdrop_records r JOIN nft_collectibles c ON c.id=r.collectible_id WHERE c.name='空投管理E2E藏品'");
+$ucRefDel("JOIN nft_collectibles c ON c.id=uc.collectible_id", "c.name='空投管理E2E藏品'");
 $PDO->exec("DELETE uc FROM nft_user_collectibles uc JOIN nft_collectibles c ON c.id=uc.collectible_id WHERE c.name='空投管理E2E藏品'");
 $PDO->exec("DELETE i FROM nft_inbox i JOIN nft_collectibles c ON c.id=i.collectible_id WHERE c.name='空投管理E2E藏品'");
 $PDO->exec("DELETE FROM nft_collectibles WHERE name='空投管理E2E藏品'");
+// 139x 号段为 E2E 专属用户：关闭 FK 校验整体移除，其在签到/订单等表遗留的孤儿行因 user_id 已不存在、
+// 业务查询均 JOIN users 过滤而不参与统计（与基线重置同法，避免逐表枚举外键清单随 schema 演进而失配）
+$PDO->exec("SET FOREIGN_KEY_CHECKS=0");
 foreach (["'1397%'", "'1398%'", "'1399%'", "'1391%'", "'1392%'", "'1393%'"] as $like) {
     $PDO->exec("DELETE r FROM nft_airdrop_records r JOIN nft_users u ON u.id=r.user_id WHERE u.phone LIKE $like");
     $PDO->exec("DELETE uc FROM nft_user_collectibles uc JOIN nft_users u ON u.id=uc.user_id WHERE u.phone LIKE $like");
     $PDO->exec("DELETE i FROM nft_inbox i JOIN nft_users u ON u.id=i.user_id WHERE u.phone LIKE $like");
     $PDO->exec("DELETE FROM nft_users WHERE phone LIKE $like");
 }
+$PDO->exec("SET FOREIGN_KEY_CHECKS=1");
 $seedUsers = [
     ['13977770007', '尾七A', 1, 0, $now],          // 尾号7 实名通过 今天注册
     ['13977770017', '尾七B', 1, 0, $yesterday],    // 尾号7 实名通过 昨天注册
@@ -101,8 +120,14 @@ $t8 = $validTail('8');
 T('造数校验：有效尾号7用户≥2（含黑名单排除）', $t7 >= 2, "实际 $t7");
 T('造数校验：有效尾号8用户=2', $t8 === 2, "实际 $t8");
 
-// 给尾八A 插 1 份已有藏品持仓（hold 型活动名单依据）
+// 给尾八A 插 1 份已有藏品持仓（hold 型活动名单依据）；龙纹罗盘非基线种子数据，缺失时自建
 $holdCid = (int) $q("SELECT id FROM nft_collectibles WHERE name='龙纹罗盘' LIMIT 1");
+if (!$holdCid) {
+    $holdCat = (int) $q("SELECT id FROM nft_categories LIMIT 1");
+    $PDO->exec("INSERT INTO nft_collectibles (category_id,name,image,price,edition,release_quantity,circulate,sold,locked_quantity,per_user_limit,status,issuer,description,onsale_at,created_at,updated_at)
+      VALUES ($holdCat,'龙纹罗盘','/images/collections/cover-1.jpg',10,100,0,0,0,0,10,'onsale','E2E','E2E 造数（hold 型空投依据）',NOW(3),NOW(3),NOW(3))");
+    $holdCid = (int) $q("SELECT id FROM nft_collectibles WHERE name='龙纹罗盘' LIMIT 1");
+}
 $tail8AId = (int) $q("SELECT id FROM nft_users WHERE phone='13988880008'");
 $PDO->exec("INSERT INTO nft_user_collectibles (user_id,collectible_id,serial,source,acquired_price,acquired_at,status,created_at,updated_at) VALUES ($tail8AId,$holdCid,'SN-TST-0001','airdrop',0,'$now','held','$now','$now')");
 $holdN = (int) $q("SELECT COUNT(*) FROM nft_users u WHERE u.deleted_at IS NULL AND u.is_blacklisted=0 AND EXISTS (SELECT 1 FROM nft_user_collectibles uc WHERE uc.user_id=u.id AND uc.collectible_id=$holdCid AND uc.status IN ('held','consigned','frozen'))");
@@ -170,11 +195,13 @@ $actB = (int) ($r['data']['id'] ?? 0);
 T('创建：多尾号活动B（7,8·草稿）', ($r['code'] ?? -1) === 200 && $actB > 0, "id=$actB");
 $r = $gen($actB);
 T('名单：B生成尾号7,8→' . ($t7 + $t8) . '人', (int) ($r['data']['generated'] ?? -1) === $t7 + $t8, "generated={$r['data']['generated']}");
-// 5.4 G：checkin 实时类型 → 拒绝生成
+// 5.4 G：checkin 类型 → 名单生成口径=累计签到≥N 天（a5c1628 起后端即支持，原"实时类型拒绝生成"预期与代码契约不符）
 $r = $mkAct(['name' => '空投管理E2E-签到型', 'type' => 'checkin', 'status' => 'active', 'collectible_id' => $airCid, 'quantity_per_user' => 1, 'checkin_days' => 2]);
 $actG = (int) ($r['data']['id'] ?? 0);
 $r = $gen($actG);
-T('名单：实时类型(checkin)拒绝生成（4220）', ($r['code'] ?? -1) === 4220, "code={$r['code']} msg={$r['message']}");
+$expG = (int) $q("SELECT COUNT(*) FROM nft_users u WHERE u.deleted_at IS NULL AND u.is_blacklisted=0
+  AND (SELECT COUNT(DISTINCT cir.check_in_date) FROM nft_check_in_records cir WHERE cir.user_id=u.id) >= 2");
+T('名单：checkin 类型按累计签到≥2天生成', ($r['code'] ?? -1) === 200 && (int) ($r['data']['generated'] ?? -1) === $expG, "code={$r['code']} generated={$r['data']['generated']} exp=$expG");
 // 5.5 E：hold 型 → 持有龙纹罗盘（尾八A）
 $r = $mkAct(['name' => '空投管理E2E-持有快照', 'type' => 'hold', 'status' => 'active', 'collectible_id' => $airCid, 'quantity_per_user' => 1, 'snapshot_collectible_id' => $holdCid]);
 $actE = (int) ($r['data']['id'] ?? 0);

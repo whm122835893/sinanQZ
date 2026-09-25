@@ -21,7 +21,7 @@ $bizTables = [
   'synthesis_records','synthesis_record_items','synthesis_materials','synthesis_activities',
   'decompose_rules','decompose_records','decompose_items',
   'lucky_draw_records','lucky_draw_prizes','lucky_draw_activities','lucky_draw_chances',
-  'check_in_records','invite_records','invite_activities',
+  'check_in_records','check_in_activities','invite_records','invite_activities',
   'airdrop_records','airdrop_snapshots','airdrop_eligibilities','airdrop_activities','airdrop_tasks',
   'collectibles','banners','announcements','artifacts','community_groups',
   'qualification_whitelists','qualification_configs',
@@ -62,6 +62,22 @@ foreach($users as $u){
 }
 echo "[OK] 已开账 8 个钱包（各 1000 元）\n";
 
+// ---- 3.5 SIT 夹具：关闭图形验证码（生产默认开启，见 full_init.sql 头注；本脚本仅在 APP_ENV=sit|test|dev 护栏内运行） ----
+$PDO->exec("UPDATE nft_system_configs SET config_value='0' WHERE config_key='captcha.enable'");
+$PDO->exec("UPDATE nft_system_configs SET config_value='{\"admin_login\":0}' WHERE config_key='captcha.scenes'");
+echo "[OK] SIT 夹具：验证码已关闭\n";
+
+// ---- 3.6 SIT 夹具：开启 C端功能开关 + 标准签到活动（H2-2d 断言按 day1=5 积分，与 sit_t6 种子一致；
+//           避免上轮 T6 遗留的高 id 活动按 order id desc 遮蔽导致断言漂移） ----
+$seed = $PDO->prepare("INSERT INTO nft_system_configs (config_key,config_value) VALUES (?,?)
+  ON DUPLICATE KEY UPDATE config_value=VALUES(config_value)");
+foreach(['lucky_enabled','synthesis_enabled','checkin_enabled'] as $k){ $seed->execute([$k,'1']); }
+$PDO->exec("INSERT INTO nft_check_in_activities (name,status,start_time,end_time,reward_config,eligibility_type,eligibility_config,grant_mode,signin_count,created_at,updated_at)
+  VALUES ('SIT标准签到','enabled',DATE_SUB(CURDATE(),INTERVAL 1 DAY),NULL,
+          '{\"1\":[{\"rewardType\":\"points\",\"amount\":5}],\"7\":[{\"rewardType\":\"points\",\"amount\":30}]}',
+          'all','','realtime',0,NOW(3),NOW(3))");
+echo "[OK] SIT 夹具：功能开关已开启、标准签到活动已播种\n";
+
 // ---- 4. 校验 ----
 $c=(int)$PDO->query("SELECT COUNT(*) FROM nft_users")->fetchColumn();
 echo "users=$c  ";
@@ -70,5 +86,5 @@ echo "wallets=$c  ";
 $c=(int)$PDO->query("SELECT COUNT(*) FROM nft_categories")->fetchColumn();
 echo "categories={$c}（保留）  ";
 $c=(int)$PDO->query("SELECT COUNT(*) FROM nft_admin_users")->fetchColumn();
-echo "admin_users=$c（保留）\n";
+echo "admin_users={$c}（保留）\n";
 echo "基线重置完成\n";

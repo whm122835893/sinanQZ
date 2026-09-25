@@ -57,9 +57,10 @@ function getCaptcha(): array {
 $T0 = microtime(true);
 echo "========== 阶段一：管理端登录与内容创建 ==========\n";
 
-// ---- 1.1 管理端登录（图形码） ----
+// ---- 1.1 管理端登录（图形码；SIT 基线夹具默认关闭 admin_login 场景，此时自动跳过） ----
 [$cid, $ccode, $cerr] = getCaptcha();
-T('管理端图形验证码获取+破解', $cid && $ccode, $cerr ?: "code=$ccode");
+$capSkipped = $cid === null && $cerr !== null && str_contains((string)$cerr, '关闭');
+T('管理端图形验证码获取+破解（场景关闭时跳过）', $capSkipped || ($cid && $ccode), $cerr ?: "code=$ccode");
 $login = http('POST', '/admin/auth/login', ['username' => 'admin', 'password' => 'admin123', 'captcha_id' => $cid, 'captcha_code' => $ccode]);
 $adminToken = $login['data']['token'] ?? '';
 T('管理端登录 admin/admin123', ($login['code'] ?? -1) === 200 && $adminToken, $login['message'] ?? '');

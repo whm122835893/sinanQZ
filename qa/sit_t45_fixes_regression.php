@@ -195,7 +195,7 @@ $soldBefore=(int)v("SELECT sold FROM nft_collectibles WHERE id=9310");
 $r=http('POST',"/api/raffle/activities/$raffleId/purchase",['quantity'=>2],$tokA);
 T('RF03.9 中签购买 2 件成功', $r['code']===0, json_encode($r,JSON_UNESCAPED_UNICODE));
 T('RF03.10 扣款 198 元（99×2）', abs(v("SELECT available FROM nft_wallets WHERE user_id=$uidA")-($balA-198))<0.001);
-T('RF03.11 订单生成（release 来源）', v("SELECT COUNT(*) FROM nft_orders WHERE user_id=$uidA AND collectible_id=9310 AND status='completed' AND source='release'")==1);
+T('RF03.11 订单生成（中签购买 source=raffle，见 Raffle.php:494）', v("SELECT COUNT(*) FROM nft_orders WHERE user_id=$uidA AND collectible_id=9310 AND status='completed' AND source='raffle'")==1);
 T('RF03.12 持仓 2 件（serial 唯一）', v("SELECT COUNT(DISTINCT serial) FROM nft_user_collectibles WHERE user_id=$uidA AND collectible_id=9310")==2);
 T('RF03.13 库存 sold +2', ((int)v("SELECT sold FROM nft_collectibles WHERE id=9310")-$soldBefore)===2);
 $r=http('POST',"/api/raffle/activities/$raffleId/purchase",['quantity'=>1],$tokA);

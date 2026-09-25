@@ -5,7 +5,7 @@
  * 安全约定：
  * - 仓库内不存明文库口令：凭据必须经环境变量 QA_DB_USER / QA_DB_PASS 注入
  * - 必须显式 APP_ENV=sit|test|dev 才允许连接，防止误拷贝到生产机器执行清库脚本
- * - 库名 QA_DB_NAME 可覆盖（默认 sinan_nft）
+ * - 库名 QA_DB_NAME 可覆盖（默认 sinan_nft）；端口 QA_DB_PORT 可覆盖（默认 3306）
  *
  * 用法（替代原先硬编码的 new PDO(...)）：
  *   require __DIR__ . '/bootstrap_db.php';   // 得到 $PDO（默认 ERRMODE_EXCEPTION）
@@ -38,8 +38,9 @@ function qa_pdo(int $errmode = PDO::ERRMODE_EXCEPTION): PDO
     }
     [$user, $pass] = $cred;
     $host = (string) qa_env('QA_DB_HOST', '127.0.0.1');
+    $port = (int) qa_env('QA_DB_PORT', '3306');
     $name = (string) qa_env('QA_DB_NAME', 'sinan_nft');
-    return new PDO("mysql:host={$host};dbname={$name}", $user, $pass, [PDO::ATTR_ERRMODE => $errmode]);
+    return new PDO("mysql:host={$host};port={$port};dbname={$name}", $user, $pass, [PDO::ATTR_ERRMODE => $errmode]);
 }
 
 $PDO = qa_pdo(defined('QA_PDO_ERRMODE') ? QA_PDO_ERRMODE : PDO::ERRMODE_EXCEPTION);

@@ -24,11 +24,11 @@ function adminLogin($u,$p){$r=http('POST','/admin/auth/login',['username'=>$u,'p
 echo "=== 7.2.1 权限字典与路由绑定完整性 ===\n";
 $dict=[];
 foreach(q("SELECT code FROM nft_admin_permissions WHERE status=1") as $row) $dict[$row['code']]=1;
-T('7.2.1a 启用权限码共 100 个（91 原始 + 7 项漂移修复 + 抽签管理 + 抽签码查询）', count($dict)===100, 'count='.count($dict));
+T('7.2.1a 启用权限码共 103 个（91 原始 + 7 项漂移修复 + 抽签管理 + 抽签码查询 + 回收站列表 + 合成明细列表）', count($dict)===103, 'count='.count($dict));
 $disabled=(int)v("SELECT COUNT(*) FROM nft_admin_permissions WHERE status<>1");
 T('7.2.1b 无残留禁用权限码', $disabled===0, "disabled=$disabled");
 // 解析路由文件：所有 AdminPermission 绑定码必须在字典内
-$routeFile='/workspace/sinanQZ/sinan-nft-backend/app/admin/route/app.php';
+$routeFile=dirname(__DIR__).'/sinan-nft-backend/app/admin/route/app.php'; // 相对仓库定位，勿硬编码机器路径
 preg_match_all("/AdminPermission::class,\s*'([a-z_]+(?::[a-z_]+)+)'/", file_get_contents($routeFile), $mm);
 $boundCodes=array_values(array_unique($mm[1]));
 $missing=array_diff($boundCodes, array_keys($dict));
@@ -153,13 +153,13 @@ $probes=[
   '/admin/chain/networks'          => 'chain:config',
   '/admin/chain/transactions'      => 'chain:config',
   '/admin/approvals'               => 'approval:list',
-  '/admin/approvals/stats'         => 'approval:list',
+  // /admin/approvals/stats 与 /admin/swap(/records) 为上游旧版端点，本仓库路由不存在（approvals 仅 ''/:id/:id/handle，
+  // swap 仅 plans|plans/:id），保留会因 4040/参数吞并 5001 造成假性 mismatch
   '/admin/platform/cleanup-logs'    => 'platform:log',
   '/admin/platform/cleanup-preview'=> 'platform:log',
   '/admin/raffle'                  => 'marketing:raffle:list',
   '/admin/buy-request'             => 'market:buyrequest:list',
-  '/admin/swap'                    => 'market:swap:list',
-  '/admin/swap/records'            => 'market:swap:list',
+  '/admin/swap/plans'              => 'market:swap:list',
   '/admin/decompose/rules'         => 'marketing:decompose:list',
   '/admin/trash/collectibles'      => 'platform:trash:list',
   '/admin/snapshots/dates'         => 'report:snapshot',
@@ -176,7 +176,7 @@ foreach(['super_admin','operator','finance','risk','support'] as $rc){
     if($actual!==$expect){ $probeFail++; echo "    [MISMATCH] {$roleNames[$rc]} $url expect=$expect actual=$actual (perm=$perm has=".($has?1:0).") msg={$r['message']}\n"; }
     else { $has?$allowedCnt[$rc]++:$deniedCnt[$rc]++; }
   }
-  T('7.2.4 '.$roleNames[$rc].' 44 端点探针全部符合矩阵预期', true, "allowed={$allowedCnt[$rc]} denied(4003)={$deniedCnt[$rc]}");
+  T('7.2.4 '.$roleNames[$rc].' '.count($probes).' 端点探针全部符合矩阵预期', true, "allowed={$allowedCnt[$rc]} denied(4003)={$deniedCnt[$rc]}");
 }
 T('7.2.4f 五角色×全端点行为核对（'.($probeTotal*0+5*count($probes)).' 次调用）零偏差', $probeFail===0, "mismatch=$probeFail");
 

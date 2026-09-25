@@ -142,7 +142,9 @@ if($sr){
   T('7.5.4e 抽样勾稽（快照=真实持仓数）', (int)$sr['total_count']===$rc, "snap={$sr['total_count']} real=$rc");
 }else{T('7.5.4e 抽样勾稽',false,'无快照行');}
 // 单人快照
-$uid7=7;
+// 动态选取一个真实持仓用户（硬编码 id=7 依赖历史数据布局，基线重置后无持仓会误报）
+$uid7=(int)v("SELECT user_id FROM nft_user_collectibles WHERE status IN ('held','consigned','frozen') GROUP BY user_id ORDER BY COUNT(*) DESC LIMIT 1");
+if(!$uid7){ $uid7=7; echo "  [WARN] 无持仓用户，7.5.4e~4h 前置数据缺失\n"; }
 $r=http('POST','/admin/snapshots/generate',['date'=>$today,'userId'=>$uid7],$tokSuper);
 $dbU=(int)v("SELECT COUNT(*) FROM nft_holdings_snapshots WHERE snapshot_date='$today' AND user_id=$uid7");
 $dbAll=(int)v("SELECT COUNT(DISTINCT user_id) FROM nft_holdings_snapshots WHERE snapshot_date='$today'");

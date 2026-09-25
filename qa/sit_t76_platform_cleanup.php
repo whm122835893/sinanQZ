@@ -134,6 +134,7 @@ $r=http('POST','/admin/platform/cleanup-execute',['code'=>'123456','reason'=>'�
 T('7.6.2c reason<5字拒绝', $r['code']===4220 && strpos($r['message'],'5')!==false, $r['message']);
 $r=http('POST','/admin/platform/cleanup-execute',['code'=>'123456','reason'=>'未发码直接执行'],$tokSuper);
 T('7.6.2d 未发码执行拒绝', $r['code']===4220, $r['message']);
+$audBase=(int)v("SELECT COUNT(*) FROM nft_admin_operation_logs WHERE module='platform' AND action='cleanup_send_code'");
 $r=http('POST','/admin/platform/cleanup-send-code',['phone'=>'13900000000'],$tokSuper);
 T('7.6.2e 非绑定手机号拒绝', $r['code']===4220 && strpos($r['message'],'绑定')!==false, $r['message']);
 $r=http('POST','/admin/platform/cleanup-send-code',[],$tokSuper);
@@ -150,11 +151,21 @@ $r=http('POST','/admin/platform/cleanup-execute',['code'=>$wrong,'reason'=>'错�
 T('7.6.3b 错误验证码拒绝', $r['code']===4220 && strpos($r['message'],'验证码错误')!==false, $r['message']);
 
 // F7-D7：mysqldump 临时失效 → 备份失败必须阻断清库
+// 跨平台失效模拟：必须屏蔽后端 PATH 能解析到的全部 mysqldump（机器上可能存在多份，只移第一份会被另一份顶替，
+// 导致"阻断"演练退化为真实清库）。Windows 下原 /usr/bin 路径不存在，rename 静默失败同理危险。
+$lines=array_filter(array_map('trim',explode("\n",str_replace("\r",'',(string)(strncasecmp(PHP_OS,'WIN',3)===0
+  ? shell_exec('where mysqldump 2>NUL') : shell_exec('which -a mysqldump 2>/dev/null'))))));
+if(($qb=(string)getenv('QA_MYSQLDUMP'))!==''&&is_file($qb)) array_unshift($lines,$qb);
+$bins=array_values(array_unique(array_filter($lines,'is_file')));
+if(!$bins){
+  fwrite(STDERR,"[qa] FATAL：无法定位后端可用的 mysqldump（请将与后端一致的 mysql bin 目录加入 PATH 或设置 QA_MYSQLDUMP）。拒绝继续，防止阻断演练变成真实清库\n");
+  exit(1);
+}
+foreach($bins as $b) rename($b,$b.'.qabak');
 // 阻断场景基线：7.6.2f 发码插入的验证码行属测试自身合法写入（发码业务），不属被阻断清库的变动
 $blkBase=snap();
-rename('/usr/bin/mysqldump','/usr/bin/mysqldump.bak');
 $r=http('POST','/admin/platform/cleanup-execute',['code'=>$code1,'reason'=>'备份失败应阻断清库演练'],$tokSuper);
-rename('/usr/bin/mysqldump.bak','/usr/bin/mysqldump');
+foreach($bins as $b) rename($b.'.qabak',$b);
 T('7.6.3c 备份失败阻断清库返回 5000', $r['code']===5000 && strpos($r['message'],'阻断')!==false,
   json_encode($r,JSON_UNESCAPED_UNICODE));
 // 阻断后零变动：业务/受保护数据表必须原样（对照阻断前基线）；审计日志增长是正确行为（阻断留痕），单独断言
@@ -202,7 +213,8 @@ T('7.6.4k 清库日志字段完整（status/admin_id/备份/原因/影响面）'
   && ($log['reason']??'')!=='' && (int)($log['affected_users']??-1)===$activeUsers && (int)($log['affected_orders']??-1)===$ordersN,
   json_encode($log,JSON_UNESCAPED_UNICODE));
 $aud=(int)v("SELECT COUNT(*) FROM nft_admin_operation_logs WHERE module='platform' AND action='cleanup_send_code'");
-T('7.6.4l 发码审计留痕（≥3 次）', $aud>=3, "count=$aud");
+// 本轮恰有 2 次成功发码（7.6.2f + 7.6.4a 重发）；审计表不受清库影响，须用增量断言（演练可重复跑）
+T('7.6.4l 发码审计留痕（每次成功发码恰 1 条）', $aud-$audBase===2, "delta=".$aud." base=".$audBase);
 $aud2=v("SELECT action_desc FROM nft_admin_operation_logs WHERE module='platform' AND action='cleanup_execute' ORDER BY id DESC LIMIT 1");
 T('7.6.4m 执行审计留痕（原因/影响/备份）', strpos((string)$aud2,'执行平台清库')!==false && strpos((string)$aud2,'备份')!==false, (string)$aud2);
 
@@ -214,7 +226,9 @@ $dump=$bp!==''?(string)file_get_contents($bp):'';
 T('7.6.5c 备份含全量结构与数据（users/admin_users）',
   strpos($dump,'CREATE TABLE `nft_users`')!==false && strpos($dump,'INSERT INTO `nft_users`')!==false
   && strpos($dump,'CREATE TABLE `nft_admin_users`')!==false);
-$out=(string)shell_exec('MYSQL_PWD='.escapeshellarg(getenv('QA_DB_PASS')).' mysql -h127.0.0.1 -u'.escapeshellarg(getenv('QA_DB_USER')).' '.escapeshellarg(getenv('QA_DB_NAME')?:'sinan_nft').' < '.escapeshellarg($bp).' 2>&1');
+putenv('MYSQL_PWD='.(string)getenv('QA_DB_PASS'));
+$port=(string)(getenv('QA_DB_PORT')?:'3306');
+$out=(string)shell_exec('mysql -h127.0.0.1 -P'.$port.' -u'.escapeshellarg(getenv('QA_DB_USER')).' '.escapeshellarg(getenv('QA_DB_NAME')?:'sinan_nft').' < '.escapeshellarg($bp).' 2>&1');
 $rest=snap();$ok=true;$diff2=[];
 // 备份为清库执行前瞬间快照：演练自身产生的验证码行与审计留痕合法包含在备份内（≥基线即可）
 $volatile=['verification_codes','admin_operation_logs','platform_cleanup_logs','admin_login_logs'];

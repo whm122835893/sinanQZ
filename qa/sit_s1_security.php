@@ -39,7 +39,7 @@ function adminLogin($u,$p){$r=http('POST','/admin/auth/login',['username'=>$u,'p
 /** 与 common.php aes_encrypt 完全一致的加密（白盒夹具） */
 function aesEnc($data){$key=hash('sha256',envAppKey(),true);$iv=random_bytes(16);
 return base64_encode($iv.openssl_encrypt($data,'AES-256-CBC',$key,0,$iv));}
-function envAppKey(){foreach(file('/workspace/sinanQZ/sinan-nft-backend/.env') as $l){if(preg_match('/^APP_KEY\s*=\s*(\S+)/i',trim($l),$m))return $m[1];}return 'sinan-nft-secret-key-2026';}
+function envAppKey(){foreach(file(dirname(__DIR__).'/sinan-nft-backend/.env') as $l){if(preg_match('/^APP_KEY\s*=\s*(\S+)/i',trim($l),$m))return $m[1];}return 'sinan-nft-secret-key-2026';}
 /** 注册全新用户并完成实名/交易密码/充值，返回 [id, phone, token, tradePwd] */
 function newUser($tag,$balance=5000){
   $phone='138'.str_pad((string)random_int(10000000,99999999),8,'0',STR_PAD_LEFT);
@@ -139,7 +139,10 @@ echo "\n=== 2. 垂直越权（token 交叉/无 token/低权限角色）===\n";
 [$STOK]=adminLogin('admin','admin123');
 $r=http('GET','/admin/users',null,$ATOK);
 T('2.1 C 端 token 访问 /admin/users 被拒（4001/4002）', in_array($r['code'],[4001,4002]), 'code='.$r['code']);
-[$r2up]=upload($ATOK,'/etc/hostname','x.jpg','image/jpeg');
+// 跨平台假载荷：Windows 无 /etc/hostname，CURLFile 指向不存在路径会导致整个请求失败（code=-2 假性 FAIL）
+$s1fake='/etc/hostname';
+if(!is_file($s1fake)){$s1fake=tempnam(sys_get_temp_dir(),'s1fake');file_put_contents($s1fake,random_bytes(2048));}
+[$r2up]=upload($ATOK,$s1fake,'x.jpg','image/jpeg');
 T('2.2 C 端 token 调 /admin/upload/image 被拒（4001/4002）', in_array(($r2up['code']??-1),[4001,4002]), 'code='.($r2up['code']??''));
 $r=http('GET','/api/user/profile',null,$STOK);
 T('2.3 管理端 token 访问 /api/user/profile 被拒（2001）', ($r['code']==2001), 'code='.$r['code']);
@@ -157,9 +160,9 @@ T('2.8 客服角色改链配置被拒（4003/4040）', ($r['code']==4003||$r['co
 
 /* ---------------- 3. JWT 攻击 ---------------- */
 echo "\n=== 3. JWT 攻击面 ===\n";
-$secretEnv=(function(){foreach(file('/workspace/sinanQZ/sinan-nft-backend/.env') as $l){if(preg_match('/^SECRET\s*=\s*(.+)$/i',trim($l),$m))return trim($m[1]);}return '';})();
+$secretEnv=(function(){foreach(file(dirname(__DIR__).'/sinan-nft-backend/.env') as $l){if(preg_match('/^SECRET\s*=\s*(.+)$/i',trim($l),$m))return trim($m[1]);}return '';})();
 T('3.0 运行时 C 端密钥已配置且非源码默认值', strlen($secretEnv)>=32 && $secretEnv!=='sinan-nft-secret', 'len='.strlen($secretEnv));
-$adminSecretEnv=(function(){foreach(file('/workspace/sinanQZ/sinan-nft-backend/.env') as $l){if(preg_match('/^ADMIN_SECRET\s*=\s*(.+)$/i',trim($l),$m))return trim($m[1]);}return '';})();
+$adminSecretEnv=(function(){foreach(file(dirname(__DIR__).'/sinan-nft-backend/.env') as $l){if(preg_match('/^ADMIN_SECRET\s*=\s*(.+)$/i',trim($l),$m))return trim($m[1]);}return '';})();
 T('3.0b 运行时管理端密钥已配置、≥32 字节且非源码默认值（SEC-J1 修复后强制要求）', strlen($adminSecretEnv)>=32 && $adminSecretEnv!=='sinan-nft-admin-jwt-secret-2026-strong-hmac-key', 'len='.strlen($adminSecretEnv));
 $hdr=b64u(json_encode(['typ'=>'JWT','alg'=>'none']));$pl=b64u(json_encode(['sub'=>$BID,'iat'=>time(),'exp'=>time()+3600]));
 $r=http('GET','/api/user/profile',null,"$hdr.$pl.");
@@ -340,7 +343,7 @@ file_put_contents("$tmp/big.jpg",str_pad($jpg,6*1024*1024,"\0"));
 T('7.5 超 5MB 文件被拒（4220）', ($r['code']==4220), 'code='.($r['code']??''));
 [$r]=upload($STOK,"$tmp/poly.jpg",'ok.jpg','image/jpeg','../../evil');
 T('7.6 biz=../../evil 路径穿越被拒（4220）', ($r['code']==4220), 'code='.($r['code']??''));
-T('7.6b 无穿越目录残留', !is_dir('/workspace/sinanQZ/sinan-nft-backend/public/evil'));
+T('7.6b 无穿越目录残留', !is_dir(dirname(__DIR__).'/sinan-nft-backend/public/evil'));
 [$r]=upload('',$tmp.'/poly.jpg','x.jpg','image/jpeg');
 T('7.7 无 token 上传被拒（4001）', in_array(($r['code']??-1),[4001,-2]), 'code='.($r['code']??''));
 

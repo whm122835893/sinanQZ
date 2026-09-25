@@ -211,6 +211,13 @@ $finalOk = ($ord3 === 'completed' && $sold1 === $sold0 + 1) || ($ord3 === 'cance
 T('H2-2c pay/cancel 对打恰好一方生效（状态互斥）', ($okP + $okC) >= 1 && $finalOk && $lock1 === $lockAfter,
   "pay=$okP cancel=$okC final=$ord3 sold $sold0->$sold1");
 /* d) 签到双击 */
+/* 自建标准签到活动（day1=5 积分）并复位用户签到状态：上游 t6 遗留的高 id 活动会按 order id desc 遮蔽，导致断言漂移 */
+exe("DELETE FROM nft_check_in_activities WHERE name='H2-标准签到'");
+exe("INSERT INTO nft_check_in_activities (name,status,start_time,end_time,reward_config,eligibility_type,eligibility_config,grant_mode,signin_count,created_at,updated_at)
+     VALUES ('H2-标准签到','enabled',DATE_SUB(CURDATE(),INTERVAL 1 DAY),NULL,'{\"1\":[{\"rewardType\":\"points\",\"amount\":5}]}','all','','realtime',0,NOW(3),NOW(3))");
+exe("DELETE FROM nft_check_in_records WHERE user_id=$uidU");
+exe("DELETE FROM nft_wallet_transactions WHERE user_id=$uidU AND trans_type='reward' AND title LIKE '%签到%'");
+exe("UPDATE nft_wallets SET points=0 WHERE user_id=$uidU");
 $pts0 = (float)v("SELECT points FROM nft_wallets WHERE user_id=$uidU");
 $dbl = burst([['url'=>"$BASE/api/check-in",'tok'=>$TOK[$U],'b'=>[]],
               ['url'=>"$BASE/api/check-in",'tok'=>$TOK[$U],'b'=>[]]]);

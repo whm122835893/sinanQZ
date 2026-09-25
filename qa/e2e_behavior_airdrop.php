@@ -41,7 +41,7 @@ function crackCaptcha(string $captchaId): ?string {
 }
 function getCaptcha(): array {
     $j = http('GET', '/api/captcha/image');
-    if (($j['code'] ?? -1) !== 0) return [null, null, 'captcha/image 失败'];
+    if (($j['code'] ?? -1) !== 0) return [null, null, 'captcha/image 失败: ' . ($j['message'] ?? '')];
     $id = $j['data']['captcha_id'] ?? '';
     $code = $id ? crackCaptcha($id) : null;
     return [$id, $code, $code ? null : '破解失败'];
@@ -54,7 +54,8 @@ $q = fn($s) => $PDO->query($s)->fetch(PDO::FETCH_NUM)[0] ?? null;
 echo "========== 阶段一：管理端登录 ==========\n";
 $T0 = microtime(true);
 [$cid, $ccode, $cerr] = getCaptcha();
-T('管理端图形验证码获取+破解', $cid && $ccode, $cerr ?: '');
+// SIT 基线夹具默认关闭 admin_login 图形码场景：此时跳过破解直接登录
+T('管理端图形验证码获取+破解（场景关闭时跳过）', (str_contains((string)$cerr, '关闭')) || ($cid && $ccode), $cerr ?: '');
 $login = http('POST', '/admin/auth/login', ['username' => 'admin', 'password' => 'admin123', 'captcha_id' => $cid, 'captcha_code' => $ccode]);
 $adminToken = $login['data']['token'] ?? '';
 T('管理端登录', ($login['code'] ?? -1) === 200 && $adminToken, $login['message'] ?? '');
