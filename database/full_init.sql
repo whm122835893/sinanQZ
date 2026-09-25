@@ -44,13 +44,18 @@
 -- 开发确需重建：mysql -u<user> -p -e "SET @FORCE_RESET:=1; SOURCE database/full_init.sql;"
 -- ----------------------------------------------------------------------------
 SET @guard := CASE
-    WHEN IFNULL(@FORCE_RESET, 0) = 1 THEN 'SELECT 1'
-    WHEN NOT EXISTS (SELECT 1 FROM information_schema.TABLES
-                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_users') THEN 'SELECT 1'
-    WHEN (SELECT COUNT(*) FROM `nft_users`) = 0 THEN 'SELECT 1'
+    WHEN IFNULL(@FORCE_RESET, 0) = 1 THEN 'SELECT 0 INTO @guard_rows'
+    WHEN EXISTS (SELECT 1 FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nft_users')
+        THEN 'SELECT COUNT(*) INTO @guard_rows FROM `nft_users`'
+    ELSE 'SELECT 0 INTO @guard_rows'
+END;
+PREPARE g1 FROM @guard; EXECUTE g1; DEALLOCATE PREPARE g1;
+SET @guard := CASE
+    WHEN @guard_rows = 0 THEN 'SELECT 1'
     ELSE 'CALL `__ABORT_full_init_sql_DROP重建已中止_数据非空_开发重建请SET_FORCE_RESET_1__`'
 END;
-PREPARE stmt FROM @guard; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+PREPARE g2 FROM @guard; EXECUTE g2; DEALLOCATE PREPARE g2;
 
 --
 -- Table structure for table `nft_activity_reward_records`
