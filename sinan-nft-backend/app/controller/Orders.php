@@ -38,6 +38,10 @@ class Orders extends BaseController
         $isRealname = Db::name('users')->where('id', $userId)->value('is_realname');
         if ((int) $isRealname !== 1) return $this->fail(1001, '请先完成实名认证');
 
+        // 限购计数是「锁区间内的普通读」：RR 的读视图在抢 FOR UPDATE 行锁之前就已固定，
+        // 于是并发请求各自读到旧快照（实测 8 并发同一用户、per_user_limit=1 放行 5 笔）。
+        // 本事务改用 READ COMMITTED：视图按语句重建，锁区间内的读即最新已提交数据。
+        Db::execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         Db::startTrans();
         try {
             $now = date('Y-m-d H:i:s.v');

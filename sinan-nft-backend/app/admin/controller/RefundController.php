@@ -137,6 +137,16 @@ class RefundController extends BaseController
             $threshold = (float) (Db::name('system_configs')
                 ->where('config_key', 'large_refund_approval_threshold')->value('config_value') ?: 1000);
             if ((float) $refund['amount'] >= $threshold) {
+                // 「查无审批单 → 插入」不是原子动作：并发双 approve 都能通过上面无锁的 status=1 预检，
+                // 不串行化就会为同一笔退款插出两条待复核审批单（两条各自通过审批 → 二次打款）。
+                // 先锁退款行再判存在性：后到者只能等前者提交后才取到锁，此时 count 必然看到已插的审批单。
+                Db::startTrans();
+                $locked = Db::name('refunds')->where('id', $id)->where('status', 1)->lock(true)->find();
+                if (!$locked) {
+                    Db::rollback();
+                    return $this->fail(4220, '退款单状态已变化（可能已被并发审批），请刷新后重试');
+                }
+                $refund = $locked;
                 $exists = Db::name('approval_requests')
                     ->where('target_type', 'refund')->where('target_id', $id)
                     ->where('status', 1)->count();
@@ -163,12 +173,14 @@ class RefundController extends BaseController
                         'created_at'     => date('Y-m-d H:i:s'),
                         'updated_at'     => date('Y-m-d H:i:s'),
                     ]);
+                    Db::commit();
                     $this->audit('refund', 'approval_submit',
                         '大额退款 ' . $refund['refund_no'] . '（' . $refund['amount'] . ' 元）已提交审批中心复核',
                         ['approval_threshold' => $threshold], 'refund', $id);
                     return $this->success(null,
                         '退款金额 ' . $refund['amount'] . ' 元 ≥ 审批阈值 ' . $threshold . ' 元，已提交审批中心复核，通过后方可执行退款');
                 }
+                Db::rollback();
                 return $this->fail(4220, '该退款单已存在待复核的审批单，请等待审批中心处理');
             }
         }

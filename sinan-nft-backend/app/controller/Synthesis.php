@@ -146,6 +146,8 @@ class Synthesis extends BaseController
             return $this->fail(4003, '合成功能暂未开放');
         }
 
+        // 每人限次是锁区间内的普通 count()：RR 读视图在行锁前固定，并发下绕过 per_user_limit。
+        Db::execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         Db::startTrans();
         try {
             $act = Db::name('synthesis_activities')

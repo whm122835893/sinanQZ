@@ -134,6 +134,11 @@ class LuckyDraw extends BaseController
             return $this->fail(4003, '抽奖功能暂未开放');
         }
 
+        // consumeChance 的「查无台账即免费抽」是用户行锁区间内的普通 count()，与 Orders/Synthesis
+        // 同族：RR 下等锁请求的读视图可能固定在对方提交之前，draw() 里「持用户行锁后第二个事务
+        // 必然看到首个事务的落库」这句注释所依赖的保证就不成立（本机 24 并发未复现，因该临界区
+        // 太短）。改用 READ COMMITTED 后该保证由隔离级别提供，不再依赖请求到达时序。
+        Db::execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         Db::startTrans();
         try {
             // ---- 0. 用户行锁：串行化同一用户并发抽奖 ----

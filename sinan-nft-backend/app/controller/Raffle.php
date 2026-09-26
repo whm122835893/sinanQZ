@@ -228,6 +228,9 @@ class Raffle extends BaseController
         $qty = max(1, $this->intParam('quantity', 1));
         if ($id <= 0) return $this->fail(1001, '活动不存在');
 
+        // assertCanBuy 的 buy_code_limit 是活动行锁区间内的普通 count()：RR 读视图在抢锁前
+        // 固定，并发购码各自读到旧计数而突破上限并多扣余额。本事务改用 READ COMMITTED。
+        Db::execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         Db::startTrans();
         try {
             $act = Db::name('raffle_activities')->where('id', $id)->whereNull('deleted_at')->lock(true)->find();

@@ -125,6 +125,9 @@ class Decompose extends BaseController
             return $this->fail(1001, '参数不正确');
         }
 
+        // 限次计数是锁区间内的普通读：RR 的读视图在抢 FOR UPDATE 行锁之前就固定，
+        // 并发请求各自读到旧快照而绕过 per_user_limit/daily_limit。本事务改用 READ COMMITTED。
+        Db::execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         Db::startTrans();
         try {
             $rule = Db::name('decompose_rules')

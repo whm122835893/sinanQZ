@@ -240,12 +240,22 @@ class OrderController extends BaseController
             if ($order['source'] === 'release' || $order['source'] === 'priority' || $order['source'] === 'eligibility') {
                 // 发售模式：库存结转 + 生成持仓
                 $collectible = Db::name('collectibles')->where('id', $order['collectible_id'])->lock(true)->find();
-                Db::name('collectibles')->where('id', $order['collectible_id'])->update([
-                    'sold'            => Db::raw('sold + ' . (float)($order['quantity'])),
-                    'locked_quantity' => Db::raw('locked_quantity - ' . (float)($order['quantity'])),
-                    'circulate'       => Db::raw('circulate + ' . (float)($order['quantity'])),
-                    'updated_at'      => $now,
-                ]);
+                // locked_quantity 是 UNSIGNED：这里必须带守恒守卫。缺了它，一旦该单的锁定量已被
+                // 别的路径释放（过期取消、后台取消、人工改过库存），SQL 就报 1690 BIGINT UNSIGNED
+                // out of range，整个接口 5000 且把 SQL 原文回吐给前端。cancel/ ScheduleDispatch /
+                // C 端支付三处同样的减法都带 locked_quantity >= qty 守卫，只有这里漏了。
+                $released = Db::name('collectibles')->where('id', $order['collectible_id'])
+                    ->whereRaw('locked_quantity >= ' . (int) $order['quantity'])
+                    ->update([
+                        'sold'            => Db::raw('sold + ' . (int) $order['quantity']),
+                        'locked_quantity' => Db::raw('locked_quantity - ' . (int) $order['quantity']),
+                        'circulate'       => Db::raw('circulate + ' . (int) $order['quantity']),
+                        'updated_at'      => $now,
+                    ]);
+                if ($released === 0) {
+                    Db::rollback();
+                    return $this->fail(4220, '该订单占用的锁定库存已被释放，请先核对藏品库存后再标记支付');
+                }
                 $soldPrev = (int) $collectible['sold'];
                 for ($i = 0; $i < (int) $order['quantity']; $i++) {
                     $seq    = str_pad((string) ($soldPrev + $i + 1), 4, '0', STR_PAD_LEFT);

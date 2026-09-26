@@ -57,7 +57,8 @@ class Transfers extends BaseController
             }
 
             $now = date('Y-m-d H:i:s.v');
-            Db::name('transfers')->insert([
+            // 必须用 insertGetId 取主键：并发下同一受赠人的「order by id desc 反查」会取到别人刚提交的行
+            $transferId = (int) Db::name('transfers')->insertGetId([
                 'from_user_id'        => $userId,
                 'to_user_id'          => $toUser['id'],
                 'to_phone'            => $toPhone,
@@ -73,8 +74,6 @@ class Transfers extends BaseController
                 'updated_at' => $now,
             ]);
             // 收件箱通知：受赠人弹窗提示"恭喜你收到转赠藏品"
-            $transferId = (int) Db::name('transfers')->where('to_user_id', $toUser['id'])
-                ->order('id', 'desc')->value('id');
             Db::name('inbox')->insert([
                 'user_id'        => (int) $toUser['id'],
                 'type'           => 'transfer',

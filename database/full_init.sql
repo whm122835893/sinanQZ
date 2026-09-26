@@ -1656,7 +1656,7 @@ CREATE TABLE `nft_payments` (
   `order_id` bigint unsigned NOT NULL COMMENT '订单ID，FK→nft_orders.id，唯一（1:1）',
   `user_id` bigint unsigned NOT NULL COMMENT '支付用户ID，FK→nft_users.id',
   `amount` decimal(10,2) NOT NULL COMMENT '实付金额（元）',
-  `payment_method` enum('balance','alipay','wechat') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '支付方式：balance余额（依赖钱包）/alipay支付宝/wechat微信',
+  `payment_method` enum('balance','alipay','wechat','huifu','unionpay','yeepay') COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '支付方式：balance余额（依赖钱包）/alipay支付宝/wechat微信/huifu汇付/unionpay银联/yeepay易宝（与 PaymentService::CODES 同集合）',
   `transaction_no` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '第三方支付流水号',
   `status` enum('pending','success','failed','refunded') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT '支付状态：pending待支付/success成功/failed失败/refunded已退款',
   `paid_at` datetime(3) DEFAULT NULL COMMENT '支付成功时间',
