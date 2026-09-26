@@ -8,6 +8,7 @@
  *    H1-3 梯度持续负载：20 藏品池 × 并发 10/50/100/200 × 60s
  *         每轮完整周期 = 创建订单 + 余额支付；输出 TPS / RT(p50/p95/p99) / 错误率
  *    H1-4 全局恒等式验收：防超卖 CHECK 零违例、持仓=完成量、serial 全局唯一、资金守恒、零死锁
+ *    H1-5 限购并发：同一用户并发抢 per_user_limit=1/3 的藏品，放行笔数必须恰好等于限购值
  *
  *  实测结论（2026-09-11，3 核沙箱 / PHP 内置服务器 32 worker / MySQL 8.0.46）：
  *  1. 正确性全绿：200 并发爆发无超卖、支付/取消无双重处理、恒等式零违例、资金守恒、零死锁。
@@ -22,7 +23,21 @@
  */
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
-$BASE = getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
+// Windows 的 php -S 是单线程进程：QA_BASE 支持逗号分隔多地址，burst 轮转分发才能压出真实并发
+$BASES = array_values(array_filter(array_map('trim', explode(',', (string) (getenv('QA_BASE') ?: 'http://127.0.0.1:8080')))));
+$BASE  = $BASES[0];
+
+/** 把 URL 的 origin 换成轮转到的后端地址；只配一个地址时原样返回 */
+function distribute(string $url, ?int $i = null): string
+{
+    global $BASES;
+    if (count($BASES) < 2) {
+        return $url;
+    }
+    static $n = 0;
+    $k = ($i ?? $n++) % count($BASES);
+    return (string) preg_replace('#^[a-z]+://[^/]+#i', $BASES[$k], $url, 1);
+}
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 $pass = 0; $fail = 0; $fails = [];
@@ -47,7 +62,7 @@ function mint(int $uid, string $phone): string {
 function burst(array $reqs, int $timeout = 30): array {
   $mh = curl_multi_init(); $handles = [];
   foreach ($reqs as $i => $r) {
-    $ch = curl_init($r['url']);
+    $ch = curl_init(distribute($r['url'], (int) $i));
     curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST=>$r['m'], CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>$timeout,
       CURLOPT_HTTPHEADER=>['Content-Type: application/json', 'Authorization: Bearer '.$r['tok']],
       CURLOPT_POSTFIELDS=>json_encode($r['b'])]);
@@ -61,7 +76,7 @@ function burst(array $reqs, int $timeout = 30): array {
       $out[$i] = ['err'=>$info['result']!==CURLE_OK, 'rt'=>curl_getinfo($ch, CURLINFO_TOTAL_TIME),
                   'code'=>(int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
                   'json'=>json_decode((string)curl_multi_getcontent($ch), true) ?: ['code'=>-2,'message'=>'BADJSON']];
-      curl_multi_remove_handle($mh, $ch); curl_close($ch);
+      curl_multi_remove_handle($mh, $ch);
     }
     if ($active) curl_multi_select($mh, 0.02);
   } while (count($out) < count($reqs));
@@ -105,6 +120,7 @@ $uids = array_map('current', q("SELECT id FROM nft_users WHERE phone LIKE '15100
 $wvals = [];
 foreach ($uids as $uid) $wvals[] = "($uid,100000.00,100000.00,0.00,0.00)";
 exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,points) VALUES " . implode(',', $wvals));
+qa_seed_wallet_ledger($PDO, array_map('intval', $uids)); // 直接写余额必须补开账流水，否则 Z1-1 全局恒等式被夹具打破
 T('H1-0b 种子 220 用户/钱包/实名/交易密码', count($uids) === $NUSERS, 'users=' . count($uids));
 $toks = [];
 foreach ($uids as $k => $uid) $toks[$k] = mint((int)$uid, '1510000' . str_pad((string)$k, 4, '0', STR_PAD_LEFT));
@@ -198,7 +214,7 @@ function sustain(array $cids, array $toks, int $conc, int $seconds): array {
   $start = microtime(true);
   $addCreate = function () use (&$mh, &$slots, &$ui, $cids, $toks, $BASE) {
     $u = $ui; $cid = $cids[$ui % count($cids)]; $ui = ($ui + 1) % 1000000;
-    $ch = curl_init("$BASE/api/orders");
+    $ch = curl_init(distribute("$BASE/api/orders"));
     curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST=>'POST', CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>60,
       CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$toks[$u % count($toks)]],
       CURLOPT_POSTFIELDS=>json_encode(['collectibleId'=>$cid,'quantity'=>1,'paymentPassword'=>'Pay#2026'])]);
@@ -213,12 +229,12 @@ function sustain(array $cids, array $toks, int $conc, int $seconds): array {
       $rt = microtime(true) - ($s['t0'] ?? microtime(true));
       $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
       $json = json_decode((string)curl_multi_getcontent($ch), true) ?: ['code'=>-2];
-      curl_multi_remove_handle($mh, $ch); curl_close($ch); unset($slots[(int)$ch]);
+      curl_multi_remove_handle($mh, $ch); unset($slots[(int)$ch]);
       if ($info['result'] !== CURLE_OK || $code !== 200) { $errConn++; continue; }
       if ($s['phase'] === 'create') {
         $rtC[] = $rt; $jc = $json['code'] ?? -1;
         if ($jc === 0) {
-          $nch = curl_init("$BASE/api/orders/{$json['data']['orderNo']}/pay");
+          $nch = curl_init(distribute("$BASE/api/orders/{$json['data']['orderNo']}/pay"));
           curl_setopt_array($nch, [CURLOPT_CUSTOMREQUEST=>'POST', CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>30,
             CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$toks[$s['u']]],
             CURLOPT_POSTFIELDS=>json_encode(['orderNo'=>$json['data']['orderNo'],'paymentMethod'=>'balance','paymentPassword'=>'Pay#2026'])]);
@@ -239,7 +255,11 @@ function sustain(array $cids, array $toks, int $conc, int $seconds): array {
   return compact('cycles','errConn','srvErr','bizRej','rtC','rtP','elapsed');
 }
 echo sprintf("%6s %8s %8s %7s | %22s | %22s | %5s %5s %5s\n", '并发', '周期数', 'TPS', '耗时s', 'create RT p50/95/99(ms)', 'pay RT p50/95/99(ms)', '5xx', '连接错误', '业务拒绝');
-foreach ([10, 50, 100, 200] as $lvl) {
+/* 梯度档位可由 H1_LEVELS 覆盖，默认全跑 10/50/100/200（与既往报告口径一致）。
+   本机 php -S 是单线程进程，100/200 档一轮就要十几分钟；只想快速跑到 H1-4/H1-5
+   的正确性用例时传 H1_LEVELS=10。全量回归必须用默认值。 */
+$levels = array_values(array_filter(array_map('intval', explode(',', (string) (getenv('H1_LEVELS') ?: '10,50,100,200')))));
+foreach ($levels as $lvl) {
   $GLOBALS['deadlineNow'] = microtime(true) + 60;
   $m = sustain($cidPool, $toks, $lvl, 60);
   $tps = $m['cycles'] / $m['elapsed'];
@@ -253,6 +273,35 @@ foreach ([10, 50, 100, 200] as $lvl) {
 T('H1-3s 梯度负载连接错误为零', $lastErr === 0, "connErr(200)=$lastErr");
 $lockC = (int)v("SELECT COALESCE(SUM(locked_quantity),0) FROM nft_collectibles WHERE id IN (" . implode(',', $cidPool) . ")");
 T('H1-3t 负载后藏品池终态 locked=0（槽位排空）', $lockC === 0, "poolLocked=$lockC");
+
+echo "\n=== H1-5 限购并发（锁区间内的限购计数不得读旧快照）===\n";
+// 单 worker 会把请求天然串行掉，只有 QA_BASE 配多个地址轮转分发才压得出这个竞态。
+// 回归的缺陷：RR 的读视图在抢 FOR UPDATE 行锁之前就固定了，锁内的普通 SUM 于是永远读到 0，
+// 同一用户并发下单可把 per_user_limit 放大到「并发 worker 数」倍（修复前实测 8 并发放行 5 笔）。
+$cidL = mkCollectible('H1-限购1', 100, 0.01);
+exe("UPDATE nft_collectibles SET per_user_limit=1 WHERE id=$cidL");
+$uL   = (int) $uids[7];
+$r5   = burst(array_fill(0, 8, createReq($cidL, $uL, $toks[7])));
+$ok5 = 0; $lim5 = 0;
+foreach ($r5 as $x) {
+  $jc = $x['json']['code'] ?? -1;
+  if ($jc === 0) $ok5++; elseif ($jc === 3003) $lim5++;
+}
+$row5  = (int)v("SELECT COUNT(*) FROM nft_orders WHERE user_id=$uL AND collectible_id=$cidL");
+$lock5 = (int)v("SELECT locked_quantity FROM nft_collectibles WHERE id=$cidL");
+T('H1-5a per_user_limit=1 时并发 8 笔只放行 1 笔', $ok5 === 1 && $row5 === 1, "ok=$ok5 rows=$row5 3003=$lim5");
+T('H1-5b 其余 7 笔收到的是限购拒绝而不是放行', $lim5 === count($r5) - 1, 'lim=' . $lim5 . ' total=' . count($r5));
+T('H1-5c 锁定库存与订单行数一致', $lock5 === $row5, "locked=$lock5 rows=$row5");
+
+$cidL3 = mkCollectible('H1-限购3', 100, 0.01);
+exe("UPDATE nft_collectibles SET per_user_limit=3 WHERE id=$cidL3");
+$uL3   = (int) $uids[9];
+$r5b   = burst(array_fill(0, 15, createReq($cidL3, $uL3, $toks[9])));
+$ok5b  = count(array_filter($r5b, fn ($x) => ($x['json']['code'] ?? -1) === 0));
+$row5b = (int)v("SELECT COUNT(*) FROM nft_orders WHERE user_id=$uL3 AND collectible_id=$cidL3");
+T('H1-5d per_user_limit=3 时并发 15 笔恰好放行 3 笔', $ok5b === 3 && $row5b === 3, "ok=$ok5b rows=$row5b");
+exe("DELETE FROM nft_orders WHERE user_id IN ($uL,$uL3)");
+exe("DELETE FROM nft_collectibles WHERE id IN ($cidL,$cidL3)");
 
 echo "\n=== H1-4 全局恒等式验收 ===\n";
 $viol = (int)v("SELECT COUNT(*) FROM nft_collectibles WHERE deleted_at IS NULL AND (sold > edition OR sold + locked_quantity > edition)");

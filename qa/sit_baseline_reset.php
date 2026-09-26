@@ -29,6 +29,8 @@ $bizTables = [
   'inventory_quotas','raffle_activities','raffle_registrations','raffle_operation_logs',
   'register_activities','activity_reward_records',
   'holdings_snapshots','trade_snapshots','user_draw_codes',
+  // 以下四张表会跨轮次累积且被脚本按行数断言（漏了 inbox 曾让 e2e_cond_airdrop 的收件箱计数翻倍）
+  'inbox','admin_login_logs','admin_operation_logs','platform_cleanup_logs',
 ];
 $PDO->exec("SET FOREIGN_KEY_CHECKS=0");
 foreach($bizTables as $t){ $PDO->exec("TRUNCATE TABLE `nft_$t`"); }

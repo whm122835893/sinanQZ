@@ -90,8 +90,24 @@ $PDO->exec("DELETE i FROM nft_inbox i JOIN nft_collectibles c ON c.id=i.collecti
 $PDO->exec("DELETE FROM nft_collectibles WHERE name='空投管理E2E藏品'");
 // 139x 号段为 E2E 专属用户：关闭 FK 校验整体移除，其在签到/订单等表遗留的孤儿行因 user_id 已不存在、
 // 业务查询均 JOIN users 过滤而不参与统计（与基线重置同法，避免逐表枚举外键清单随 schema 演进而失配）
+//
+// 例外——nft_orders 必须连带删除：e2e_full_verify 用随机 139 号注册（'139'+8 位随机），撞上上面的
+// 号段时用户被删、持仓被删，而订单行没有 user_id 级联可依赖（该列外键在 FK 关闭时不生效），
+// 于是留下「completed 却没有资产行」的孤儿订单。Z5-1/Z2-3 按 order_id 判资产、不 JOIN users，
+// 把夹具的删除动作误报成产品缺陷（实测缺失=3，随随机号段漂移，同一套代码两次跑结果不同）。
+// 退款/支付按 order_id 有 RESTRICT 子行，审批单按 target_id 认退款单（t7 的 7.8.4 全库断言），
+// 所以从最外层往里一起删干净。
 $PDO->exec("SET FOREIGN_KEY_CHECKS=0");
-foreach (["'1397%'", "'1398%'", "'1399%'", "'1391%'", "'1392%'", "'1393%'"] as $like) {
+foreach (["'1397%'", "'1398%'", "'1399%'", "'1391%'", "'1392%'", "'1393%'" ] as $like) {
+    $ordIds = "SELECT o.id FROM nft_orders o JOIN nft_users u ON u.id=o.user_id WHERE u.phone LIKE $like";
+    $PDO->exec("DELETE a FROM nft_approval_requests a
+                  JOIN nft_refunds r ON r.id=a.target_id AND a.target_type='refund'
+                  WHERE r.order_id IN ($ordIds)");
+    $PDO->exec("DELETE p FROM nft_payments p JOIN nft_orders o ON o.id=p.order_id
+                  JOIN nft_users u ON u.id=o.user_id WHERE u.phone LIKE $like");
+    $PDO->exec("DELETE r FROM nft_refunds r JOIN nft_orders o ON o.id=r.order_id
+                  JOIN nft_users u ON u.id=o.user_id WHERE u.phone LIKE $like");
+    $PDO->exec("DELETE o FROM nft_orders o JOIN nft_users u ON u.id=o.user_id WHERE u.phone LIKE $like");
     $PDO->exec("DELETE r FROM nft_airdrop_records r JOIN nft_users u ON u.id=r.user_id WHERE u.phone LIKE $like");
     $PDO->exec("DELETE uc FROM nft_user_collectibles uc JOIN nft_users u ON u.id=uc.user_id WHERE u.phone LIKE $like");
     $PDO->exec("DELETE i FROM nft_inbox i JOIN nft_users u ON u.id=i.user_id WHERE u.phone LIKE $like");
@@ -112,6 +128,24 @@ foreach ($seedUsers as $i => $u) {
 }
 $PDO->exec("UPDATE nft_users SET deleted_at='$now' WHERE phone='13999990009'");     // 尾九A → 软删除
 $PDO->exec("UPDATE nft_users SET is_blacklisted=1 WHERE phone='13977770027'");      // 尾七C → 黑名单
+
+// 尾号筛选是全库口径：产品的条件空投名单本就按手机号末位在全库取人，任何外来有效用户都会进名单。
+// e2e_full_verify 的注册号是随机生成的，末位撞上 7/8/9 时本脚本的名单与份数断言就会漂（实测尾号8
+// 多出一位「E2E用户」，限量 2 份被分走，尾八A 只剩 hold 活动的 1 份）。这里把外来有效用户在本轮
+// 内临时置为黑名单（产品排除黑名单），脚本退出时逐 id 还原，使尾号命名空间独占、断言可复现。
+$seedIn = implode(',', array_map(fn ($u) => "'" . $u[0] . "'", $seedUsers));
+$foreignIds = $PDO->query(
+    "SELECT id FROM nft_users
+      WHERE phone REGEXP '^1[0-9]{9}[789]\$' AND deleted_at IS NULL AND is_blacklisted = 0
+        AND phone NOT IN ($seedIn)"
+)->fetchAll(PDO::FETCH_COLUMN);
+if ($foreignIds) {
+    $in = implode(',', array_map('intval', $foreignIds));
+    $PDO->exec("UPDATE nft_users SET is_blacklisted = 1 WHERE id IN ($in)");
+    register_shutdown_function(function () use ($PDO, $in) {
+        $PDO->exec("UPDATE nft_users SET is_blacklisted = 0 WHERE id IN ($in)");
+    });
+}
 
 // 动态期望值（与后端筛选同一 SQL 口径）
 $validTail = fn($t) => (int) $q("SELECT COUNT(*) FROM nft_users WHERE phone REGEXP '^1[0-9]{9}$t$' AND deleted_at IS NULL AND is_blacklisted=0");

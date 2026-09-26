@@ -2,6 +2,8 @@
 /** E2E 全链路验证：管理端创建 → C端展示/购买/参与 → 数据落库核对
  *  前置：后端 127.0.0.1:8080、MySQL sinan_nft（QA_DB_USER/QA_DB_PASS 环境变量注入）
  *  覆盖：登录(图形码)/藏品/购买/公告/盲盒/合成/签到/抽奖/抽签购/实名/支付密码/充值
+ *  注：重置支付密码会写 logout_before 吊销全部旧 token（P0 会话安全），同时必须就地换发新 token
+ *      才不至于让用户改完密码当场掉线，故 2.4b 断言「旧 token 2001 + 新 token 当场可用」
  *  图形码：CaptchaService 明文只存 sha256 哈希于 file cache —— 脚本读缓存文件后本地爆破（32字符集×4位）
  */
 date_default_timezone_set('Asia/Shanghai');
@@ -199,6 +201,20 @@ $debugCode2 = $sc2['data']['debugCode'] ?? null;
 T('C端发送支付密码短信码', ($sc2['code'] ?? -1) === 0 && $debugCode2, $sc2['message'] ?? '');
 $tp = http('POST', '/api/user/password/trade/reset', ['code' => $debugCode2, 'newPassword' => $tpwd], $userToken);
 T('C端设置支付密码', ($tp['code'] ?? -1) === 0, $tp['message'] ?? '');
+$newToken = (string) ($tp['data']['token'] ?? '');
+
+// ---- 2.4b 凭证变更即吊销会话（P0），并要求接口就地换发新会话，否则用户改完密码当场掉线 ----
+$stale = http('GET', '/api/user/profile', null, $userToken);
+T('重置支付密码后旧 token 立即失效', ($stale['code'] ?? -1) === 2001, 'code=' . ($stale['code'] ?? '?') . ' ' . ($stale['message'] ?? ''));
+T('重置支付密码响应携带新 token', $newToken !== '' && $newToken !== $userToken, 'token=' . substr($newToken, 0, 12));
+// 新 token 的 iat 与 logout_before 同秒，签发侧必须抬到其后且解码留容差，否则首个请求即 401
+$freshProfile = http('GET', '/api/user/profile', null, $newToken);
+T('换发的新 token 当场可用', ($freshProfile['code'] ?? -1) === 0, 'code=' . ($freshProfile['code'] ?? '?') . ' ' . ($freshProfile['message'] ?? ''));
+[$cid, $ccode, $cerr] = getCaptcha();
+$login3 = http('POST', '/api/auth/login', ['phone' => $phone, 'password' => $pwd, 'captcha_id' => $cid, 'captcha_code' => $ccode]);
+$userToken = $login3['data']['token'] ?? '';
+T('重新登录恢复会话', ($login3['code'] ?? -1) === 0 && $userToken, $login3['message'] ?? '');
+T('重新登录后的 token 当场可用', (http('GET', '/api/user/profile', null, $userToken)['code'] ?? -1) === 0);
 
 // ---- 2.5 充值 ----
 $rc = http('POST', '/api/wallet/recharge', ['amount' => 10000], $userToken);

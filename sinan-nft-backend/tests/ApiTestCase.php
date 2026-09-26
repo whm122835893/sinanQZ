@@ -124,8 +124,9 @@ abstract class ApiTestCase extends TestCase
         }
 
         // 逐轮删除：DELETE IGNORE 会跳过仍被子行引用的行，因此无需精确推导层级顺序；
-        // 某轮删不掉任何行说明仍有表未纳入引用图，直接报错而不是静默留脏数据。
-        $remaining = $collected;
+        // 某轮删不掉任何行，先清一轮悬空子行，仍无进展才报错——此时才是真的「有表没进引用图」。
+        $orphanSwept = false;
+        $remaining   = $collected;
         while (array_filter($remaining)) {
             $touched = false;
             foreach ($remaining as $t => $ids) {
@@ -133,22 +134,58 @@ abstract class ApiTestCase extends TestCase
                     continue;
                 }
                 $in        = implode(',', $ids);
+                $before    = count($ids);
                 $affected  = (int) self::pdo()->exec("DELETE IGNORE FROM `$t` WHERE id IN ($in)");
-                $touched   = $touched || $affected > 0;
-                if ($affected > 0) {
-                    $still = self::pdo()
-                        ->query("SELECT id FROM `$t` WHERE id IN ($in)")
-                        ->fetchAll(PDO::FETCH_COLUMN);
-                    $remaining[$t] = array_map('intval', $still);
-                }
+                // 一律回查存活行，不能只在 affected>0 时回查：本表某行可能已被上一步的父行
+                // CASCADE 删掉，此时 DELETE 影响 0 行，沿用旧清单会让该表永远「还有残留」，
+                // 空转两轮后就被误判成「有表没进引用图」。
+                $still     = array_map('intval', self::pdo()
+                    ->query("SELECT id FROM `$t` WHERE id IN ($in)")
+                    ->fetchAll(PDO::FETCH_COLUMN));
+                $remaining[$t] = $still;
+                $touched   = $touched || $affected > 0 || count($still) < $before;
             }
             if (!$touched) {
+                if (!$orphanSwept) {
+                    $orphanSwept = true;
+                    self::dropOrphanRows($edges, array_keys($collected));
+                    continue;
+                }
                 $stuck = array_filter($remaining);
                 // 必须写全局命名空间的 \RuntimeException：漏掉反斜杠会解析成 tests\RuntimeException，
                 // 于是「哪张表没纳入引用图」这条诊断被 Class not found 顶掉，排查时完全看不到真因
                 throw new \RuntimeException(
                     '测试数据清理受阻，存在未纳入外键引用图的表：' . json_encode(array_map('count', $stuck))
                 );
+            }
+        }
+    }
+
+    /**
+     * 清掉「父行已不存在」的悬空子行，只限本次清理涉及的表。
+     *
+     * 为什么会有这种行：qa/ 下的 SIT 脚本会临时 SET FOREIGN_KEY_CHECKS=0 再 TRUNCATE/DELETE
+     * 父表，于是子表留下按 id 无法从父→子引用图抵达的孤儿（实测 nft_synthesis_record_items
+     * 悬空两行，直接把整套 api 用例卡在 setUpBeforeClass）。
+     *
+     * @param array<int,array{0:string,1:string,2:string}> $edges RESTRICT 边 [子表, 子表列, 父表]
+     * @param string[]                                      $tables 本次涉及表（把范围锁死在测试数据内）
+     */
+    private static function dropOrphanRows(array $edges, array $tables): void
+    {
+        foreach ($edges as [$child, $column, $parent]) {
+            if (!in_array($child, $tables, true)) {
+                continue;
+            }
+            $ids = self::pdo()
+                ->query(
+                    "SELECT c.id FROM `$child` c
+                      WHERE c.`$column` IS NOT NULL
+                        AND NOT EXISTS (SELECT 1 FROM `$parent` p WHERE p.id = c.`$column`)"
+                )
+                ->fetchAll(PDO::FETCH_COLUMN);
+            foreach (array_chunk(array_map('intval', $ids), 500) as $chunk) {
+                self::pdo()->exec("DELETE IGNORE FROM `$child` WHERE id IN (" . implode(',', $chunk) . ')');
             }
         }
     }

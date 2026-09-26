@@ -68,8 +68,10 @@ $tradeHash=password_hash('Trade#2026',PASSWORD_BCRYPT);
 exe("UPDATE nft_users SET is_realname=1, transaction_password='$tradeHash' WHERE id IN ($uidA,$uidB)");
 foreach([$uidA,$uidB] as $u){
   exe("DELETE FROM nft_wallets WHERE user_id=$u");
+  exe("DELETE FROM nft_wallet_transactions WHERE user_id=$u");
   exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,created_at,updated_at) VALUES ($u,10000,10000,0,NOW(),NOW())");
 }
+qa_seed_wallet_ledger($PDO, [$uidA, $uidB]); // 直接写余额必须补开账流水，否则 Z1-1 全局恒等式被夹具打破
 T('R0.2 实名/交易密码/钱包就绪', v("SELECT COUNT(*) FROM nft_wallets WHERE user_id IN ($uidA,$uidB) AND available=10000")==2);
 
 // 藏品 9301~9310

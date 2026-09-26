@@ -79,6 +79,7 @@ $uid=(int)v("SELECT id FROM nft_users WHERE phone='$phone'");
 exe("UPDATE nft_users SET is_realname=1 WHERE id=$uid");
 exe("DELETE FROM nft_wallets WHERE user_id=$uid");
 exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,created_at,updated_at) VALUES ($uid,1000,1000,0,NOW(),NOW())");
+qa_seed_wallet_ledger($PDO, [$uid]); // 直接写余额必须补开账流水，否则 Z1-1 全局恒等式被夹具打破
 T('7.1.3 C 端测试用户就绪', $uid>0, "uid=$uid");
 
 // 藏品 9401~9406：初始 sold=0 circulate=0；订单造数后累计

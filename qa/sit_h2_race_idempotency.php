@@ -14,7 +14,21 @@
  */
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
-$BASE = getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
+// Windows 的 php -S 是单线程进程：QA_BASE 支持逗号分隔多地址，burst 轮转分发才能压出真实并发
+$BASES = array_values(array_filter(array_map('trim', explode(',', (string) (getenv('QA_BASE') ?: 'http://127.0.0.1:8080')))));
+$BASE  = $BASES[0];
+
+/** 把 URL 的 origin 换成轮转到的后端地址；只配一个地址时原样返回 */
+function distribute(string $url, ?int $i = null): string
+{
+    global $BASES;
+    if (count($BASES) < 2) {
+        return $url;
+    }
+    static $n = 0;
+    $k = ($i ?? $n++) % count($BASES);
+    return (string) preg_replace('#^[a-z]+://[^/]+#i', $BASES[$k], $url, 1);
+}
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 $pass = 0; $fail = 0; $fails = [];
@@ -36,7 +50,7 @@ function mint(int $uid, string $phone): string {
 function burst(array $reqs, int $timeout = 90): array {
   $mh = curl_multi_init(); $handles = [];
   foreach ($reqs as $i => $r) {
-    $ch = curl_init($r['url']);
+    $ch = curl_init(distribute($r['url'], (int) $i));
     curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST=>'POST', CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>$timeout,
       CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$r['tok']],
       CURLOPT_POSTFIELDS=>json_encode($r['b'])]);
@@ -49,7 +63,7 @@ function burst(array $reqs, int $timeout = 90): array {
       $ch = $info['handle']; $i = array_search($ch, $handles, true);
       $out[$i] = ['err'=>$info['result']!==CURLE_OK, 'code'=>(int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
                   'json'=>json_decode((string)curl_multi_getcontent($ch), true) ?: ['code'=>-2,'message'=>'BADJSON']];
-      curl_multi_remove_handle($mh, $ch); curl_close($ch);
+      curl_multi_remove_handle($mh, $ch);
     }
     if ($active) curl_multi_select($mh, 0.02);
   } while (count($out) < count($reqs));
@@ -109,6 +123,7 @@ foreach (q("SELECT id,phone FROM nft_users WHERE phone LIKE '1520000%'") as $u) 
 $wvals = [];
 foreach ($USERS as $ph => $bal) $wvals[] = "({$uids[$ph]},$bal,$bal,0.00,0.00)";
 exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,points) VALUES " . implode(',', $wvals));
+qa_seed_wallet_ledger($PDO, array_values($uids)); // 直接写余额必须补开账流水，否则 Z1-1 全局恒等式被夹具打破
 $TOK = [];
 foreach ($USERS as $ph => $bal) $TOK[$ph] = mint($uids[$ph], $ph);
 T('H2-0b 8 用户种子', count($uids) === 8);
@@ -215,6 +230,7 @@ T('H2-2c pay/cancel 对打恰好一方生效（状态互斥）', ($okP + $okC) >
 exe("DELETE FROM nft_check_in_activities WHERE name='H2-标准签到'");
 exe("INSERT INTO nft_check_in_activities (name,status,start_time,end_time,reward_config,eligibility_type,eligibility_config,grant_mode,signin_count,created_at,updated_at)
      VALUES ('H2-标准签到','enabled',DATE_SUB(CURDATE(),INTERVAL 1 DAY),NULL,'{\"1\":[{\"rewardType\":\"points\",\"amount\":5}]}','all','','realtime',0,NOW(3),NOW(3))");
+exe("UPDATE nft_system_configs SET config_value='1' WHERE config_key='checkin_enabled'"); // 签到模块开关前置自给：上游 t6 收尾会把它关掉（测开关场景），不显式打开则本用例恒为 4003
 exe("DELETE FROM nft_check_in_records WHERE user_id=$uidU");
 exe("DELETE FROM nft_wallet_transactions WHERE user_id=$uidU AND trans_type='reward' AND title LIKE '%签到%'");
 exe("UPDATE nft_wallets SET points=0 WHERE user_id=$uidU");
@@ -230,7 +246,7 @@ T('H2-2d 签到双击仅一条记录/一份奖励', $recU === 1 && $txReward <= 
 
 /* e) 免费抽奖 H2-D1 探针（修复前预期 FAIL） */
 /* 自建进行中的抽奖活动（免费抽依赖启用活动+完整奖池；上游 t6 的活动可能已被停用/耗尽） */
-exe("DELETE FROM nft_lucky_draw_records WHERE activity_id IN (SELECT id FROM nft_lucky_draw_activities WHERE name='H2-免费抽探针')");
+exe("DELETE FROM nft_lucky_draw_records WHERE prize_id IN (SELECT id FROM nft_lucky_draw_prizes WHERE activity_id IN (SELECT id FROM nft_lucky_draw_activities WHERE name='H2-免费抽探针'))"); // 记录表无 activity_id，必须经 prizes 中转
 exe("DELETE FROM nft_lucky_draw_activities WHERE name='H2-免费抽探针'");
 exe("INSERT INTO nft_lucky_draw_activities (name,status,eligibility_type,grant_mode,start_time,end_time,created_at,updated_at)
      VALUES ('H2-免费抽探针',1,'all','realtime','".date('Y-m-d H:i:s',time()-600)."','".date('Y-m-d H:i:s',time()+600)."',NOW(3),NOW(3))");

@@ -18,7 +18,21 @@
  */
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
-$BASE = getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
+// Windows 的 php -S 是单线程进程：QA_BASE 支持逗号分隔多地址，burst 轮转分发才能压出真实并发
+$BASES = array_values(array_filter(array_map('trim', explode(',', (string) (getenv('QA_BASE') ?: 'http://127.0.0.1:8080')))));
+$BASE  = $BASES[0];
+
+/** 把 URL 的 origin 换成轮转到的后端地址；只配一个地址时原样返回 */
+function distribute(string $url, ?int $i = null): string
+{
+    global $BASES;
+    if (count($BASES) < 2) {
+        return $url;
+    }
+    static $n = 0;
+    $k = ($i ?? $n++) % count($BASES);
+    return (string) preg_replace('#^[a-z]+://[^/]+#i', $BASES[$k], $url, 1);
+}
 require __DIR__ . '/bootstrap_db.php';
 $pass = 0; $fail = 0; $fails = [];
 function T($n, $c, $d = ''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;printf("%s %s%s\n",$c?"  PASS":"  FAIL",$n,$d?" | $d":"");}
@@ -39,7 +53,7 @@ function mint(int $uid, string $phone, int $expOffset = 86400): string {
 function burst(array $reqs, int $timeout = 90): array {
   $mh = curl_multi_init(); $handles = [];
   foreach ($reqs as $i => $r) {
-    $ch = curl_init($r['url']);
+    $ch = curl_init(distribute($r['url'], (int) $i));
     $hdr = ['Content-Type: application/json'];
     if (!empty($r['tok'])) $hdr[] = 'Authorization: Bearer ' . $r['tok'];
     curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST=>$r['method'] ?? 'POST', CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>$timeout,
@@ -54,20 +68,20 @@ function burst(array $reqs, int $timeout = 90): array {
       $out[$i] = ['err'=>$info['result']!==CURLE_OK, 'code'=>(int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
                   'raw'=>(string)curl_multi_getcontent($ch),
                   'json'=>json_decode((string)curl_multi_getcontent($ch), true) ?: ['code'=>-2,'message'=>'BADJSON']];
-      curl_multi_remove_handle($mh, $ch); curl_close($ch);
+      curl_multi_remove_handle($mh, $ch);
     }
     if ($active) curl_multi_select($mh, 0.02);
   } while (count($out) < count($reqs));
   curl_multi_close($mh); ksort($out); return $out;
 }
 function req(string $method, string $url, ?string $tok, $body = null, array $hdr = []): array {
-  $ch = curl_init($url);
+  $ch = curl_init(distribute($url));
   $h = $hdr;
   if ($body !== null) $h[] = 'Content-Type: application/json';
   if ($tok) $h[] = 'Authorization: Bearer ' . $tok;
   curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST=>$method, CURLOPT_RETURNTRANSFER=>true, CURLOPT_TIMEOUT=>20,
     CURLOPT_HTTPHEADER=>$h, CURLOPT_POSTFIELDS=>$body === null ? '' : (is_string($body) ? $body : json_encode($body))]);
-  $raw = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+  $raw = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
   return ['code'=>$code, 'raw'=>(string)$raw, 'json'=>json_decode((string)$raw, true)];
 }
 
@@ -146,6 +160,7 @@ foreach (q("SELECT id,phone FROM nft_users WHERE phone LIKE '1530000%'") as $u) 
 $wvals = [];
 foreach ($USERS as $ph => $bal) $wvals[] = "({$uids[$ph]},$bal,$bal,0.00,0.00)";
 exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,points) VALUES " . implode(',', $wvals));
+qa_seed_wallet_ledger($PDO, array_values($uids)); // 直接写余额必须补开账流水，否则 Z1-1 全局恒等式被夹具打破
 $TOK = [];
 foreach ($USERS as $ph => $bal) $TOK[$ph] = mint($uids[$ph], $ph);
 T('H3-0b 3 用户种子', count($uids) === 3);
@@ -201,8 +216,8 @@ T('H3-1a4 读到的余额快照永不为负且 available<=balance', $balNeg === 
 $tx = q("SELECT amount,balance_after FROM nft_wallet_transactions WHERE user_id={$uids[$W]} ORDER BY id");
 $after = array_map(fn ($t) => (string)$t['balance_after'], $tx);
 $wRow = q("SELECT balance FROM nft_wallets WHERE user_id={$uids[$W]}")[0];
-$chainOk = count($tx) === 12
-  && empty(array_diff($after, ['11.00','10.00','9.00','8.00','7.00','6.00','5.00','4.00','3.00','2.00','1.00','0.00']))
+// 12 元开账 + 12 笔 1 元支付 = 13 行，余额链必须逐笔 12.00→0.00 连续（少一行即开账流水缺失，跳号即产品缺陷）
+$chainOk = count($tx) === 13 && $after === array_map(fn ($n) => sprintf('%.2f', $n), range(12, 0))
   && abs((float)$wRow['balance'] - 0.0) < 0.001;
 T('H3-1a5 终态余额==0 且与最后一笔流水 balance_after 一致、流水连续', $chainOk,
   'rows=' . count($tx) . ' last=' . ($after ? end($after) : '-') . ' wallet=' . $wRow['balance']);

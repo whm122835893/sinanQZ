@@ -40,10 +40,17 @@ try {
   T('Z2-2 lock_wait_timeout', false, $e->getMessage());
 }
 
-echo "\n=== Z2-3 completed 发行订单至少持有 1 个非 consumed 资产 ===\n";
-// completed 订单可能把资产挂单(consigned)或转赠中(frozen)，但绝不应该没有任何资产行
-$noAsset=(int)q1("SELECT COUNT(*) FROM nft_orders o WHERE o.status='completed' AND o.source IN ('release','priority','eligibility') AND NOT EXISTS (SELECT 1 FROM nft_user_collectibles uc WHERE uc.order_id=o.id AND uc.status IN ('held','consigned','frozen','transferred'))");
-T('Z2-3 completed 订单必有资产行（held/consigned/frozen/transferred）', $noAsset===0, "缺失=$noAsset");
+echo "\n=== Z2-3 completed 发行订单必须有资产行 ===\n";
+// 资产行的终态不止「仍在持有」：status 枚举里的 consumed 是开盒/合成的正常消耗态
+// （nft_user_collectibles.status 注释即写明「consumed（开盒/合成销毁）」）。
+// 此前把断言收窄到 held/consigned/frozen/transferred，素材被合成掉后原订单就被判成「丢资产」，
+// 是恒等式假阳性。真正的缺陷是订单completed却一行资产都没有——那才是要钉住的。
+$noAsset=(int)q1("SELECT COUNT(*) FROM nft_orders o WHERE o.status='completed' AND o.source IN ('release','priority','eligibility') AND NOT EXISTS (SELECT 1 FROM nft_user_collectibles uc WHERE uc.order_id=o.id)");
+T('Z2-3 completed 订单必有资产行（任意状态）', $noAsset===0, "缺失=$noAsset");
+// 提示性统计（不作断言）：素材被消耗后没有消耗流水表可反查（nft_synthesis_records 只记产物），
+// 因此 consumed 只能靠业务链路自证，无法逐单核对——见审查报告的资产溯源缺口
+$consumedOrders=(int)q1("SELECT COUNT(DISTINCT o.id) FROM nft_orders o JOIN nft_user_collectibles uc ON uc.order_id=o.id WHERE o.status='completed' AND o.source IN ('release','priority','eligibility') AND uc.status='consumed'");
+echo "  资产已被消耗的 completed 订单数={$consumedOrders}（开盒/合成的正常结果）\n";
 
 echo "\n=== Z2-4 pending/paid 订单资产状态 ===\n";
 $badReleasePending=(int)q1("SELECT COUNT(*) FROM nft_orders o JOIN nft_user_collectibles uc ON uc.order_id=o.id WHERE o.status IN ('pending','paid') AND o.source IN ('release','priority','eligibility') AND uc.status='held'");
