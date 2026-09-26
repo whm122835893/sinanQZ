@@ -13,7 +13,7 @@
  *   10. 信息泄露：异常响应无堆栈、SQL 错误细节回显评估、404 统一 JSON、debugCode 部署约束
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8080';
+$BASE=getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;$findings=[];

@@ -5,8 +5,8 @@
  *  图形码：CaptchaService 明文只存 sha256 哈希于 file cache —— 脚本读缓存文件后本地爆破（32字符集×4位）
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE = 'http://127.0.0.1:8080';
-$CACHE_DIR = '/workspace/sinanQZ/sinan-nft-backend/runtime/cache';
+$BASE = getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
+$CACHE_DIR = getenv('QA_RUNTIME_CACHE') ?: dirname(__DIR__) . '/sinan-nft-backend/runtime/cache';
 $CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 $pass = 0; $fail = 0; $defects = [];

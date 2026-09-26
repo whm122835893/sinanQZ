@@ -3,11 +3,11 @@
  *  注：QF-D1（qualification_whitelists 无 status 列导致 500）已在测试前修复，本脚本含回归验证
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8080';
+$BASE=getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 // 图形码破解所需（管理端登录前置；与 e2e_full_verify 同源机制）
-$CACHE_DIR='/workspace/sinanQZ/sinan-nft-backend/runtime/cache';
+$CACHE_DIR=getenv('QA_RUNTIME_CACHE') ?: dirname(__DIR__) . '/sinan-nft-backend/runtime/cache';
 $CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // 确保冒烟用户 id=1/2/3 实名 + 交易密码，签到用户 id=4/6/7/8 就绪
 $pwdHash='$2y$12$MOtq8as9FfrvOSoK1LOjCusHuC9Y8Qc7ydjTyaZUIkBpfcTrX81fW'; // password_hash('Trade#2026', PASSWORD_BCRYPT)

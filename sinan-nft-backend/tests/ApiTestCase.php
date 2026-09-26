@@ -18,8 +18,13 @@ use PHPUnit\Framework\TestCase;
  */
 abstract class ApiTestCase extends TestCase
 {
-    protected const BASE = 'http://127.0.0.1:8080';
     protected const TX_PWD = 'Tx@123456';
+
+    /** 被测后端地址；本机 8080 被其他开发副本占用时用 SINAN_API_BASE 指定 */
+    protected static function base(): string
+    {
+        return rtrim((string) (getenv('SINAN_API_BASE') ?: 'http://127.0.0.1:8080'), '/');
+    }
 
     private static ?PDO $pdo = null;
     private static ?array $edges = null;
@@ -32,7 +37,7 @@ abstract class ApiTestCase extends TestCase
         parent::setUpBeforeClass();
         $probe = self::httpProbe('GET', '/api/payments/available');
         if ($probe === null) {
-            self::fail("后端未启动：请先执行 php think run -p 8080（需 APP_DEBUG=true 的开发态）");
+            self::fail('后端未启动：' . self::base() . ' 无响应（php think run -p <port>，需 APP_DEBUG=true）');
         }
         self::healLeftovers();
     }
@@ -204,7 +209,7 @@ abstract class ApiTestCase extends TestCase
 
     private static function httpProbe(string $method, string $uri, ?array $body = null, ?string $token = null): ?array
     {
-        $ch = curl_init(self::BASE . $uri);
+        $ch = curl_init(self::base() . $uri);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 10,

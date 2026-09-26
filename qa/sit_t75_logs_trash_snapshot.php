@@ -8,7 +8,7 @@
  *    7.5.4 数据快照：全量生成/幂等重跑/DB 勾稽（13 聚合行）/单人快照/列表筛选/权限探针
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8080';
+$BASE=getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;$fails=[];

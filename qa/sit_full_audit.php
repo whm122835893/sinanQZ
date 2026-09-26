@@ -4,7 +4,7 @@
  *  自清洁：使用独立手机号段 139000091xx 与藏品段 95xx，可重复执行
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8080';
+$BASE=getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;$defects=[];

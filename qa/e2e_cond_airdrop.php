@@ -5,8 +5,8 @@
  *  期望值动态计算（与后端同一 SQL 口径），避免与库内既有用户尾号冲突
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE = 'http://127.0.0.1:8080';
-$CACHE_DIR = '/workspace/sinanQZ/sinan-nft-backend/runtime/cache';
+$BASE = getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
+$CACHE_DIR = getenv('QA_RUNTIME_CACHE') ?: dirname(__DIR__) . '/sinan-nft-backend/runtime/cache';
 $CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 $pass = 0; $fail = 0; $defects = [];

@@ -8,7 +8,7 @@
  *    7.6.5 验证码一次性 + 备份文件完整可恢复（restore 回基线，环境复原供 H 系列使用）
  */
 date_default_timezone_set('Asia/Shanghai');
-$BASE='http://127.0.0.1:8080';
+$BASE=getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
 define('QA_PDO_ERRMODE', PDO::ERRMODE_WARNING);
 require __DIR__ . '/bootstrap_db.php';
 $pass=0;$fail=0;$fails=[];

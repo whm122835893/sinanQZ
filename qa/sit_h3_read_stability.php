@@ -18,7 +18,7 @@
  */
 set_time_limit(0);
 date_default_timezone_set('Asia/Shanghai');
-$BASE = 'http://127.0.0.1:8080';
+$BASE = getenv('QA_BASE') ?: 'http://127.0.0.1:8080';
 require __DIR__ . '/bootstrap_db.php';
 $pass = 0; $fail = 0; $fails = [];
 function T($n, $c, $d = ''){global $pass,$fail,$fails;$c?$pass++:$fail++;if(!$c)$fails[]=$n;printf("%s %s%s\n",$c?"  PASS":"  FAIL",$n,$d?" | $d":"");}
