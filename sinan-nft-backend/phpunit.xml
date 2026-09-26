@@ -5,8 +5,14 @@
          colors="true"
          failOnWarning="true">
     <testsuites>
+        <!-- 纯函数单元测试：不需要后端进程与数据库，可离线秒跑 -->
+        <testsuite name="unit">
+            <directory>tests/unit</directory>
+        </testsuite>
+        <!-- HTTP 级集成用例：需要 php think run -p 8080 与 .env 指向的 MySQL -->
         <testsuite name="api">
             <directory>tests</directory>
+            <exclude>tests/unit</exclude>
         </testsuite>
     </testsuites>
     <source>

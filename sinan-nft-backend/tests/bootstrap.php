@@ -30,32 +30,6 @@ if (!function_exists('env')) {
         return $data[strtoupper(str_replace('.', '_', trim($name)))] ?? $default;
     }
 }
-if (!function_exists('app_key')) {
-    function app_key(): string
-    {
-        $key  = (string) env('APP_KEY', '');
-        $weak = 'sinan-nft-secret-key-2026';
-        if ($key === '') return $weak;
-        return $key;
-    }
-}
-if (!function_exists('aes_encrypt')) {
-    function aes_encrypt(string $data): string
-    {
-        $key = hash('sha256', app_key(), true);
-        $iv  = openssl_random_pseudo_bytes(16);
-        return base64_encode($iv . openssl_encrypt($data, 'AES-256-CBC', $key, 0, $iv));
-    }
-}
-if (!function_exists('aes_decrypt')) {
-    function aes_decrypt(string $encoded): ?string
-    {
-        $decoded = base64_decode($encoded);
-        if (strlen($decoded) < 40) return null;
-        $key = hash('sha256', app_key(), true);
-        $iv  = substr($decoded, 0, 16);
-        $ct  = substr($decoded, 16);
-        $pt  = openssl_decrypt($ct, 'AES-256-CBC', $key, 0, $iv);
-        return $pt !== false ? $pt : null;
-    }
-}
+// 直接加载应用的真实辅助函数（app/common.php 只依赖 env()，已由上面的 shim 提供），
+// 避免"手抄一份实现"与线上代码走偏——线上改了，测试这边还自我感觉良好地通过。
+require_once __DIR__ . '/../app/common.php';
