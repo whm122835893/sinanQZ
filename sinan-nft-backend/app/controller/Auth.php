@@ -324,11 +324,22 @@ class Auth extends BaseController
 
     /**
      * 密码登录内部实现（登录成功后的登录态刷新与返回）
+     *
+     * P1 修复：密码登录失败次数锁定（防在线撞库）。
+     * 复用 BaseController 的 codeFailLimited/codeFailIncr/codeFailClear（phone+scene 键控，
+     * 5 次失败锁定 15 分钟），与管理端 login_fail_count/locked_until 语义对齐，无需改表结构。
      */
     private function loginByPassword(string $phone, string $password)
     {
+        // 失败次数超限拒绝（与图形码前置共同构成两层防爆破）
+        if ($this->codeFailLimited($phone, 'login_password')) {
+            return $this->fail(1003, '密码错误次数过多，请 15 分钟后再试');
+        }
+
         $user = Db::name('users')->where('phone', $phone)->find();
         if (!$user) {
+            // 用户不存在也计入失败计数，避免通过响应差异枚举已注册手机号
+            $this->codeFailIncr($phone, 'login_password');
             return $this->fail(1002, '该手机号未注册');
         }
         if ((int) $user['status'] !== 1) {
@@ -338,8 +349,11 @@ class Auth extends BaseController
             return $this->fail(2004, '该账号未设置登录密码，请使用验证码登录');
         }
         if (!verify_password($password, $user['password'])) {
+            $this->codeFailIncr($phone, 'login_password');
             return $this->fail(2003, '登录密码错误');
         }
+
+        $this->codeFailClear($phone, 'login_password');
 
         Db::name('users')->where('id', $user['id'])->update([
             'last_login_at' => date('Y-m-d H:i:s.v'),
@@ -408,8 +422,11 @@ class Auth extends BaseController
 
         Db::startTrans();
         Db::name('users')->where('id', $user['id'])->update([
-            'password'   => hash_password($newPassword),
-            'updated_at' => date('Y-m-d H:i:s.v'),
+            'password'      => hash_password($newPassword),
+            // P1 修复：重置密码后置 logout_before（UTC，与 JwtAuth 解析口径一致），
+            // 使所有旧 token 失效，避免旧 session 在忘记密码场景下继续可用。
+            'logout_before' => gmdate('Y-m-d H:i:s'),
+            'updated_at'    => date('Y-m-d H:i:s.v'),
         ]);
         Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
         Db::commit();

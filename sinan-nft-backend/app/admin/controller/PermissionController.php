@@ -94,7 +94,9 @@ class PermissionController extends BaseController
             return $this->fail(4040, '角色不存在');
         }
         // C4 修复：分配 super_admin 角色必须当前管理员是超管，防止垂直提权自封超管
-        if ($role['role_code'] === 'super_admin' && empty($this->admin()['is_super'])) {
+        // 注：admin_roles 表的角色标识列名为 code（adminList 查询时以 r.code AS role_code 别名返回，
+        // 但此处 find() 返回原始列名，必须用 $role['code']，否则下发 HTTP 500）
+        if ($role['code'] === 'super_admin' && empty($this->admin()['is_super'])) {
             return $this->fail(4003, '仅超级管理员可分配超管角色');
         }
         if (Db::name('admin_users')->where('username', $username)->whereNull('deleted_at')->count() > 0) {
@@ -160,7 +162,7 @@ class PermissionController extends BaseController
             if ((int) $admin['id'] === (int) $this->adminId()) {
                 return $this->fail(4220, '不允许修改自身角色');
             }
-            if ($role['role_code'] === 'super_admin' && empty($this->admin()['is_super'])) {
+            if ($role['code'] === 'super_admin' && empty($this->admin()['is_super'])) {
                 return $this->fail(4003, '仅超级管理员可分配超管角色');
             }
             $update['role_id'] = $newRoleId;

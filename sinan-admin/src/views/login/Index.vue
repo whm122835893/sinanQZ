@@ -220,10 +220,12 @@ async function onSubmit() {
       </el-form>
 
       <div class="login__hint">
-        默认账号：admin / admin123
         <template v-if="captchaEnabled">
-          ｜验证码：{{ captchaProvider === 'aliyun' ? '阿里云' : '本地图形' }}
+          验证码：{{ captchaProvider === 'aliyun' ? '阿里云' : '本地图形' }}
           （{{ captchaMode === 'slider' ? '滑块' : '图形' }}）模式
+        </template>
+        <template v-else>
+          请使用管理员账号登录
         </template>
       </div>
     </div>

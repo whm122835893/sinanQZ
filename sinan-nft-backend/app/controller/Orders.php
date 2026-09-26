@@ -97,9 +97,14 @@ class Orders extends BaseController
                     Db::rollback();
                     return $this->fail(1002, '藏品不存在');
                 }
-                if ($collectible['status'] === 'soldout') {
+                // P0 修复：仅 onsale 状态可购买。此前只拦截 soldout，导致 upcoming（未正式发售/未上架）
+                // 的藏品可被直接下单。status 取值：upcoming 未发售 / onsale 发售中 / soldout 已售罄 / off 已下架。
+                if ($collectible['status'] !== 'onsale') {
                     Db::rollback();
-                    return $this->fail(3002, '藏品已售罄');
+                    $code = $collectible['status'] === 'soldout' ? 3002 : 1001;
+                    $msg = $collectible['status'] === 'soldout' ? '藏品已售罄'
+                        : ($collectible['status'] === 'upcoming' ? '藏品尚未开售' : '藏品当前不可购买');
+                    return $this->fail($code, $msg);
                 }
 
                 $source = 'release';

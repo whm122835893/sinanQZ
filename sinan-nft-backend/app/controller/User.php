@@ -277,10 +277,13 @@ class User extends BaseController
         $this->codeFailClear($phone, 'reset_password');
 
         $now = date('Y-m-d H:i:s.v');
+        // P0 修复：logout_before 必须写 UTC 时间（JwtAuth 中间件按 UTC 解析该列）。
+        // 此前用 date()（Asia/Shanghai）写入，导致改密后新签发的 token 被判失效约 8 小时。
+        $logoutBeforeUtc = gmdate('Y-m-d H:i:s');
         Db::startTrans();
         Db::name('users')->where('id', $userId)->update([
             'password'     => hash_password($newPassword),
-            'logout_before'=> $now,  // 改密后使所有旧 token 失效（iat <= logout_before 拒绝）
+            'logout_before'=> $logoutBeforeUtc,  // 改密后使所有旧 token 失效（iat <= logout_before 拒绝）
             'updated_at'   => $now,
         ]);
         Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => $now]);
@@ -329,10 +332,12 @@ class User extends BaseController
         $this->codeFailClear($phone, 'reset_password');
 
         $now = date('Y-m-d H:i:s.v');
+        // P0 修复：logout_before 写 UTC（JwtAuth 按 UTC 解析），原 date() 写本地时区导致锁 8h
+        $logoutBeforeUtc = gmdate('Y-m-d H:i:s');
         Db::startTrans();
         Db::name('users')->where('id', $userId)->update([
             'transaction_password' => hash_password($newPassword),
-            'logout_before'        => $now,  // 重置交易密码后使所有旧 token 失效
+            'logout_before'        => $logoutBeforeUtc,  // 重置交易密码后使所有旧 token 失效
             'updated_at'           => $now,
         ]);
         Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => $now]);
