@@ -437,8 +437,20 @@ async function onSave() {
           </el-form-item>
 
           <el-form-item label="起止时间">
-            <el-input v-model="form.startTime" placeholder="开始时间（可留空）" style="width: 46%; margin-right: 4px" />
-            <el-input v-model="form.endTime" placeholder="截止时间（限时活动必填）" style="width: 48%" />
+            <el-date-picker
+              v-model="form.startTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="开始时间（可留空）"
+              style="width: 46%; margin-right: 4px"
+            />
+            <el-date-picker
+              v-model="form.endTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="截止时间（限时活动必填）"
+              style="width: 48%"
+            />
           </el-form-item>
 
           <el-form-item label="参与资格">

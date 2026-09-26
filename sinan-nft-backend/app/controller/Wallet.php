@@ -46,7 +46,7 @@ class Wallet extends BaseController
         $query = Db::name('wallet_transactions')->where('user_id', $userId)->order('created_at', 'desc');
         if ($type) $query->where('trans_type', $type);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
         return $this->paginate(array_map(fn ($t) => [
@@ -83,11 +83,11 @@ class Wallet extends BaseController
         Db::startTrans();
         try {
             $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
-            Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'     => Db::raw('balance + ' . $amount),
-                'available'   => Db::raw('available + ' . $amount),
-                'updated_at'  => $now,
-            ]);
+            // M4：用 inc 绑定运算，避免浮点转字符串拼接的精度/分隔符风险
+            Db::name('wallets')->where('user_id', $userId)
+                ->inc('balance', $amount)
+                ->inc('available', $amount)
+                ->update(['updated_at' => $now]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $userId,
                 'trans_type'    => 'recharge',

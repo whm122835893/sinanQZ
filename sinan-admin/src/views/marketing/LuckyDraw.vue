@@ -464,10 +464,22 @@ async function onUploadPrizeImage({ file }) {
           <el-input v-model="actForm.name" placeholder="如：司南九月抽奖 · 第一期" maxlength="50" show-word-limit />
         </el-form-item>
         <el-form-item label="开始时间">
-          <el-input v-model="actForm.startTime" placeholder="如 2026-09-01 00:00:00，留空不限" />
+          <el-date-picker
+            v-model="actForm.startTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="留空不限"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="结束时间">
-          <el-input v-model="actForm.endTime" placeholder="如 2026-09-30 23:59:59，留空不限" />
+          <el-date-picker
+            v-model="actForm.endTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="留空不限"
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="参与资格">
           <EligibilityEditor v-model="actForm.eligibility" :collectibles="collectibles" />

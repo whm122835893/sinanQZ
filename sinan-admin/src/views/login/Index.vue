@@ -14,9 +14,12 @@ const adminStore = useAdminStore()
 const site = useSiteStore()
 
 const formRef = ref(null)
-// 生产严禁预填/展示默认账号（构建产物会原样暴露超管口令）；仅本地 dev server 预填
-const isDev = import.meta.env.DEV
-const form = ref(isDev ? { username: 'admin', password: 'admin123' } : { username: '', password: '' })
+// C9 修复：生产环境不预填/不展示默认账号。必须内联 import.meta.env.DEV，
+// 存成 const 会让 Rollup 无法折叠分支，超管口令字面量会原样进入 dist
+const form = ref({
+  username: import.meta.env.DEV ? 'admin' : '',
+  password: import.meta.env.DEV ? 'admin123' : '',
+})
 const submitting = ref(false)
 const year = new Date().getFullYear()
 
@@ -218,10 +221,12 @@ async function onSubmit() {
       </el-form>
 
       <div class="login__hint">
-        <template v-if="isDev">默认账号：admin / admin123｜</template>
         <template v-if="captchaEnabled">
           验证码：{{ captchaProvider === 'aliyun' ? '阿里云' : '本地图形' }}
           （{{ captchaMode === 'slider' ? '滑块' : '图形' }}）模式
+        </template>
+        <template v-else>
+          请使用管理员账号登录
         </template>
       </div>
     </div>

@@ -372,7 +372,7 @@ class LuckyDraw extends BaseController
             ->join('lucky_draw_prizes p', 'p.id = r.prize_id')
             ->where('r.user_id', $userId);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query
             ->order('r.created_at', 'desc')
             ->limit($p['offset'], $p['pageSize'])

@@ -27,7 +27,7 @@ class Content extends BaseController
             });
         if ($type) $query->where('type', $type);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->order('is_top', 'desc')->order('created_at', 'desc')
             ->limit($p['offset'], $p['pageSize'])->select()->toArray();
 

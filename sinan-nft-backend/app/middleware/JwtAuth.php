@@ -66,9 +66,16 @@ class JwtAuth
         if ((int) $user['is_blacklisted'] === 1) {
             return json(['code' => 2003, 'message' => '账号已被列入黑名单，禁止访问', 'data' => null]);
         }
-        if (!empty($user['logout_before']) && isset($payload->iat)
-            && (int) $payload->iat <= strtotime((string) $user['logout_before'])) {
-            return json(['code' => 2001, 'message' => '登录已失效，请重新登录', 'data' => null]);
+        // 强制登出：logout_before 为 DB 时间（UTC），需按 UTC 解析后与 iat（UTC 时间戳）比较
+        if (!empty($user['logout_before']) && isset($payload->iat)) {
+            try {
+                $logoutTs = (new \DateTimeImmutable((string) $user['logout_before'], new \DateTimeZone('UTC')))->getTimestamp();
+                if ((int) $payload->iat <= $logoutTs) {
+                    return json(['code' => 2001, 'message' => '登录已失效，请重新登录', 'data' => null]);
+                }
+            } catch (\Throwable $e) {
+                // 时间解析异常时跳过，避免误杀
+            }
         }
 
         // 管理端强制登出黑名单（TTL=JWT有效期；缓存不可用时跳过，保持向后兼容）

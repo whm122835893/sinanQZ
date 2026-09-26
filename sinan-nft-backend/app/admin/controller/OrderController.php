@@ -208,11 +208,11 @@ class OrderController extends BaseController
                     Db::rollback();
                     return $this->fail(4220, '用户余额不足，无法标记余额支付');
                 }
-                Db::name('wallets')->where('user_id', $order['user_id'])->update([
-                    'balance'    => Db::raw('balance - ' . (float)($order['total_price'])),
-                    'available'  => Db::raw('available - ' . (float)($order['total_price'])),
-                    'updated_at' => $now,
-                ]);
+                $payAmount = (float) $order['total_price'];
+                Db::name('wallets')->where('user_id', $order['user_id'])
+                    ->dec('balance', $payAmount)
+                    ->dec('available', $payAmount)
+                    ->update(['updated_at' => $now]);
                 Db::name('wallet_transactions')->insert([
                     'user_id'       => $order['user_id'],
                     'trans_type'    => 'buy',
@@ -288,11 +288,11 @@ class OrderController extends BaseController
                     return $this->fail(4220, '藏品状态异常，过户失败');
                 }
                 $sellerWallet = Db::name('wallets')->where('user_id', $listing['seller_id'])->lock(true)->find();
-                Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
-                    'balance'    => Db::raw('balance + ' . (float)($listing['actual_amount'])),
-                    'available'  => Db::raw('available + ' . (float)($listing['actual_amount'])),
-                    'updated_at' => $now,
-                ]);
+                $settleAmount = (float) $listing['actual_amount'];
+                Db::name('wallets')->where('user_id', $listing['seller_id'])
+                    ->inc('balance', $settleAmount)
+                    ->inc('available', $settleAmount)
+                    ->update(['updated_at' => $now]);
                 Db::name('wallet_transactions')->insert([
                     'user_id'       => $listing['seller_id'],
                     'trans_type'    => 'reward',

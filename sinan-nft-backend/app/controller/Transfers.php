@@ -192,7 +192,7 @@ class Transfers extends BaseController
         elseif ($direction === 'received') $query->where('t.to_user_id', $userId);
         if ($status) $query->where('t.status', $status);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             't.id as transfer_id', 't.status', 't.created_at', 't.from_user_id',
             't.to_phone as counterpart', 'c.name', 'c.image',

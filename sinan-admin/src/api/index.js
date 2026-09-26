@@ -309,6 +309,8 @@ export async function getUserAssets(id, params = {}) {
 // 发售状态值规整：后端存 'off'，前端词汇表（COLLECTIBLE_STATUS）用 'offline'
 const statusToFront = (v) => (v === 'off' ? 'offline' : v)
 const statusToBack = (v) => (v === 'offline' ? 'off' : v)
+// 后端 datetime 带 .000000 小数秒尾巴，el-date-picker 按 YYYY-MM-DD HH:mm:ss 解析会失败
+const dt = (v) => s(v).replace(/\.\d+$/, '')
 
 const adaptCollectible = (c) => ({
   id: c.id,
@@ -328,7 +330,10 @@ const adaptCollectible = (c) => ({
   status: statusToFront(s(c.status)),
   tag: s(c.tag),
   issuer: s(c.issuer),
-  saleTime: s(c.onsaleAt).replace(/\.\d+$/, ''),
+  saleTime: dt(c.onsaleAt),
+  // 发售时间窗：开始/结束（datetime），供编辑页两个 picker 回填
+  onsaleAt: dt(c.onsaleAt),
+  offSaleAt: dt(c.offSaleAt),
   description: s(c.description),
   featured: n(c.featured) === 1,
   isBlindBox: n(c.isBlindBox) === 1,
@@ -403,7 +408,7 @@ export async function getCollectibleDetail(id) {
 
 /**
  * 新建/编辑藏品
- * 视图载荷：{ id?, name, subtitle, category(名称), price, edition, saleTime, tag,
+ * 视图载荷：{ id?, name, subtitle, category(名称), price, edition, onsaleAt, offSaleAt, tag,
  *            issuer, creator, royaltyRate, description, featured, cover, ... }
  * 转赠/寄售开关不在此设置：创建后由管理员在藏品列表/详情中配置（market-config）
  */
@@ -420,7 +425,11 @@ export function saveCollectible(payload) {
     creator: payload.creator || '',
     description: payload.description || '',
     featured: payload.featured ? 1 : 0,
-    onsale_at: payload.saleTime || '',
+    // 发售时间窗：开始/结束均可选，留空表示不限制
+    onsale_at: payload.onsaleAt || '',
+    off_sale_at: payload.offSaleAt || '',
+    // 兼容旧字段：开始时间同步到 release_date
+    release_date: payload.onsaleAt || '',
     // 链上配置
     ...(payload.chainType ? { chain_type: payload.chainType } : {}),
     ...(payload.contract ? { contract: payload.contract } : {})
@@ -635,7 +644,7 @@ const adaptBlindBox = (b) => ({
   probabilitySum: n(b.probabilitySum),
   probabilityOk: !!b.probabilityOk,
   availablePool: n(b.availablePool),
-  saleTime: s(b.onsaleAt),
+  saleTime: dt(b.onsaleAt),
   description: s(b.description),
   categoryId: n(b.categoryId),
   categoryName: s(b.categoryName),

@@ -304,10 +304,22 @@ function removeRuleSlot(idx) {
             <el-input v-model="form.name" placeholder="如：每日签到 · 九月篇" maxlength="50" show-word-limit />
           </el-form-item>
           <el-form-item label="开始时间">
-            <el-input v-model="form.startTime" placeholder="如 2026-09-01 00:00:00（必填）" />
+            <el-date-picker
+              v-model="form.startTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="请选择开始时间（必填）"
+              style="width: 100%"
+            />
           </el-form-item>
           <el-form-item label="结束时间">
-            <el-input v-model="form.endTime" placeholder="如 2026-09-30 23:59:59，留空为长期有效" />
+            <el-date-picker
+              v-model="form.endTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="留空为长期有效"
+              style="width: 100%"
+            />
           </el-form-item>
           <el-form-item label="活动状态">
             <el-radio-group v-model="form.status">

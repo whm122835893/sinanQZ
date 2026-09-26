@@ -20,11 +20,11 @@ onMounted(async () => {
     getCheckinConfig(), getLuckyDraws(), getSynthesisList(), getInviteActivity(), getPrioritySales(),
     getRegisterActivities(), getRewardRecords({ page: 1, pageSize: 1 })
   ])
-  checkin.value = c.data
-  lucky.value = l.data
-  synthesis.value = s.data
-  invite.value = i.data
-  priority.value = p.data
+  checkin.value = c.data || null
+  lucky.value = l.data || []
+  synthesis.value = s.data?.list || []
+  invite.value = i.data || null
+  priority.value = p.data || []
   register.value = r.data || []
   rewardStats.value = rr.data || null
   loading.value = false
@@ -47,18 +47,19 @@ function statOf(entry) {
     case '/marketing/checkin':
       return checkin.value.enabled === 1 ? `今日 ${fmtNumber(checkin.value.todayCount)} 人签到` : '已停用'
     case '/marketing/luckydraw': {
-      const on = lucky.value.filter((a) => a.status === 'enabled').length
+      const on = (lucky.value || []).filter((a) => a.status === 'enabled').length
       return `${on} 个进行中`
     }
     case '/marketing/synthesis': {
-      const on = synthesis.value.filter((a) => a.status === 'enabled').length
+      const on = (synthesis.value || []).filter((a) => a.status === 'enabled').length
       return `${on} 个进行中`
     }
     case '/marketing/invite':
-      return `累计邀请 ${fmtNumber(invite.value.stats.invitedCount)} 人`
+      return `累计邀请 ${fmtNumber(invite.value?.stats?.invitedCount || 0)} 人`
     case '/marketing/register': {
-      const on = register.value.filter((a) => a.status === 'enabled').length
-      return on ? `${on} 个进行中` : `${register.value.length} 个活动`
+      const list = register.value || []
+      const on = list.filter((a) => a.status === 'enabled').length
+      return on ? `${on} 个进行中` : `${list.length} 个活动`
     }
     case '/marketing/reward-records': {
       const pending = Number(rewardStats.value?.stats?.pending || 0)

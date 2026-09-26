@@ -258,8 +258,10 @@ class CollectibleController extends BaseController
             'contract'       => mb_substr(trim((string) $this->request->param('contract', '')), 0, 100) ?: null,
             'chain_type'     => mb_substr(trim((string) $this->request->param('chain_type', '')), 0, 20) ?: null,
             'token_standard' => mb_substr(trim((string) $this->request->param('token_standard', '')), 0, 20) ?: null,
-            // 开售时间（可空）：C 端 saleTime 与下单校验均读 onsale_at，留空表示上架时即时开售
+            'release_date'   => $this->optionalDate('release_date'),
+            // 发售窗口（均可空）：C 端 saleTime 与下单校验读 onsale_at / off_sale_at，留空=上架即开售、长期售卖
             'onsale_at'      => $this->optionalDate('onsale_at'),
+            'off_sale_at'    => $this->optionalDate('off_sale_at'),
             'is_scheduled'   => (int) $this->request->param('is_scheduled', 0) === 1 ? 1 : 0,
             'schedule_time'  => $this->optionalDate('schedule_time'),
             'tag'            => mb_substr(trim((string) $this->request->param('tag', '')), 0, 50) ?: null,
@@ -340,6 +342,7 @@ class CollectibleController extends BaseController
             'token_standard' => fn ($v) => trim((string) $v),
             'release_date' => fn ($v) => $v,
             'onsale_at' => fn ($v) => $this->normalizeDate($v),
+            'off_sale_at' => fn ($v) => $this->normalizeDate($v),
             'is_scheduled' => fn ($v) => (int) $v === 1 ? 1 : 0,
             'schedule_time' => fn ($v) => $v,
             'tag' => fn ($v) => trim((string) $v),
@@ -352,7 +355,7 @@ class CollectibleController extends BaseController
         foreach ($allowFields as $field => $cast) {
             if (array_key_exists($field, $params)) {
                 $value = $cast($params[$field]);
-                $update[$field] = ($value === '' && in_array($field, ['subtitle', 'gradient', 'icon', 'issuer', 'creator', 'brand', 'album', 'contract', 'chain_type', 'token_standard', 'release_date', 'tag'], true)) ? null : $value;
+                $update[$field] = ($value === '' && in_array($field, ['subtitle', 'gradient', 'icon', 'issuer', 'creator', 'brand', 'album', 'contract', 'chain_type', 'token_standard', 'release_date', 'onsale_at', 'off_sale_at', 'tag'], true)) ? null : $value;
             }
         }
         if (!$update) {
@@ -466,6 +469,11 @@ class CollectibleController extends BaseController
         ];
         if ($updateReleaseQty) {
             $update['release_quantity'] = $newReleaseQty;
+        }
+        // release_date 仅作历史兼容透传：C 端可见性与可购窗口一律读 onsale_at / off_sale_at
+        $releaseDate = $this->optionalDate('release_date');
+        if ($releaseDate !== null) {
+            $update['release_date'] = $releaseDate;
         }
 
         // 开售时间：显式传入 > 保留已设定的未来时间（定时开售）> 立即开售
@@ -664,10 +672,11 @@ class CollectibleController extends BaseController
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
-            // 守恒条件原子更新并校验影响行数：事务外预检在并发下双双通过会击穿 edition 守恒
+            // C6 修复：守恒条件原子更新并校验影响行数——事务外预检在并发下双双通过会击穿 edition 守恒
             $affected = Db::name('collectibles')->where('id', $id)
                 ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . $quantity)
-                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (int) $quantity), 'updated_at' => $now]);
+                ->inc('destroyed_count', $quantity)
+                ->update(['updated_at' => $now]);
             if ($affected !== 1) {
                 Db::rollback();
                 return $this->fail(4220, '可销毁库存池不足（可能已被并发销毁），请刷新后重试');

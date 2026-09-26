@@ -18,7 +18,8 @@ const form = ref({
   categoryId: null,
   price: null,
   edition: null,
-  saleTime: '',
+  onsaleAt: '',
+  offSaleAt: '',
   tag: '首发',
   issuer: '司南数字藏品',
   creator: '',
@@ -75,7 +76,9 @@ onMounted(async () => {
     const c = res.data
     form.value = {
       name: c.name, subtitle: c.subtitle, categoryId: c.categoryId || null,
-      price: c.price, edition: c.edition, saleTime: c.saleTime,
+      price: c.price, edition: c.edition,
+      onsaleAt: c.onsaleAt || c.saleTime || '',
+      offSaleAt: c.offSaleAt || '',
       tag: c.tag, issuer: c.issuer, creator: c.creator || '',
       royaltyRate: c.royaltyRate ?? null,
       description: c.description,
@@ -122,7 +125,8 @@ async function onSubmit() {
     categoryId: f.categoryId,
     price: Number(f.price) || 0,
     edition: Number(f.edition) || 0,
-    saleTime: f.saleTime,
+    onsaleAt: f.onsaleAt,
+    offSaleAt: f.offSaleAt,
     tag: f.tag,
     issuer: f.issuer,
     creator: f.creator,
@@ -174,9 +178,9 @@ async function onSubmit() {
           </div>
         </el-form-item>
 
-        <el-form-item label="发售时间">
+        <el-form-item label="开始售卖时间">
           <el-date-picker
-            v-model="form.saleTime"
+            v-model="form.onsaleAt"
             type="datetime"
             format="YYYY-MM-DD HH:mm"
             value-format="YYYY-MM-DD HH:mm:ss"
@@ -184,9 +188,21 @@ async function onSubmit() {
             clearable
             style="width: 280px"
           />
+        </el-form-item>
+
+        <el-form-item label="结束售卖时间">
+          <el-date-picker
+            v-model="form.offSaleAt"
+            type="datetime"
+            format="YYYY-MM-DD HH:mm"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="可留空，留空表示长期售卖"
+            clearable
+            style="width: 280px"
+          />
           <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">
-            可选项。留空则在藏品开启「上架售卖」后即时开售；选择未来时间即定时开售，C 端在到点前显示发售倒计时且不可购买。
-            藏品创建后仍为「待发售」状态，需在藏品列表或详情中开启上架售卖后 C 端才可见
+            开始时间可留空：留空则在藏品开启「上架售卖」后即时开售，选择未来时间即定时开售，C 端在到点前显示发售倒计时且不可购买。
+            结束时间到点后 C 端不可再购买。藏品创建后仍为「待发售」状态，需在藏品列表或详情中开启上架售卖后 C 端才可见
           </div>
         </el-form-item>
 

@@ -54,7 +54,7 @@ class Collections extends BaseController
             ->where('status', '<>', 'soldout')
             ->order('onsale_at', 'desc');
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
         $items = array_map(function ($c) use ($blindBoxSet, $prioritySet, $eligibilitySet) {
@@ -227,7 +227,7 @@ class Collections extends BaseController
                 $query->order('mp.min_price', 'asc');
         }
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
         $userId  = $this->userId();
@@ -386,7 +386,7 @@ class Collections extends BaseController
             ->whereNull('c.deleted_at')
             ->order('f.created_at', 'desc');
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             'c.id', 'c.name', 'c.image', 'c.price', 'c.edition', 'c.circulate',
         ])->select()->toArray();

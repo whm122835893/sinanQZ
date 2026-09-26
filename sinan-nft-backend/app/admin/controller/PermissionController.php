@@ -94,6 +94,7 @@ class PermissionController extends BaseController
             return $this->fail(4040, '角色不存在');
         }
         // 防垂直提权：仅超管可创建/挂接 super_admin 角色账号
+        // 注：admin_roles 的角色标识列名是 code（find() 返回原始列名，写成 role_code 会 HTTP 500）
         if ($role['code'] === 'super_admin' && empty($this->admin()['is_super'])) {
             return $this->fail(4003, '仅超级管理员可操作超级管理员账号');
         }
@@ -159,6 +160,10 @@ class PermissionController extends BaseController
             $role = Db::name('admin_roles')->where('id', $newRoleId)->find();
             if (!$role) {
                 return $this->fail(4040, '角色不存在');
+            }
+            // 禁止修改自身角色（防自封/自降级）
+            if ((int) $admin['id'] === (int) $this->adminId()) {
+                return $this->fail(4220, '不允许修改自身角色');
             }
             // 防垂直提权：非超管不可把任何账号升级为 super_admin 角色
             if ($role['code'] === 'super_admin' && empty($this->admin()['is_super'])) {

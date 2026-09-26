@@ -20,8 +20,26 @@ use think\Response;
  */
 class AdminAuth
 {
+    /** C3 修复：应用级兜底中间件需放行的公开路径（无需登录） */
+    private const PUBLIC_PATHS = [
+        'auth/login',
+        'auth/refresh',
+        'captcha/image',
+        'captcha/verify',
+        'captcha/enabled',
+        'site-brand',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
+        // C3 修复：应用级中间件兜底，先放行公开路径，其余一律强制认证
+        $path = ltrim((string) $request->pathinfo(), '/');
+        foreach (self::PUBLIC_PATHS as $public) {
+            if ($path === $public || stripos($path, $public . '/') === 0) {
+                return $next($request);
+            }
+        }
+
         $token = $this->extractToken($request);
         if ($token === '') {
             return json(['code' => 4001, 'message' => '未登录或令牌缺失', 'data' => null]);

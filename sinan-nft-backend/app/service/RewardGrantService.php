@@ -274,8 +274,15 @@ class RewardGrantService
 
         for ($i = 0; $i < $quantity; $i++) {
             // 发放台账（airdrop_records，activity_id 关联来源活动）
+            // 注：nft_airdrop_records.activity_id 的 FK 指向 nft_airdrop_activities.id。
+            // 仅空投场景（airdrop）的 activityId 才属于该表；签到/抽奖/邀请/注册等场景的
+            // activityId 指向各自的活动表（nft_checkin_activities 等），写入会触发 FK 约束失败，
+            // 故非空投场景一律写 NULL（FK 列已允许 NULL）。
+            $airdropActivityId = ($scene === 'airdrop' && isset($context['activityId']) && $context['activityId'] > 0)
+                ? (int) $context['activityId']
+                : null;
             $recordId = Db::name('airdrop_records')->insertGetId([
-                'activity_id'  => isset($context['activityId']) && $context['activityId'] > 0 ? (int) $context['activityId'] : null,
+                'activity_id'  => $airdropActivityId,
                 'user_id'     => $userId,
                 'phone'       => $phone,
                 'collectible_id' => $collectibleId,

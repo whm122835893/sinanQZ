@@ -480,8 +480,20 @@ async function onDelete(row) {
         </el-form-item>
 
         <el-form-item label="起止时间">
-          <el-input v-model="form.startTime" placeholder="开始时间 2026-09-01 00:00:00（可留空）" style="width: 46%; margin-right: 4px" />
-          <el-input v-model="form.endTime" placeholder="截止时间（可留空）" style="width: 48%" />
+          <el-date-picker
+            v-model="form.startTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="开始时间（可留空）"
+            style="width: 46%; margin-right: 4px"
+          />
+          <el-date-picker
+            v-model="form.endTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="截止时间（可留空）"
+            style="width: 48%"
+          />
         </el-form-item>
 
         <!-- 持有快照：选择快照藏品 -->

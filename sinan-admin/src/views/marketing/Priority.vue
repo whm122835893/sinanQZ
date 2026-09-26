@@ -425,10 +425,22 @@ const isExpired = (t) => new Date(t).getTime() < Date.now()
             </el-select>
           </el-form-item>
           <el-form-item label="开始时间">
-            <el-input v-model="editForm.startTime" placeholder="YYYY-MM-DD HH:mm:ss（可选）" />
+            <el-date-picker
+              v-model="editForm.startTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="可选"
+              style="width: 100%"
+            />
           </el-form-item>
           <el-form-item label="结束时间">
-            <el-input v-model="editForm.endTime" placeholder="YYYY-MM-DD HH:mm:ss（可选）" />
+            <el-date-picker
+              v-model="editForm.endTime"
+              type="datetime"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              placeholder="可选"
+              style="width: 100%"
+            />
           </el-form-item>
           <el-form-item label="备注">
             <el-input v-model="editForm.remark" type="textarea" :rows="2" maxlength="255" placeholder="可选，内部说明" />

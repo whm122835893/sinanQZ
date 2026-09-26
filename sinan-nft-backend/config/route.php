@@ -9,7 +9,8 @@ return [
     // 是否开启路由延迟解析
     'url_lazy_route'        => false,
     // 是否强制使用路由
-    'url_route_must'        => false,
+    // C3 修复：开启强制路由，禁止回退到"模块/控制器/方法"默认解析，防止 RBAC 被旁路
+    'url_route_must'        => true,
     // 是否区分大小写
     'url_case_sensitive'    => false,
     // 自动扫描子目录分组

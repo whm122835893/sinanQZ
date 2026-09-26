@@ -205,7 +205,7 @@ class Resale extends BaseController
             ->order('l.created_at', 'desc');
         if ($status) $query->where('l.status', $status);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             'l.id as listing_id', 'l.price', 'l.fee_amount', 'l.actual_amount',
             'l.status', 'l.listed_at', 'l.user_collectible_id',
@@ -386,7 +386,7 @@ class Resale extends BaseController
             default:          $query->order('l.price', 'asc');
         }
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             'l.id as listing_id', 'l.price', 'l.user_collectible_id', 'l.listed_at',
             'u.phone as seller_phone', 'uc.serial',

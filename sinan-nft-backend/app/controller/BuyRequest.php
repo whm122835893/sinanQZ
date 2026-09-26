@@ -208,12 +208,11 @@ class BuyRequest extends BaseController
                 'updated_at'     => $now,
             ]);
 
-            // 买家扣款 + 流水
-            Db::name('wallets')->where('user_id', $buyerId)->update([
-                'balance'    => Db::raw('balance - ' . (float)($totalPrice)),
-                'available'  => Db::raw('available - ' . (float)($totalPrice)),
-                'updated_at' => $now,
-            ]);
+            // 买家扣款 + 流水（M4 修复：dec 替代 Db::raw(float)）
+            Db::name('wallets')->where('user_id', $buyerId)
+                ->dec('balance', $totalPrice)
+                ->dec('available', $totalPrice)
+                ->update(['updated_at' => $now]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $buyerId,
                 'trans_type'    => 'buy',
@@ -234,11 +233,11 @@ class BuyRequest extends BaseController
             $actualAmount = round($totalPrice - $feeAmount, 2);
 
             $sellerWallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
-            Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'    => Db::raw('balance + ' . (float)($actualAmount)),
-                'available'  => Db::raw('available + ' . (float)($actualAmount)),
-                'updated_at' => $now,
-            ]);
+            // M4 修复：inc 替代 Db::raw(float)
+            Db::name('wallets')->where('user_id', $userId)
+                ->inc('balance', $actualAmount)
+                ->inc('available', $actualAmount)
+                ->update(['updated_at' => $now]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $userId,
                 'trans_type'    => 'reward',
