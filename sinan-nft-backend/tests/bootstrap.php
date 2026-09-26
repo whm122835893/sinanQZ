@@ -4,22 +4,30 @@ declare(strict_types=1);
 require __DIR__ . '/../vendor/autoload.php';
 
 // 测试环境：绕开 ThinkPHP Facade 容器初始化，手动加载 .env 并注入 env() / aes_encrypt 辅助
-$_ENV_TMP = [];
-if (file_exists(__DIR__ . '/../.env')) {
-    foreach (file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
-        $line = trim($line);
-        if ($line === '' || str_starts_with($line, '#')) continue;
-        if (($p = strpos($line, '=')) !== false) {
-            $_ENV_TMP[trim(substr($line, 0, $p))] = trim(substr($line, $p + 1));
-        }
-    }
-}
+// 与 ThinkPHP 解析规则一致：段名并入键名，查找时 '.' 归一为 '_'（database.HOSTNAME → DATABASE_HOSTNAME）
+// 解析结果缓存在函数内 static：PHPUnit 会用快照覆盖引导脚本产生的全局变量，全局写法会静默变空
 if (!function_exists('env')) {
     function env(?string $name = null, $default = null)
     {
-        global $_ENV_TMP;
-        if ($name === null) return $_ENV_TMP;
-        return $_ENV_TMP[$name] ?? $default;
+        static $data = null;
+        if ($data === null) {
+            $data    = [];
+            $file    = __DIR__ . '/../.env';
+            $section = '';
+            foreach (is_file($file) ? (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []) : [] as $line) {
+                $line = trim($line);
+                if ($line === '' || str_starts_with($line, '#')) continue;
+                if (str_starts_with($line, '[') && str_ends_with($line, ']')) {
+                    $section = strtoupper(trim(trim($line, '[]'))) . '_';
+                    continue;
+                }
+                if (($p = strpos($line, '=')) === false) continue;
+                $key = strtoupper(trim(str_replace('.', '_', substr($line, 0, $p))));
+                $data[$section . $key] = trim(substr($line, $p + 1));
+            }
+        }
+        if ($name === null) return $data;
+        return $data[strtoupper(str_replace('.', '_', trim($name)))] ?? $default;
     }
 }
 if (!function_exists('app_key')) {

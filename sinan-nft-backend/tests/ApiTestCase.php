@@ -22,6 +22,7 @@ abstract class ApiTestCase extends TestCase
     protected const TX_PWD = 'Tx@123456';
 
     private static ?PDO $pdo = null;
+    private static ?array $edges = null;
 
     /** @var string[] 本用例创建的测试手机号（tearDown 级联清理） */
     protected array $phones = [];
@@ -45,61 +46,145 @@ abstract class ApiTestCase extends TestCase
         parent::tearDown();
     }
 
+    /** 清理 TEST- 前缀藏品及其全部关联行（含历史遗留） */
+    private static function purgeTestCollectibles(): void
+    {
+        $ids = self::pdo()
+            ->query("SELECT id FROM nft_collectibles WHERE name LIKE 'TEST-%'")
+            ->fetchAll(PDO::FETCH_COLUMN);
+        self::purge('nft_collectibles', array_map('intval', $ids));
+    }
+
     /**
      * 自愈：清理历史失败运行遗留的测试数据（1390000 号段用户 + TEST- 藏品）
      * 幂等，套件启动时执行一次
      */
     private static function healLeftovers(): void
     {
-        $stmt = self::pdo()->query("SELECT id FROM nft_users WHERE phone LIKE '1390000%'");
-        $userIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
-        if ($userIds) {
-            self::deleteUserData($userIds);
-            $in = implode(',', array_fill(0, count($userIds), '?'));
-            self::pdo()->prepare("DELETE FROM nft_users WHERE id IN ($in)")->execute($userIds);
-        }
+        $userIds = self::pdo()
+            ->query("SELECT id FROM nft_users WHERE phone LIKE '1390000%'")
+            ->fetchAll(PDO::FETCH_COLUMN);
+        self::purge('nft_users', array_map('intval', $userIds));
         self::purgeTestCollectibles();
     }
 
-    /** 清理 TEST- 前缀藏品及全部子行（含历史遗留，按 FK 依赖顺序） */
-    private static function purgeTestCollectibles(): void
+    /**
+     * 删除指定表的行，并连带清掉所有引用它们的子行。
+     *
+     * RESTRICT 外键的引用关系由 information_schema 实时推导（沿引用链不动点展开），
+     * 因此新增业务表不会让这里悄悄失效——之前手写删除清单就是因为漏了 nft_synthesis_records
+     * 等表，导致整套用例在 setUpBeforeClass 直接报错。
+     * CASCADE 交由数据库级联，SET NULL 由数据库置空，都不需要（也不应该）手动删，
+     * 否则会把与被测数据无关的业务行一起带走。
+     *
+     * @param string $table 目标表（带 nft_ 前缀）
+     * @param int[]  $ids   目标主键
+     */
+    private static function purge(string $table, array $ids): void
     {
-        $ids = "SELECT id FROM nft_collectibles WHERE name LIKE 'TEST-%'";
-        foreach ([
-            "DELETE pay FROM nft_payments pay JOIN nft_orders o ON pay.order_id = o.id WHERE o.collectible_id IN ($ids)",
-            "DELETE FROM nft_orders WHERE resale_listing_id IN (SELECT id FROM nft_resale_listings WHERE collectible_id IN ($ids))",
-            "DELETE FROM nft_resale_listings WHERE collectible_id IN ($ids)",
-            "DELETE FROM nft_transfers WHERE collectible_id IN ($ids)",
-            "DELETE FROM nft_user_collectibles WHERE collectible_id IN ($ids)",
-            "DELETE FROM nft_orders WHERE collectible_id IN ($ids)",
-            "DELETE FROM nft_collectibles WHERE name LIKE 'TEST-%'",
-        ] as $sql) {
-            self::pdo()->exec($sql);
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (!$ids) {
+            return;
+        }
+
+        $collected = [$table => $ids];
+        $queue     = [[$table, $ids]];
+        $edges     = self::restrictEdges();
+
+        while ($queue) {
+            [$parent, $pending] = array_shift($queue);
+            $in = implode(',', $pending);
+            foreach ($edges as [$child, $column, $referenced]) {
+                if ($referenced !== $parent) {
+                    continue;
+                }
+                // 取子行主键（而非外键列值）：既用于按 id 删除，也作为下一层展开的入口
+                $rows = self::pdo()
+                    ->query("SELECT id FROM `$child` WHERE `$column` IN ($in)")
+                    ->fetchAll(PDO::FETCH_COLUMN);
+                $fresh = array_values(array_diff(array_map('intval', $rows), $collected[$child] ?? []));
+                if ($fresh) {
+                    $collected[$child] = array_merge($collected[$child] ?? [], $fresh);
+                    $queue[]           = [$child, $fresh];
+                }
+            }
+        }
+
+        // 无外键约束、但按业务列挂着测试数据的表：不删会累积孤儿行（不参与顺序推导）
+        foreach (self::LOOSE_REFS as [$looseTable, $looseColumn, $refTable]) {
+            if (!isset($collected[$refTable]) || $looseTable === $table) {
+                continue;
+            }
+            self::pdo()->exec("DELETE FROM `$looseTable` WHERE `$looseColumn` IN (" . implode(',', $collected[$refTable]) . ')');
+        }
+
+        // 逐轮删除：DELETE IGNORE 会跳过仍被子行引用的行，因此无需精确推导层级顺序；
+        // 某轮删不掉任何行说明仍有表未纳入引用图，直接报错而不是静默留脏数据。
+        $remaining = $collected;
+        while (array_filter($remaining)) {
+            $touched = false;
+            foreach ($remaining as $t => $ids) {
+                if (!$ids) {
+                    continue;
+                }
+                $in        = implode(',', $ids);
+                $affected  = (int) self::pdo()->exec("DELETE IGNORE FROM `$t` WHERE id IN ($in)");
+                $touched   = $touched || $affected > 0;
+                if ($affected > 0) {
+                    $still = self::pdo()
+                        ->query("SELECT id FROM `$t` WHERE id IN ($in)")
+                        ->fetchAll(PDO::FETCH_COLUMN);
+                    $remaining[$t] = array_map('intval', $still);
+                }
+            }
+            if (!$touched) {
+                $stuck = array_filter($remaining);
+                throw new RuntimeException(
+                    '测试数据清理受阻，存在未纳入外键引用图的表：' . json_encode(array_map('count', $stuck))
+                );
+            }
         }
     }
 
-    /**
-     * 按 FK 依赖顺序删除用户关联子行（RESTRICT 约束要求子行先于父行）：
-     * payments → 市场单 → 挂单 → 转赠 → 持仓 → 剩余订单
-     */
-    private static function deleteUserData(array $userIds): void
+    /** RESTRICT 外键边：[子表, 子表列, 父表]，进程内缓存 */
+    private static function restrictEdges(): array
     {
-        $in     = implode(',', array_fill(0, count($userIds), '?'));
-        $params = $userIds;
-        foreach ([
-            "DELETE FROM nft_inbox WHERE user_id IN ($in)"                                    => $params,
-            "DELETE FROM nft_payments WHERE user_id IN ($in)"                                 => $params,
-            "DELETE FROM nft_orders WHERE user_id IN ($in) AND resale_listing_id IS NOT NULL" => $params,
-            "DELETE FROM nft_resale_listings WHERE seller_id IN ($in)"                        => $params,
-            "DELETE FROM nft_transfers WHERE from_user_id IN ($in) OR to_user_id IN ($in)"    => [...$params, ...$params],
-            "DELETE FROM nft_user_collectibles WHERE user_id IN ($in)"                        => $params,
-            "DELETE FROM nft_orders WHERE user_id IN ($in)"                                   => $params,
-            "DELETE FROM nft_wallet_transactions WHERE user_id IN ($in)"                      => $params,
-            "DELETE FROM nft_wallets WHERE user_id IN ($in)"                                  => $params,
-        ] as $sql => $sqlParams) {
-            self::pdo()->prepare($sql)->execute($sqlParams);
+        if (self::$edges === null) {
+            $rows = self::pdo()
+                ->query(
+                    "SELECT k.TABLE_NAME child, k.COLUMN_NAME col, k.REFERENCED_TABLE_NAME parent
+                       FROM information_schema.KEY_COLUMN_USAGE k
+                       JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+                         ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+                      WHERE k.CONSTRAINT_SCHEMA = DATABASE()
+                        AND k.REFERENCED_TABLE_NAME IS NOT NULL
+                        AND r.DELETE_RULE = 'RESTRICT'"
+                )
+                ->fetchAll(PDO::FETCH_ASSOC);
+            self::$edges = array_map(static fn (array $r) => [$r['child'], $r['col'], $r['parent']], $rows);
         }
+        return self::$edges;
     }
+
+    /** 关联列没有外键约束的表：[表, 列, 其指向的父表] */
+    private const LOOSE_REFS = [
+        ['nft_activity_reward_records', 'user_id', 'nft_users'],
+        ['nft_buy_requests', 'user_id', 'nft_users'],
+        ['nft_buy_requests', 'collectible_id', 'nft_collectibles'],
+        ['nft_decompose_records', 'user_id', 'nft_users'],
+        ['nft_holdings_snapshots', 'user_id', 'nft_users'],
+        ['nft_holdings_snapshots', 'collectible_id', 'nft_collectibles'],
+        ['nft_lucky_draw_chances', 'user_id', 'nft_users'],
+        ['nft_priority_sale_whitelists', 'user_id', 'nft_users'],
+        ['nft_raffle_registrations', 'user_id', 'nft_users'],
+        ['nft_risk_alerts', 'user_id', 'nft_users'],
+        ['nft_security_events', 'user_id', 'nft_users'],
+        ['nft_swap_plan_users', 'user_id', 'nft_users'],
+        ['nft_trade_snapshots', 'user_id', 'nft_users'],
+        ['nft_user_draw_codes', 'user_id', 'nft_users'],
+        ['nft_priority_sales', 'collectible_id', 'nft_collectibles'],
+        ['nft_raffle_activities', 'collectible_id', 'nft_collectibles'],
+    ];
 
     // ============================================================
     // HTTP 客户端
@@ -152,12 +237,28 @@ abstract class ApiTestCase extends TestCase
     // 数据库直连（造数 / 断言 / 清理）
     // ============================================================
 
+    /**
+     * 直连应用自身配置的数据源（.env [DATABASE]）。
+     * 刻意不回落默认端口/账号：本机另有监听 3306 的 MySQL 实例，
+     * 一旦连错，tearDown 的级联删除会作用在无关库上。
+     */
     protected static function pdo(): PDO
     {
         if (self::$pdo === null) {
-            self::$pdo = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft;charset=utf8mb4', 'root', '', [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            ]);
+            $host = (string) env('database.HOSTNAME', '');
+            $port = (int) env('database.HOSTPORT', 0);
+            $name = (string) env('database.DATABASE', '');
+            $user = (string) env('database.USERNAME', '');
+            $pass = (string) env('database.PASSWORD', '');
+            if ($host === '' || $name === '' || $port <= 0 || $user === '') {
+                self::fail('.env [DATABASE] 缺少 HOSTNAME/HOSTPORT/DATABASE/USERNAME，测试拒绝以默认数据源运行');
+            }
+            self::$pdo = new PDO(
+                "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4",
+                $user,
+                $pass,
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+            );
         }
         return self::$pdo;
     }
@@ -296,9 +397,7 @@ abstract class ApiTestCase extends TestCase
             $this->exec("DELETE FROM nft_verification_codes WHERE phone = ?", [$phone]);
             return;
         }
-        self::deleteUserData($userIds);
-        $in = implode(',', array_fill(0, count($userIds), '?'));
-        $this->exec("DELETE FROM nft_users WHERE id IN ($in)", $userIds);
+        self::purge('nft_users', array_map('intval', $userIds));
         $this->exec("DELETE FROM nft_verification_codes WHERE phone = ?", [$phone]);
     }
 }
