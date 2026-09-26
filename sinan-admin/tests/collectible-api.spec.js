@@ -70,13 +70,17 @@ beforeEach(() => {
 
 describe('adaptCollectible · 字段规整', () => {
   it('datetime(3) 毫秒要剪掉，空开售时间规整成空串', async () => {
-    api.get.mockResolvedValue(ok({ list: [backendRow()], total: 1 }))
+    api.get.mockResolvedValue(ok({ list: [backendRow({ offSaleAt: '2026-09-30 22:00:00.000' })], total: 1 }))
     const { data } = await getCollectibleList({ page: 1 })
     expect(data.list[0].saleTime).toBe('2026-09-01 10:00:00')
+    expect(data.list[0].onsaleAt).toBe('2026-09-01 10:00:00')
+    expect(data.list[0].offSaleAt).toBe('2026-09-30 22:00:00')
 
     api.get.mockResolvedValue(ok({ list: [backendRow({ onsaleAt: null })], total: 1 }))
     const res = await getCollectibleList({ page: 1 })
     expect(res.data.list[0].saleTime).toBe('')
+    expect(res.data.list[0].onsaleAt).toBe('')
+    expect(res.data.list[0].offSaleAt).toBe('')
   })
 
   it('后端 off → 前端 offline，其余状态原样', async () => {
@@ -163,20 +167,28 @@ describe('getCollectibleDetail · 平铺结构拍平', () => {
 describe('saveCollectible · 载荷转换', () => {
   it('新建走 POST，发售时间留空必须显式传空串（后端据此立即开售）', async () => {
     api.post.mockResolvedValue(ok({ id: 1 }))
-    await saveCollectible({ name: '测试', category: '国潮', price: '99.9', edition: 100, cover: '/a.png', saleTime: '' })
+    await saveCollectible({ name: '测试', category: '国潮', price: '99.9', edition: 100, cover: '/a.png' })
 
     expect(api.post).toHaveBeenCalledTimes(1)
     const [url, body] = api.post.mock.calls[0]
     expect(url).toBe('/collectibles')
     expect(body.onsale_at).toBe('')
+    expect(body.off_sale_at).toBe('')
+    expect(body.release_date).toBe('')
     expect(body).toMatchObject({ name: '测试', category_id: 2, price: 99.9, edition: 100, image: '/a.png', featured: 0 })
     expect(body.id).toBeUndefined()
   })
 
-  it('填写的发售时间原样提交，供后端写入 onsale_at 定时开售', async () => {
+  it('发售窗口三字段一起提交，开始时间同步到 release_date 兼容旧口径', async () => {
     api.post.mockResolvedValue(ok({ id: 1 }))
-    await saveCollectible({ name: '测试', cover: '/a.png', saleTime: '2026-11-11 20:00:00' })
-    expect(api.post.mock.calls[0][1].onsale_at).toBe('2026-11-11 20:00:00')
+    await saveCollectible({
+      name: '测试', cover: '/a.png',
+      onsaleAt: '2026-11-11 20:00:00', offSaleAt: '2026-11-20 20:00:00'
+    })
+    const body = api.post.mock.calls[0][1]
+    expect(body.onsale_at).toBe('2026-11-11 20:00:00')
+    expect(body.off_sale_at).toBe('2026-11-20 20:00:00')
+    expect(body.release_date).toBe('2026-11-11 20:00:00')
   })
 
   it('分类 ID 优先，名称只在无 ID 时查表，未知分类落到国潮', async () => {

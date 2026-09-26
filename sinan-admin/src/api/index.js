@@ -13,7 +13,7 @@ import { get, post, put, del, http } from '@/utils/request'
 // 通用映射表
 // ------------------------------------------------------------
 const REALNAME_STATUS = { 0: 'none', 1: 'pending', 2: 'approved', 3: 'rejected' }
-const REFUND_STATUS = { 1: 'pending', 2: 'approved', 3: 'approved', 4: 'rejected' } // 3=已退款归为 approved 终态
+const REFUND_STATUS = { 1: 'pending', 2: 'approved', 3: 'refunded', 4: 'rejected' } // 2=已批准待执行 3=已退款
 const RESALE_STATUS = { selling: 'onsale', sold: 'sold', cancelled: 'cancelled' }
 const TRANSFER_STATUS = { pending: 'pending', accepted: 'completed', rejected: 'rejected', cancelled: 'revoked' }
 const ORDER_STATUS_MAP = { pending: 'pending', completed: 'completed', cancelled: 'cancelled', refunding: 'refunding', refunded: 'refunded' }

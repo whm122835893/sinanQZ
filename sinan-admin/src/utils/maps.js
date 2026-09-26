@@ -48,9 +48,10 @@ export const TRANSFER_STATUS = {
 }
 
 export const REFUND_STATUS = {
-  pending:  { label: '待审批', type: 'warning' },
-  approved:{ label: '已退款', type: 'success' },
-  rejected:{ label: '已驳回', type: 'danger' }
+  pending:   { label: '待审批', type: 'warning' },
+  approved:  { label: '已批准', type: 'primary' },
+  refunded:  { label: '已退款', type: 'success' },
+  rejected:  { label: '已驳回', type: 'danger' }
 }
 
 export const ACTIVITY_STATUS = {

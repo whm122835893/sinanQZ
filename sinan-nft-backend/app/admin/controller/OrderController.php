@@ -368,8 +368,9 @@ class OrderController extends BaseController
                 Db::rollback();
                 return $this->fail(4220, '订单状态已变化，请刷新后重试');
             }
-            // 复查含 4=已退款：原实现漏判，已完成退款单后可再建一笔造成双退
-            $existing = Db::name('refunds')->where('order_id', $id)->whereIn('status', [1, 2, 3, 4])->lock(true)->count();
+            // 占用态为 1待审批/2已批准/3已退款；4=已拒绝（RefundController::approve 驳回写入）
+            // 不占额度：驳回后订单已回滚 completed，需允许再次发起退款
+            $existing = Db::name('refunds')->where('order_id', $id)->whereIn('status', [1, 2, 3])->lock(true)->count();
             if ($existing > 0) {
                 Db::rollback();
                 return $this->fail(4220, '该订单已存在处理中/已完成的退款申请');

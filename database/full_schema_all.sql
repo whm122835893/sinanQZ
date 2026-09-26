@@ -864,7 +864,7 @@ CREATE TABLE `nft_refunds` (
   `user_id`        BIGINT UNSIGNED NOT NULL               COMMENT '用户ID，FK→nft_users.id',
   `amount`         DECIMAL(10,2) NOT NULL                COMMENT '退款金额',
   `reason`         VARCHAR(255) NULL DEFAULT NULL        COMMENT '退款原因',
-  `status`         TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：1待审批 2已批准 3已拒绝 4已退款',
+  `status`         TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：1待审批 2已批准 3已退款 4已拒绝',
   `applicant_id`   INT UNSIGNED NOT NULL                 COMMENT '申请人（管理员）ID',
   `applicant_name` VARCHAR(50)  NOT NULL                 COMMENT '申请人姓名',
   `approver_id`    INT UNSIGNED NULL DEFAULT NULL         COMMENT '审批人ID',

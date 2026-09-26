@@ -7,30 +7,37 @@ import StatusTag from '@/components/StatusTag.vue'
 import { REFUND_STATUS } from '@/utils/maps'
 import { fmtMoney } from '@/utils/format'
 
+const tableRef = ref(null)
+
 const filters = [
   {
     field: 'status',
     label: '状态',
     options: [
       { value: 'pending', label: '待审批' },
-      { value: 'approved', label: '已退款' },
+      { value: 'approved', label: '已批准（待执行）' },
+      { value: 'refunded', label: '已退款' },
       { value: 'rejected', label: '已驳回' }
     ]
   }
 ]
 
+const ACTION_TITLES = { approve: '批准退款', reject: '驳回退款', execute: '执行退款' }
+
+const CONFIRMS = {
+  approve: (r) => `确认批准「${r.userName}」的退款 ¥${fmtMoney(r.amount)}？批准后仍需执行退款才会真正入账。`,
+  reject: (r) => `确认驳回「${r.userName}」的退款申请？`,
+  execute: (r) => `确认执行退款 ¥${fmtMoney(r.amount)}？资金将原路退回余额，并回收藏品资产、回滚库存。`
+}
+
 async function onAction(r, action) {
-  await ElMessageBox.confirm(
-    action === 'approve'
-      ? `确认向「${r.userName}」退款 ¥${fmtMoney(r.amount)}？退款将原路退回余额，并联动订单状态为已退款。`
-      : `确认驳回「${r.userName}」的退款申请？`,
-    action === 'approve' ? '同意退款' : '驳回退款',
-    { type: action === 'approve' ? 'warning' : 'error' }
-  )
+  await ElMessageBox.confirm(CONFIRMS[action](r), ACTION_TITLES[action], { type: action === 'reject' ? 'error' : 'warning' })
   const res = await refundAction(r.id, action)
   if (res.code === 0) {
-    r.status = res.data
-    ElMessage.success(action === 'approve' ? '已退款' : '已驳回')
+    ElMessage.success(res.message || '操作成功')
+    tableRef.value?.refresh()
+  } else {
+    ElMessage.error(res.message || '操作失败')
   }
 }
 </script>
@@ -38,6 +45,7 @@ async function onAction(r, action) {
 <template>
   <div class="adm-page">
     <AdminTablePage
+      ref="tableRef"
       :fetch="getRefundList"
       :filters="filters"
       :defaults="{ status: 'pending' }"
@@ -79,8 +87,9 @@ async function onAction(r, action) {
           <template #default="{ row }">
             <template v-if="row.status === 'pending'">
               <el-button link type="danger" size="small" @click="onAction(row, 'reject')">驳回</el-button>
-              <el-button link type="primary" size="small" @click="onAction(row, 'approve')">同意退款</el-button>
+              <el-button link type="primary" size="small" @click="onAction(row, 'approve')">批准退款</el-button>
             </template>
+            <el-button v-else-if="row.status === 'approved'" link type="success" size="small" @click="onAction(row, 'execute')">执行退款</el-button>
             <span v-else class="t-tertiary">—</span>
           </template>
         </el-table-column>

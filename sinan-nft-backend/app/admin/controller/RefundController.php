@@ -193,7 +193,8 @@ class RefundController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '审批失败：' . $e->getMessage());
+            \think\facade\Log::error('[refund][approve] id=' . $id . ' action=' . $action . ' err=' . $e->getMessage());
+            return $this->fail(5000, '审批失败，请稍后重试');
         }
 
         $this->audit('refund', 'approve_' . $action,
@@ -300,7 +301,8 @@ class RefundController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '退款执行失败：' . $e->getMessage());
+            \think\facade\Log::error('[refund][execute] id=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '退款执行失败，请稍后重试');
         }
 
         $this->audit('refund', 'execute', '执行退款 ' . $refund['refund_no'] . '（金额 ' . $refund['amount'] . '，回收资产 ' . $recoveredQty . ' 份）',
