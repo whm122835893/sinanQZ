@@ -1,10 +1,33 @@
 <?php
 /** 测试基线重置：清空全部业务数据（保留管理端 RBAC / 系统配置 / 分类 / 链网络等基础设施），
  *  重建标准冒烟用户 id=1~8（固定手机号），供所有 sit_t* 脚本共享。
- *  用法：php sit_baseline_reset.php
+ *  用法：APP_ENV=sit php sit_baseline_reset.php
+ *  C10 修复：硬编码口令改环境变量；非 sit 环境拒绝执行；库名断言防误清生产。
  */
 date_default_timezone_set('Asia/Shanghai');
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+
+// 安全守卫：仅允许 sit 环境执行清库
+if (getenv('APP_ENV') !== 'sit') {
+    fwrite(STDERR, "[FATAL] 本脚本仅允许在 APP_ENV=sit 环境执行，当前 APP_ENV=" . var_export(getenv('APP_ENV'), true) . "\n");
+    exit(2);
+}
+
+$dbHost = getenv('DB_HOST') ?: '127.0.0.1';
+$dbName = getenv('DB_NAME') ?: 'sinan_nft';
+$dbUser = getenv('DB_USER') ?: 'sinan';
+$dbPass = getenv('DB_PASS') ?: '';
+
+// 库名断言：明确禁止对非 sinan_nft 库执行（防止误连生产库）
+if ($dbName !== 'sinan_nft') {
+    fwrite(STDERR, "[FATAL] 库名断言失败：期望 sinan_nft，实际 $dbName\n");
+    exit(3);
+}
+if ($dbPass === '') {
+    fwrite(STDERR, "[FATAL] 数据库口令不得为空，请通过 DB_PASS 环境变量传入\n");
+    exit(4);
+}
+
+$PDO=new PDO("mysql:host=$dbHost;dbname=$dbName",$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
 $PDO->exec("SET NAMES utf8mb4");
 
 // ---- 1. 业务数据表全清（含 users，重置自增） ----

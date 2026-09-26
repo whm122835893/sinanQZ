@@ -70,6 +70,9 @@ class RealnameController extends BaseController
             $realName = $row['real_name'] ? (aes_decrypt((string) $row['real_name']) ?? '') : '';
             $idCard   = $row['id_card'] ? (aes_decrypt((string) $row['id_card']) ?? '') : '';
             $statusInt = (int) $row['realname_status'];
+            // M1 修复：列表接口默认脱敏，完整信息走 detail（需 realname:full 权限 + 审计）
+            $maskedName = $realName === '' ? '' : mb_substr($realName, 0, 1) . str_repeat('*', max(0, mb_strlen($realName) - 1));
+            $maskedId   = $idCard === '' ? '' : substr($idCard, 0, 3) . str_repeat('*', max(0, strlen($idCard) - 7)) . substr($idCard, -4);
             return [
                 'id'               => (int) $row['id'],
                 'uid'              => $row['uid'],
@@ -77,8 +80,8 @@ class RealnameController extends BaseController
                 'nickname'         => $row['username'],
                 'avatar'           => $row['avatar'],
                 'realnameStatus'   => ['0' => 'none', '1' => 'pending', '2' => 'approved', '3' => 'rejected'][(string) $statusInt],
-                'realnameName'     => $realName,
-                'realnameIdNo'     => $idCard,
+                'realnameName'     => $maskedName,
+                'realnameIdNo'     => $maskedId,
                 'rejectReason'     => (string) ($row['realname_reject_reason'] ?? ''),
                 'submitTime'       => $row['realname_submitted_at'],
                 'lastLoginTime'    => $row['last_login_at'],

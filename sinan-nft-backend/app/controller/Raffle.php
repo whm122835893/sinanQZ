@@ -276,11 +276,11 @@ class Raffle extends BaseController
             }
 
             $nowV = date('Y-m-d H:i:s.v');
-            Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'    => Db::raw('balance - ' . (float)($totalPrice)),
-                'available'  => Db::raw('available - ' . (float)($totalPrice)),
-                'updated_at' => $nowV,
-            ]);
+            // M4 修复：dec 替代 Db::raw(float)
+            Db::name('wallets')->where('user_id', $userId)
+                ->dec('balance', $totalPrice)
+                ->dec('available', $totalPrice)
+                ->update(['updated_at' => $nowV]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $userId,
                 'trans_type'    => 'buy',
@@ -465,11 +465,11 @@ class Raffle extends BaseController
             $nowV = date('Y-m-d H:i:s.v');
             $orderNo = gen_order_no();
 
-            Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'    => Db::raw('balance - ' . (float)($totalPrice)),
-                'available'  => Db::raw('available - ' . (float)($totalPrice)),
-                'updated_at' => $nowV,
-            ]);
+            // M4 修复：dec 替代 Db::raw(float)
+            Db::name('wallets')->where('user_id', $userId)
+                ->dec('balance', $totalPrice)
+                ->dec('available', $totalPrice)
+                ->update(['updated_at' => $nowV]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $userId,
                 'trans_type'    => 'buy',

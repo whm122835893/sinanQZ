@@ -29,7 +29,7 @@ class Artifacts extends BaseController
             default:          $query->order('created_at', 'desc'); break;
         }
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
         return $this->paginate(array_map(fn ($a) => [

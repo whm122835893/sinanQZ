@@ -1,7 +1,7 @@
 <?php
 /** Z2 事务原子性与数据一致性审计 */
 date_default_timezone_set('Asia/Shanghai');
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+$PDO=new PDO('mysql:host='.(getenv('DB_HOST')?:'127.0.0.1').';dbname='.(getenv('DB_NAME')?:'sinan_nft'), getenv('DB_USER')?:'sinan', getenv('DB_PASS')?:'',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 $pass=0;$fail=0;
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function q1($s){global $PDO;$r=$PDO->query($s);return $r?$r->fetchColumn():null;}
@@ -26,7 +26,7 @@ foreach($files as $name=>$path){
 
 echo "\n=== Z2-2 InnoDB 锁等待容错（单独连接）===\n";
 try {
-  $pdo2=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+  $pdo2=new PDO('mysql:host='.(getenv('DB_HOST')?:'127.0.0.1').';dbname='.(getenv('DB_NAME')?:'sinan_nft'), getenv('DB_USER')?:'sinan', getenv('DB_PASS')?:'',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
   $pdo2->exec("SET SESSION innodb_lock_wait_timeout=1");
   $pdo2->beginTransaction();
   // exec() 跑 SELECT 不释放结果集会触发 2014；用 query+fetchAll 消费结果

@@ -267,11 +267,12 @@ class RefundController extends BaseController
                 $wallet = Db::name('wallets')->where('user_id', $refund['user_id'])->find();
             }
             $channel = trim((string) $this->request->param('refund_channel', '')) ?: $refund['refund_no'];
-            Db::name('wallets')->where('user_id', $refund['user_id'])->update([
-                'balance'    => Db::raw('balance + ' . (float)($refund['amount'])),
-                'available'  => Db::raw('available + ' . (float)($refund['amount'])),
-                'updated_at' => $now,
-            ]);
+            // M4 修复：inc 替代 Db::raw(float)
+            $refundAmount = (float) $refund['amount'];
+            Db::name('wallets')->where('user_id', $refund['user_id'])
+                ->inc('balance', $refundAmount)
+                ->inc('available', $refundAmount)
+                ->update(['updated_at' => $now]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $refund['user_id'],
                 'trans_type'    => 'reward',

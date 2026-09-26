@@ -115,10 +115,12 @@ class ActivityRewardService
                     return ['eligible' => false, 'reason' => "该活动限签到前 {$rank} 名用户参与，您还未签到"];
                 }
                 // 排位 = 首次签到时间早于当前用户的去重用户数 + 1
+                // C8 修复：统一日期口径，DATETIME 与 unix 时间戳比较会隐式转换恒假
+                $firstAtTs = strtotime((string) $firstAt);
                 $ahead = (int) Db::name('check_in_records')
                     ->field('user_id, MIN(created_at) AS first_at')
                     ->group('user_id')
-                    ->having('first_at < ' . strtotime((string) $firstAt))
+                    ->having('UNIX_TIMESTAMP(MIN(created_at)) < ' . $firstAtTs)
                     ->count();
                 $myRank = $ahead + 1;
                 return $myRank <= $rank

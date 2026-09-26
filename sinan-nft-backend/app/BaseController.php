@@ -86,4 +86,26 @@ abstract class BaseController
     {
         return $this->request->userId ?? null;
     }
+
+    // ==================== M3 修复：短信验证码失败计数（防爆破） ====================
+    /** 单手机号+场景最大失败尝试次数 */
+    protected const CODE_MAX_FAIL = 5;
+    /** 失败计数窗口（秒） */
+    protected const CODE_FAIL_WINDOW = 900;
+
+    protected function codeFailLimited(string $phone, string $scene): bool
+    {
+        return (int) (cache('code_fail_' . $scene . '_' . $phone) ?: 0) >= self::CODE_MAX_FAIL;
+    }
+
+    protected function codeFailIncr(string $phone, string $scene): void
+    {
+        $key = 'code_fail_' . $scene . '_' . $phone;
+        cache($key, (int) (cache($key) ?: 0) + 1, self::CODE_FAIL_WINDOW);
+    }
+
+    protected function codeFailClear(string $phone, string $scene): void
+    {
+        cache('code_fail_' . $scene . '_' . $phone, null);
+    }
 }

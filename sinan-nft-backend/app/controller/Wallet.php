@@ -46,7 +46,7 @@ class Wallet extends BaseController
         $query = Db::name('wallet_transactions')->where('user_id', $userId)->order('created_at', 'desc');
         if ($type) $query->where('trans_type', $type);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
         return $this->paginate(array_map(fn ($t) => [
@@ -62,26 +62,33 @@ class Wallet extends BaseController
 
     /**
      * POST /api/wallet/recharge
-     * 模拟充值
+     * 模拟充值（仅开发联调环境可用，生产拒绝）
      */
     public function recharge()
     {
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
+        // C1 修复：模拟充值仅开发环境可用，生产拒绝（防止上线后任意改余额）
+        if (!(bool) env('APP_DEBUG', false)) {
+            return $this->fail(4003, '模拟充值接口仅在开发环境可用，生产请走真实支付渠道');
+        }
+
         $amount = (float) $this->request->post('amount', 0);
         if ($amount < 1) return $this->fail(1001, '充值金额必须大于0');
+        // 单次限额，防止误操作或异常请求
+        if ($amount > 10000) return $this->fail(1001, '模拟充值单次金额上限 10000');
 
         $now = date('Y-m-d H:i:s.v');
 
         Db::startTrans();
         try {
             $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
-            Db::name('wallets')->where('user_id', $userId)->update([
-                'balance'     => Db::raw('balance + ' . (float)($amount)),
-                'available'   => Db::raw('available + ' . (float)($amount)),
-                'updated_at'  => $now,
-            ]);
+            // M4 修复：用 inc 替代 Db::raw(float) 拼接，避免精度丢失与 locale 小数点问题
+            Db::name('wallets')->where('user_id', $userId)
+                ->inc('balance', $amount)
+                ->inc('available', $amount)
+                ->update(['updated_at' => $now]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $userId,
                 'trans_type'    => 'recharge',

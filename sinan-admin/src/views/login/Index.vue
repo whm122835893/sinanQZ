@@ -14,7 +14,11 @@ const adminStore = useAdminStore()
 const site = useSiteStore()
 
 const formRef = ref(null)
-const form = ref({ username: 'admin', password: 'admin123' })
+// C9 修复：生产环境不预填任何账号密码；仅开发模式（DEV）下为方便联调预填
+const form = ref({
+  username: import.meta.env.DEV ? 'admin' : '',
+  password: import.meta.env.DEV ? 'admin123' : '',
+})
 const submitting = ref(false)
 const year = new Date().getFullYear()
 

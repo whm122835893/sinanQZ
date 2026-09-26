@@ -2039,11 +2039,20 @@ class MarketingController extends BaseController
                         'updated_at'  => $now,
                     ]);
                 }
-                Db::name('airdrop_eligibilities')->where('id', $elig['id'])->update([
-                    'status'            => 'issued',
-                    'airdrop_record_id' => $lastRecordId,
-                    'updated_at'        => $now,
-                ]);
+                // C6 修复：资格行条件原子更新，并发下已被其他请求发放的跳过，防重复发放
+                $eligUpdated = Db::name('airdrop_eligibilities')
+                    ->where('id', $elig['id'])
+                    ->where('status', 'eligible')
+                    ->update([
+                        'status'            => 'issued',
+                        'airdrop_record_id' => $lastRecordId,
+                        'updated_at'        => $now,
+                    ]);
+                if (!$eligUpdated) {
+                    // C6 修复：并发冲突，该资格已被其他请求发放，整体回滚让调用方重试
+                    Db::rollback();
+                    return $this->fail(4220, '空投发放并发冲突，请重试');
+                }
                 $inboxRows[] = [
                     'user_id'        => (int) $elig['user_id'],
                     'type'           => 'airdrop',
@@ -2067,11 +2076,16 @@ class MarketingController extends BaseController
             }
 
             $issuedQty = $issued * (int) $act['quantity_per_user'];
-            Db::name('collectibles')->where('id', $act['collectible_id'])->update([
-                'airdropped_count' => Db::raw('airdropped_count + ' . (float)($issuedQty)),
-                'circulate'        => Db::raw('circulate + ' . (float)($issuedQty)),
-                'updated_at'       => $now,
-            ]);
+            // C6 修复：藏品空投数自增加守恒条件 + affected 校验，防止库存池超发
+            $collUpdated = Db::name('collectibles')->where('id', $act['collectible_id'])
+                ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . $issuedQty)
+                ->inc('airdropped_count', $issuedQty)
+                ->inc('circulate', $issuedQty)
+                ->update();
+            if (!$collUpdated) {
+                Db::rollback();
+                return $this->fail(4220, '空投库存池不足，并发冲突请重试');
+            }
             Db::name('airdrop_activities')->where('id', $activityId)->update([
                 'issued_count' => Db::raw('issued_count + ' . (float)($issuedQty)),
                 'updated_at'   => $now,

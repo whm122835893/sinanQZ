@@ -328,7 +328,7 @@ class Synthesis extends BaseController
             ->join('collectibles c', 'c.id = uc.collectible_id')
             ->where('sr.user_id', $userId);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query
             ->order('sr.created_at', 'desc')
             ->limit($p['offset'], $p['pageSize'])

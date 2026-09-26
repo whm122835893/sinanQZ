@@ -155,12 +155,30 @@ class User extends BaseController
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
+        // M3 修复：交易密码失败次数限制，5 次失败锁定 15 分钟（防在线爆破）
+        $lockKey   = 'trade_pwd_lock:' . $userId;
+        $failKey   = 'trade_pwd_fail:' . $userId;
+        $locked    = cache($lockKey);
+        if ($locked) {
+            return $this->fail(2003, '交易密码错误次数过多，请 15 分钟后再试');
+        }
+
         $password = $this->request->post('password', '');
         $hash = Db::name('users')->where('id', $userId)->value('transaction_password');
 
         if (!$hash) return $this->fail(2003, '未设置交易密码');
-        if (!verify_password($password, $hash)) return $this->fail(2003, '交易密码错误');
+        if (!verify_password($password, $hash)) {
+            $fails = (int) cache($failKey) + 1;
+            cache($failKey, $fails, 900);
+            if ($fails >= 5) {
+                cache($lockKey, 1, 900);
+                cache($failKey, null);
+                return $this->fail(2003, '交易密码错误次数过多，已锁定 15 分钟');
+            }
+            return $this->fail(2003, '交易密码错误（还可尝试 ' . (5 - $fails) . ' 次）');
+        }
 
+        cache($failKey, null);
         return $this->success();
     }
 
@@ -242,6 +260,10 @@ class User extends BaseController
         }
 
         $phone = $user['phone'];
+        // M3 修复：短信验证码失败次数限制
+        if ($this->codeFailLimited($phone, 'reset_password')) {
+            return $this->fail(1003, '验证码错误次数过多，请 15 分钟后重试');
+        }
         $vc = Db::name('verification_codes')
             ->where('phone', $phone)
             ->where('scene', 'reset_password')
@@ -249,15 +271,19 @@ class User extends BaseController
             ->order('id', 'desc')
             ->find();
         if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            $this->codeFailIncr($phone, 'reset_password');
             return $this->fail(1001, '验证码错误或已过期');
         }
+        $this->codeFailClear($phone, 'reset_password');
 
+        $now = date('Y-m-d H:i:s.v');
         Db::startTrans();
         Db::name('users')->where('id', $userId)->update([
-            'password'   => hash_password($newPassword),
-            'updated_at' => date('Y-m-d H:i:s.v'),
+            'password'     => hash_password($newPassword),
+            'logout_before'=> $now,  // 改密后使所有旧 token 失效（iat <= logout_before 拒绝）
+            'updated_at'   => $now,
         ]);
-        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
+        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => $now]);
         Db::commit();
 
         return $this->success();
@@ -286,6 +312,10 @@ class User extends BaseController
         }
 
         $phone = $user['phone'];
+        // M3 修复：短信验证码失败次数限制（重置交易密码复用 reset_password 场景）
+        if ($this->codeFailLimited($phone, 'reset_password')) {
+            return $this->fail(1003, '验证码错误次数过多，请 15 分钟后重试');
+        }
         $vc = Db::name('verification_codes')
             ->where('phone', $phone)
             ->where('scene', 'reset_password')
@@ -293,15 +323,19 @@ class User extends BaseController
             ->order('id', 'desc')
             ->find();
         if (!$vc || strtotime($vc['expires_at']) < time() || !verify_password($code, $vc['code'])) {
+            $this->codeFailIncr($phone, 'reset_password');
             return $this->fail(1001, '验证码错误或已过期');
         }
+        $this->codeFailClear($phone, 'reset_password');
 
+        $now = date('Y-m-d H:i:s.v');
         Db::startTrans();
         Db::name('users')->where('id', $userId)->update([
             'transaction_password' => hash_password($newPassword),
-            'updated_at'           => date('Y-m-d H:i:s.v'),
+            'logout_before'        => $now,  // 重置交易密码后使所有旧 token 失效
+            'updated_at'           => $now,
         ]);
-        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => date('Y-m-d H:i:s.v')]);
+        Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => $now]);
         Db::commit();
 
         return $this->success();

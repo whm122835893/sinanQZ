@@ -16,32 +16,12 @@ use think\facade\Db;
  */
 class Auth extends BaseController
 {
-    /** SEC-R1：验证码单手机号+场景最大失败尝试次数 */
-    private const CODE_MAX_FAIL = 5;
-
-    /** SEC-R1：失败计数窗口（秒） */
-    private const CODE_FAIL_WINDOW = 900;
-
     /**
      * SEC-R1 修复（安全专项 9.2）：验证码失败尝试限制
      * 6 位码 5 分钟有效期内可被无限次爆破，此处按 手机号+场景 维度计数，
      * 窗口内累计失败达上限后即使验证码正确也拒绝，需等待窗口过期或重新发送。
+     * 实现复用 BaseController::codeFailLimited/codeFailIncr/codeFailClear。
      */
-    private function codeFailLimited(string $phone, string $scene): bool
-    {
-        return (int) (cache('code_fail_' . $scene . '_' . $phone) ?: 0) >= self::CODE_MAX_FAIL;
-    }
-
-    private function codeFailIncr(string $phone, string $scene): void
-    {
-        $key = 'code_fail_' . $scene . '_' . $phone;
-        cache($key, (int) (cache($key) ?: 0) + 1, self::CODE_FAIL_WINDOW);
-    }
-
-    private function codeFailClear(string $phone, string $scene): void
-    {
-        cache('code_fail_' . $scene . '_' . $phone, null);
-    }
 
     /**
      * 图形码前置校验（支持场景级开关 + 服务商分流）。开关关闭时直接通过。

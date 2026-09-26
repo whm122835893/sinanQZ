@@ -329,6 +329,9 @@ const adaptCollectible = (c) => ({
   tag: s(c.tag),
   issuer: s(c.issuer),
   saleTime: s(c.onsaleAt),
+  // 发售时间窗：开始/结束（datetime），保留原字段名供编辑页回填
+  onsaleAt: s(c.onsaleAt),
+  offSaleAt: s(c.offSaleAt),
   description: s(c.description),
   featured: n(c.featured) === 1,
   isBlindBox: n(c.isBlindBox) === 1,
@@ -403,7 +406,7 @@ export async function getCollectibleDetail(id) {
 
 /**
  * 新建/编辑藏品
- * 视图载荷：{ id?, name, subtitle, category(名称), price, edition, saleTime, tag,
+ * 视图载荷：{ id?, name, subtitle, category(名称), price, edition, onsaleAt, offSaleAt, tag,
  *            issuer, creator, royaltyRate, description, featured, cover, ... }
  * 转赠/寄售开关不在此设置：创建后由管理员在藏品列表/详情中配置（market-config）
  */
@@ -420,7 +423,11 @@ export function saveCollectible(payload) {
     creator: payload.creator || '',
     description: payload.description || '',
     featured: payload.featured ? 1 : 0,
-    release_date: payload.saleTime || '',
+    // 发售时间窗：开始/结束均可选，留空表示不限制
+    onsale_at: payload.onsaleAt || '',
+    off_sale_at: payload.offSaleAt || '',
+    // 兼容旧字段：开始时间同步到 release_date
+    release_date: payload.onsaleAt || '',
     // 链上配置
     ...(payload.chainType ? { chain_type: payload.chainType } : {}),
     ...(payload.contract ? { contract: payload.contract } : {})

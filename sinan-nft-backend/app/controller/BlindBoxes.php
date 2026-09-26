@@ -127,11 +127,25 @@ class BlindBoxes extends BaseController
             // 导致开盒后管理端「开盒对账」恒报 opened_count ≠ quantity_distributed）
             Db::name('blind_boxes')->where('id', (int) $uc['bb_id'])->inc('opened_count')->update();
 
-            // 更新奖品已发放
-            Db::name('blind_box_items')->where('id', $winner['id'])->update([
-                'quantity_distributed' => Db::raw('quantity_distributed + 1'),
-                'updated_at'           => $now,
-            ]);
+            // C2 修复：条件原子更新 + 校验 affected，防止并发超发限量奖品
+            $affected = Db::name('blind_box_items')->where('id', $winner['id'])
+                ->whereRaw('quantity_limit IS NULL OR quantity_distributed < quantity_limit')
+                ->inc('quantity_distributed')->update();
+            if (!$affected) {
+                // 并发下该限量奖品已被抽完，回退到不限量的兜底奖品
+                $fallback = Db::name('blind_box_items')
+                    ->where('blind_box_id', (int) $uc['bb_id'])
+                    ->whereNull('deleted_at')
+                    ->whereNull('quantity_limit')
+                    ->find();
+                if (!$fallback) {
+                    Db::rollback();
+                    return $this->fail(3001, '盲盒奖品已发放完毕');
+                }
+                $winner = $fallback;
+                Db::name('blind_box_items')->where('id', $winner['id'])
+                    ->inc('quantity_distributed')->update();
+            }
 
             // 生成奖品资产：先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
             $prizeCollectibleId = (int) $winner['prize_collectible_id'];

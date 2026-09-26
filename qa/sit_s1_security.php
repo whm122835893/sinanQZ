@@ -14,7 +14,7 @@
  */
 date_default_timezone_set('Asia/Shanghai');
 $BASE='http://127.0.0.1:8080';
-$PDO=new PDO('mysql:host=127.0.0.1;dbname=sinan_nft','sinan','sinan123456',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
+$PDO=new PDO('mysql:host='.(getenv('DB_HOST')?:'127.0.0.1').';dbname='.(getenv('DB_NAME')?:'sinan_nft'), getenv('DB_USER')?:'sinan', getenv('DB_PASS')?:'',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_WARNING]);
 $pass=0;$fail=0;$findings=[];
 function T($n,$c,$d=''){global $pass,$fail;$c?$pass++:$fail++;echo($c?"  PASS ":"  FAIL ").$n.($d?" | $d":"")."\n";}
 function F($id,$sev,$desc){global $findings;$findings[]="[$sev] $id $desc";echo "  >>> 发现 #$id($sev): $desc\n";}

@@ -1,6 +1,6 @@
 <?php
 /** E2E 全链路验证：管理端创建 → C端展示/购买/参与 → 数据落库核对
- *  前置：后端 127.0.0.1:8080、MySQL sinan_nft（sinan/sinan123456）
+ *  前置：后端 127.0.0.1:8080、MySQL sinan_nft（通过 DB_HOST/DB_NAME/DB_USER/DB_PASS 环境变量传入）
  *  覆盖：登录(图形码)/藏品/购买/公告/盲盒/合成/签到/抽奖/抽签购/实名/支付密码/充值
  *  图形码：CaptchaService 明文只存 sha256 哈希于 file cache —— 脚本读缓存文件后本地爆破（32字符集×4位）
  */
@@ -184,7 +184,7 @@ $rn = http('POST', '/api/user/realname', ['realName' => '测试用户', 'idCard'
 T('C端提交实名认证', ($rn['code'] ?? -1) === 0, $rn['message'] ?? '');
 $uinfo = http('GET', '/api/user/profile', null, $userToken);
 // profile 不返回数字主键，按手机号从库中取（同时建立阶段五复用的 DB 连接）
-$PDO = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft', 'sinan', 'sinan123456', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$PDO = new PDO('mysql:host='.(getenv('DB_HOST')?:'127.0.0.1').';dbname='.(getenv('DB_NAME')?:'sinan_nft'), getenv('DB_USER')?:'sinan', getenv('DB_PASS')?:'', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $q = fn($s) => $PDO->query($s)->fetch(PDO::FETCH_NUM)[0] ?? null;
 $uid = (int) $q("SELECT id FROM nft_users WHERE phone='$phone'");
 T('C端用户落库（数字ID可查）', $uid > 0, "uid=$uid");

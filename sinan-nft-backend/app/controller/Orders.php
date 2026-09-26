@@ -164,6 +164,10 @@ class Orders extends BaseController
                         Db::rollback();
                         return $this->fail(1001, '尚未开售');
                     }
+                    if (!empty($collectible['off_sale_at']) && strtotime($collectible['off_sale_at']) < $nowTs) {
+                        Db::rollback();
+                        return $this->fail(1001, '售卖已结束');
+                    }
                     if ($eligibility['enabled']) {
                         $source = 'eligibility';
                     }
@@ -202,11 +206,12 @@ class Orders extends BaseController
                 }
 
                 // 限购检查（藏品级 per_user_limit 非 0 时覆盖系统 purchase_limit_per_user，联动点 10.2）
+                // M5 修复：统计 pending + completed 订单，防止挂多笔待支付单绕过限购
                 $limit = \app\service\PurchaseQualifyService::perUserLimit($collectible);
                 $ownedCount = Db::name('orders')
                     ->where('user_id', $userId)
                     ->where('collectible_id', $collectibleId)
-                    ->where('status', 'completed')
+                    ->whereIn('status', ['pending', 'completed'])
                     ->sum('quantity');
                 if ($ownedCount + $quantity > $limit) {
                     Db::rollback();
@@ -322,11 +327,12 @@ class Orders extends BaseController
                     Db::rollback();
                     return $this->fail(4003, '余额不足');
                 }
-                Db::name('wallets')->where('user_id', $userId)->update([
-                    'balance'     => Db::raw('balance - ' . (float)($order['total_price'])),
-                    'available'   => Db::raw('available - ' . (float)($order['total_price'])),
-                    'updated_at'  => $now,
-                ]);
+                // M4 修复：dec 替代 Db::raw(float)
+                $payAmount = (float) $order['total_price'];
+                Db::name('wallets')->where('user_id', $userId)
+                    ->dec('balance', $payAmount)
+                    ->dec('available', $payAmount)
+                    ->update(['updated_at' => $now]);
                 Db::name('wallet_transactions')->insert([
                     'user_id'        => $userId,
                     'trans_type'     => 'buy',
@@ -440,11 +446,12 @@ class Orders extends BaseController
                         ->where('user_id', $listing['seller_id'])
                         ->lock(true)
                         ->find();
-                    Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
-                        'balance'    => Db::raw('balance + ' . (float)($listing['actual_amount'])),
-                        'available'  => Db::raw('available + ' . (float)($listing['actual_amount'])),
-                        'updated_at' => $now,
-                    ]);
+                    // M4 修复：inc 替代 Db::raw(float)
+                    $settleAmount = (float) $listing['actual_amount'];
+                    Db::name('wallets')->where('user_id', $listing['seller_id'])
+                        ->inc('balance', $settleAmount)
+                        ->inc('available', $settleAmount)
+                        ->update(['updated_at' => $now]);
                     Db::name('wallet_transactions')->insert([
                         'user_id'       => $listing['seller_id'],
                         'trans_type'    => 'reward',
@@ -598,7 +605,7 @@ class Orders extends BaseController
 
         if ($status) $query->where('o.status', $status);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
             'o.order_no', 'o.source', 'o.status', 'o.unit_price',
             'o.quantity', 'o.total_price', 'o.created_at',

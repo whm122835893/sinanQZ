@@ -73,7 +73,8 @@ class SmsService
 
         $provider = (string) ($config['provider'] ?? 'mock');
         if ($provider === 'mock') {
-            Log::info('[SMS][mock] to=' . $phone . ' content=' . $content);
+            // M6 修复：日志不输出短信内容（含明文验证码），仅记录手机号
+            Log::info('[SMS][mock] to=' . $phone);
             return [true, 'ok'];
         }
 

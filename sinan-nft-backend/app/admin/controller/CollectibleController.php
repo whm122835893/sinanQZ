@@ -259,6 +259,8 @@ class CollectibleController extends BaseController
             'chain_type'     => mb_substr(trim((string) $this->request->param('chain_type', '')), 0, 20) ?: null,
             'token_standard' => mb_substr(trim((string) $this->request->param('token_standard', '')), 0, 20) ?: null,
             'release_date'   => $this->optionalDate('release_date'),
+            'onsale_at'      => $this->optionalDate('onsale_at'),
+            'off_sale_at'    => $this->optionalDate('off_sale_at'),
             'is_scheduled'   => (int) $this->request->param('is_scheduled', 0) === 1 ? 1 : 0,
             'schedule_time'  => $this->optionalDate('schedule_time'),
             'tag'            => mb_substr(trim((string) $this->request->param('tag', '')), 0, 50) ?: null,
@@ -338,6 +340,8 @@ class CollectibleController extends BaseController
             'chain_type' => fn ($v) => trim((string) $v),
             'token_standard' => fn ($v) => trim((string) $v),
             'release_date' => fn ($v) => $v,
+            'onsale_at' => fn ($v) => $v,
+            'off_sale_at' => fn ($v) => $v,
             'is_scheduled' => fn ($v) => (int) $v === 1 ? 1 : 0,
             'schedule_time' => fn ($v) => $v,
             'tag' => fn ($v) => trim((string) $v),
@@ -350,7 +354,7 @@ class CollectibleController extends BaseController
         foreach ($allowFields as $field => $cast) {
             if (array_key_exists($field, $params)) {
                 $value = $cast($params[$field]);
-                $update[$field] = ($value === '' && in_array($field, ['subtitle', 'gradient', 'icon', 'issuer', 'creator', 'brand', 'album', 'contract', 'chain_type', 'token_standard', 'release_date', 'tag'], true)) ? null : $value;
+                $update[$field] = ($value === '' && in_array($field, ['subtitle', 'gradient', 'icon', 'issuer', 'creator', 'brand', 'album', 'contract', 'chain_type', 'token_standard', 'release_date', 'onsale_at', 'off_sale_at', 'tag'], true)) ? null : $value;
             }
         }
         if (!$update) {
@@ -465,7 +469,8 @@ class CollectibleController extends BaseController
                 $update[$field] = $value;
             }
         }
-        if ($status === 'onsale' && empty($update['onsale_at'])) {
+        // 上架时若未传 onsale_at：保留创建时设定的开始时间；若创建时也未设定则取当前时间
+        if ($status === 'onsale' && empty($update['onsale_at']) && empty($c['onsale_at'])) {
             $update['onsale_at'] = date('Y-m-d H:i:s');
         }
 
@@ -643,9 +648,15 @@ class CollectibleController extends BaseController
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
-            Db::name('collectibles')->where('id', $id)
+            // C6 修复：条件原子更新 + 校验 affected，pool 不足时回滚，防止超发
+            $destroyed = Db::name('collectibles')->where('id', $id)
                 ->whereRaw('edition - sold - locked_quantity - reserved_count - airdropped_count - destroyed_count >= ' . $quantity)
-                ->update(['destroyed_count' => Db::raw('destroyed_count + ' . (float)($quantity)), 'updated_at' => $now]);
+                ->inc('destroyed_count', $quantity)
+                ->update();
+            if (!$destroyed) {
+                Db::rollback();
+                return $this->fail(4220, '可销毁库存不足，并发冲突请重试');
+            }
 
             Db::name('destroy_records')->insert([
                 'target_type' => 1, // 1=藏品

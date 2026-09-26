@@ -73,7 +73,7 @@ class Invite extends BaseController
             ->join('users u', 'u.id = ir.invitee_id')
             ->where('ir.inviter_id', $userId);
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $list  = $query
             ->order('ir.created_at', 'desc')
             ->limit($p['offset'], $p['pageSize'])

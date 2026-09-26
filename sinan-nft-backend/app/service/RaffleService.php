@@ -403,8 +403,9 @@ class RaffleService
                 // 失败时保持原状态，下一轮 tick 自动重试
                 $results[(int) $activity['id']] = self::draw((int) $activity['id']);
             } catch (\Throwable $e) {
-                Db::name('raffle_activities')->where('id', $activity['id'])->update(['status' => 4]);
-                $results[(int) $activity['id']] = ['error' => $e->getMessage()];
+                // C7 修复：失败不取消活动，记录日志保持 status=1 下一轮重试
+                \think\facade\Log::error('[raffle] 自动开奖失败，保持原状态待重试，activity_id=' . $activity['id'] . '，错误：' . $e->getMessage());
+                $results[(int) $activity['id']] = ['error' => $e->getMessage(), 'retry' => true];
             }
         }
         return $results;

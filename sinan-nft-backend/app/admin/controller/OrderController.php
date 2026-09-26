@@ -208,11 +208,12 @@ class OrderController extends BaseController
                     Db::rollback();
                     return $this->fail(4220, '用户余额不足，无法标记余额支付');
                 }
-                Db::name('wallets')->where('user_id', $order['user_id'])->update([
-                    'balance'    => Db::raw('balance - ' . (float)($order['total_price'])),
-                    'available'  => Db::raw('available - ' . (float)($order['total_price'])),
-                    'updated_at' => $now,
-                ]);
+                // M4 修复：dec 替代 Db::raw(float)
+                $payAmount = (float) $order['total_price'];
+                Db::name('wallets')->where('user_id', $order['user_id'])
+                    ->dec('balance', $payAmount)
+                    ->dec('available', $payAmount)
+                    ->update(['updated_at' => $now]);
                 Db::name('wallet_transactions')->insert([
                     'user_id'       => $order['user_id'],
                     'trans_type'    => 'buy',
@@ -288,11 +289,12 @@ class OrderController extends BaseController
                     return $this->fail(4220, '藏品状态异常，过户失败');
                 }
                 $sellerWallet = Db::name('wallets')->where('user_id', $listing['seller_id'])->lock(true)->find();
-                Db::name('wallets')->where('user_id', $listing['seller_id'])->update([
-                    'balance'    => Db::raw('balance + ' . (float)($listing['actual_amount'])),
-                    'available'  => Db::raw('available + ' . (float)($listing['actual_amount'])),
-                    'updated_at' => $now,
-                ]);
+                // M4 修复：inc 替代 Db::raw(float)
+                $settleAmount = (float) $listing['actual_amount'];
+                Db::name('wallets')->where('user_id', $listing['seller_id'])
+                    ->inc('balance', $settleAmount)
+                    ->inc('available', $settleAmount)
+                    ->update(['updated_at' => $now]);
                 Db::name('wallet_transactions')->insert([
                     'user_id'       => $listing['seller_id'],
                     'trans_type'    => 'reward',
@@ -336,56 +338,72 @@ class OrderController extends BaseController
         $id     = (int) $this->request->param('id');
         $reason = trim((string) $this->request->param('reason'));
 
-        $order = Db::name('orders')->where('id', $id)->find();
-        if (!$order) {
-            return $this->fail(4040, '订单不存在');
-        }
-        if ($order['status'] !== 'completed') {
-            return $this->fail(4220, '仅已完成支付的订单可发起退款（当前：' . $order['status'] . '）');
-        }
-        if ($order['source'] === 'market') {
-            return $this->fail(4220, '市场寄售订单涉及买卖双方结算，请通过客服工单人工处理');
-        }
-        $existing = Db::name('refunds')->where('order_id', $id)->whereIn('status', [1, 2, 3])->count();
-        if ($existing > 0) {
-            return $this->fail(4220, '该订单已存在处理中/已完成的退款申请');
-        }
+        // C5 修复：退款发起纳入事务，锁订单行防止并发双退款单
+        Db::startTrans();
+        try {
+            $order = Db::name('orders')->where('id', $id)->lock(true)->find();
+            if (!$order) {
+                Db::rollback();
+                return $this->fail(4040, '订单不存在');
+            }
+            if ($order['status'] !== 'completed') {
+                Db::rollback();
+                return $this->fail(4220, '仅已完成支付的订单可发起退款（当前：' . $order['status'] . '）');
+            }
+            if ($order['source'] === 'market') {
+                Db::rollback();
+                return $this->fail(4220, '市场寄售订单涉及买卖双方结算，请通过客服工单人工处理');
+            }
+            // 事务内行锁下重复校验，并发请求第二个会因第一个已插入而被拦截
+            $existing = Db::name('refunds')->where('order_id', $id)->whereIn('status', [1, 2, 3])->count();
+            if ($existing > 0) {
+                Db::rollback();
+                return $this->fail(4220, '该订单已存在处理中/已完成的退款申请');
+            }
 
-        $amount = $this->request->param('amount');
-        $amount = ($amount !== null && $amount !== '') ? (float) $amount : (float) $order['total_price'];
-        if ($amount <= 0 || $amount > (float) $order['total_price']) {
-            return $this->fail(4220, '退款金额不合法（0 < amount ≤ ' . $order['total_price'] . '）');
+            $amount = $this->request->param('amount');
+            $amount = ($amount !== null && $amount !== '') ? (float) $amount : (float) $order['total_price'];
+            if ($amount <= 0 || $amount > (float) $order['total_price']) {
+                Db::rollback();
+                return $this->fail(4220, '退款金额不合法（0 < amount ≤ ' . $order['total_price'] . '）');
+            }
+
+            // 持仓校验：订单资产仍在用户名下（未被转赠/寄售）
+            $heldCount = Db::name('user_collectibles')->where('order_id', $id)
+                ->whereIn('status', ['held', 'frozen', 'consigned'])->count();
+            $needCount = (int) Db::name('user_collectibles')->where('order_id', $id)->count();
+            if ($heldCount < $needCount) {
+                Db::rollback();
+                return $this->fail(4220, '订单资产已发生流转（转赠/消耗），不满足全额退款条件，请走人工工单');
+            }
+
+            $now      = date('Y-m-d H:i:s');
+            $refundNo = 'RF' . date('ymdHis') . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
+            $payment  = Db::name('payments')->where('order_id', $id)->where('status', 'success')->order('id', 'desc')->find();
+
+            $refundId = (int) Db::name('refunds')->insertGetId([
+                'refund_no'      => $refundNo,
+                'order_id'       => $id,
+                'payment_id'     => $payment ? (int) $payment['id'] : 0,
+                'user_id'        => $order['user_id'],
+                'amount'         => $amount,
+                'reason'         => mb_substr($reason, 0, 255),
+                'status'         => 1, // 待审批
+                'applicant_id'   => $this->adminId(),
+                'applicant_name' => $this->adminName(),
+                'ip'             => (string) $this->request->ip(),
+                'created_at'     => $now,
+                'updated_at'     => $now,
+            ]);
+
+            // 订单进入退款中
+            Db::name('orders')->where('id', $id)->update(['status' => 'refunding', 'updated_at' => $now]);
+
+            Db::commit();
+        } catch (\Throwable $e) {
+            Db::rollback();
+            return $this->fail(5000, '退款申请失败：' . $e->getMessage());
         }
-
-        // 持仓校验：订单资产仍在用户名下（未被转赠/寄售）
-        $heldCount = Db::name('user_collectibles')->where('order_id', $id)
-            ->whereIn('status', ['held', 'frozen', 'consigned'])->count();
-        $needCount = (int) Db::name('user_collectibles')->where('order_id', $id)->count();
-        if ($heldCount < $needCount) {
-            return $this->fail(4220, '订单资产已发生流转（转赠/消耗），不满足全额退款条件，请走人工工单');
-        }
-
-        $now      = date('Y-m-d H:i:s');
-        $refundNo = 'RF' . date('ymdHis') . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
-        $payment  = Db::name('payments')->where('order_id', $id)->where('status', 'success')->order('id', 'desc')->find();
-
-        $refundId = (int) Db::name('refunds')->insertGetId([
-            'refund_no'      => $refundNo,
-            'order_id'       => $id,
-            'payment_id'     => $payment ? (int) $payment['id'] : 0,
-            'user_id'        => $order['user_id'],
-            'amount'         => $amount,
-            'reason'         => mb_substr($reason, 0, 255),
-            'status'         => 1, // 待审批
-            'applicant_id'   => $this->adminId(),
-            'applicant_name' => $this->adminName(),
-            'ip'             => (string) $this->request->ip(),
-            'created_at'     => $now,
-            'updated_at'     => $now,
-        ]);
-
-        // 订单进入退款中
-        Db::name('orders')->where('id', $id)->update(['status' => 'refunding', 'updated_at' => $now]);
 
         $this->audit('order', 'refund_create', '发起退款 ' . $refundNo . '（订单 ' . $order['order_no'] . '，金额 ' . $amount . '）',
             ['reason' => $reason, 'amount' => $amount], 'refund', $refundId);

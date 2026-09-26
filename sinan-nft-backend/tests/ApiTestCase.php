@@ -155,7 +155,7 @@ abstract class ApiTestCase extends TestCase
     protected static function pdo(): PDO
     {
         if (self::$pdo === null) {
-            self::$pdo = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft;charset=utf8mb4', 'root', '', [
+            self::$pdo = new PDO('mysql:host=127.0.0.1;dbname=sinan_nft;charset=utf8mb4', 'sinan', 'sinan123456', [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             ]);
         }
@@ -223,7 +223,7 @@ abstract class ApiTestCase extends TestCase
     }
 
     /** 管理端登录，返回 admin token */
-    protected function adminLogin(string $username = 'admin', string $password = 'admin123'): string
+    protected function adminLogin(string $username = 'admin', string $password = 'Admin123456'): string
     {
         $data = $this->assertOk(
             $this->http('POST', '/admin/auth/login', ['username' => $username, 'password' => $password]),
