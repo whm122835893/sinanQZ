@@ -104,7 +104,9 @@ class BlindBoxController extends BaseController
         // 库存守恒审计：发行总量 = 库存池 + 待支付锁定 + 已售 + 已空投 + 已销毁（恒等式须成立且池非负）
         $pool = (int) $bb['edition'] - (int) $bb['sold'] - (int) $bb['locked_quantity']
               - (int) $bb['airdropped_count'] - (int) $bb['destroyed_count'];
-        $issuedTotal = array_sum(array_map(fn ($i) => (int) $i['quantity_distributed'], $items));
+        // 发放总数必须含软删档位：quantity_distributed 是历史事实，编辑奖池只软删行，
+        // 若按可见档位汇总会让「开盒对账」在奖池被编辑后恒报不一致
+        $issuedTotal = (int) Db::name('blind_box_items')->where('blind_box_id', $id)->sum('quantity_distributed');
         $issuedMatchesOpened = $issuedTotal === (int) $bb['opened_count'];
         $data['audit'] = [
             'ok' => $pool >= 0 && $issuedMatchesOpened,
@@ -808,7 +810,8 @@ class BlindBoxController extends BaseController
                 }
             }
             // 开盒对账：opened_count 与奖池发放总数
-            $issuedTotal = array_sum(array_map(fn ($i) => (int) $i['quantity_distributed'], $items));
+            // 发放总数必须含软删档位：quantity_distributed 是历史事实，编辑奖池只软删行
+            $issuedTotal = (int) Db::name('blind_box_items')->where('blind_box_id', $box['id'])->sum('quantity_distributed');
             if ($issuedTotal !== (int) $box['opened_count']) {
                 $issues[] = '开盒数 ' . $box['opened_count'] . ' 与奖池发放总数 ' . $issuedTotal . ' 不一致';
             }

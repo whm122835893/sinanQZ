@@ -60,7 +60,9 @@ async function onSubmit() {
   if (submitting.value) return
   submitting.value = true
   try {
-    await request.post('/user/password/reset', { code: code.value, newPassword: password.value })
+    const res = await request.post('/user/password/reset', { code: code.value, newPassword: password.value })
+    // 改密会注销该账号全部旧令牌，必须换用后端就地签发的新令牌，否则本设备当场掉线
+    if (res?.token) user.setToken(res.token)
     showToast('密码修改成功')
     router.back()
   } catch (e) {

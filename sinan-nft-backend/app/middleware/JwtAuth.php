@@ -4,8 +4,6 @@ declare(strict_types=1);
 namespace app\middleware;
 
 use Closure;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
 use Firebase\JWT\ExpiredException;
 use think\Request;
 use think\Response;
@@ -20,7 +18,7 @@ use app\service\JwtService;
  * 安全增强（管理后台联动，两种后台实现共存）：
  * - 实时校验用户状态：冻结（status=0）账号即刻拒绝访问
  * - 实时校验黑名单：is_blacklisted=1 拒绝访问
- * - 强制登出（DB 方案）：logout_before 非空时，签发时间（iat）早于该值的令牌全部失效
+ * - 强制登出（DB 方案）：logout_before 非空时，签发时间（iat）不晚于该值的令牌全部失效（<= 判定）
  * - 强制登出（缓存方案）：force_logout_{uid} 缓存键存在时拒绝访问（TTL=JWT 有效期）
  */
 class JwtAuth
@@ -39,8 +37,8 @@ class JwtAuth
         }
 
         try {
-            $key   = new Key(JwtService::secret(), env('jwt.ALGO', 'HS256'));
-            $payload = JWT::decode($token, $key);
+            // 必须走 JwtService::decode 而不是直接 JWT::decode：令牌校验容差只在那里注入
+            $payload = JwtService::decode($token);
             $request->userId = $payload->sub ?? null;
             if (!$request->userId) {
                 return json(['code' => 2001, 'message' => 'token失效', 'data' => null]);

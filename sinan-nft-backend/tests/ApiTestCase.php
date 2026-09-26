@@ -144,7 +144,9 @@ abstract class ApiTestCase extends TestCase
             }
             if (!$touched) {
                 $stuck = array_filter($remaining);
-                throw new RuntimeException(
+                // 必须写全局命名空间的 \RuntimeException：漏掉反斜杠会解析成 tests\RuntimeException，
+                // 于是「哪张表没纳入引用图」这条诊断被 Class not found 顶掉，排查时完全看不到真因
+                throw new \RuntimeException(
                     '测试数据清理受阻，存在未纳入外键引用图的表：' . json_encode(array_map('count', $stuck))
                 );
             }

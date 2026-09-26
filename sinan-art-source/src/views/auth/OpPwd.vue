@@ -50,7 +50,9 @@ async function onSubmit() {
   if (submitting.value) return
   submitting.value = true
   try {
-    await request.post('/user/password/trade/reset', { code: code.value, newPassword: opPwd.value })
+    const res = await request.post('/user/password/trade/reset', { code: code.value, newPassword: opPwd.value })
+    // 同登录密码：重置操作密码会注销旧令牌，沿用后端换发的新令牌
+    if (res?.token) user.setToken(res.token)
     showToast('操作密码设置成功')
     router.back()
   } catch (e) {

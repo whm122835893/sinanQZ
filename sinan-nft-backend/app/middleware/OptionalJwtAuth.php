@@ -4,8 +4,6 @@ declare(strict_types=1);
 namespace app\middleware;
 
 use Closure;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
 use think\Request;
 use think\Response;
 use app\service\JwtService;
@@ -25,8 +23,8 @@ class OptionalJwtAuth
             $token = trim(substr($authHeader, 7));
             if ($token) {
                 try {
-                    $key    = new Key(JwtService::secret(), env('jwt.ALGO', 'HS256'));
-                    $payload = JWT::decode($token, $key);
+                    // 与 JwtAuth 同源解码：校验容差只在 JwtService::decode 里注入
+                    $payload = JwtService::decode($token);
                     if (!empty($payload->sub)) {
                         $request->userId = (int) $payload->sub;
                     }

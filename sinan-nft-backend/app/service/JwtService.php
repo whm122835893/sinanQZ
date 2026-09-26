@@ -5,6 +5,7 @@ namespace app\service;
 
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
+use think\facade\Db;
 
 /**
  * JWT 服务
@@ -31,9 +32,19 @@ class JwtService
         return $secret;
     }
 
+    /**
+     * Firebase JWT 的 iat/nbf/exp 校验共用全局 $leeway（默认 0），iat 领先服务器瞬时即抛 BeforeValidException。
+     * iatAfterLogout() 会把令牌 iat 抬到 logout_before + 1（最多领先服务器 1 秒），
+     * 所以解码必须先留 2 秒容差，否则「改密后当场换发/重新登录」的首个请求就是 401。
+     */
+    private static function init(): void
+    {
+        JWT::$leeway = 2;
+    }
+
     public static function encode(int $userId, string $phone): string
     {
-        $now  = time();
+        $now  = self::iatAfterLogout($userId);
         $payload = [
             'iss' => env('jwt.ISSUER', 'sinan-nft-audience'),
             'aud' => env('jwt.AUDIENCE', 'sinan-nft-client'),
@@ -45,8 +56,30 @@ class JwtService
         return JWT::encode($payload, self::secret(), env('jwt.ALGO', 'HS256'));
     }
 
+    /**
+     * 签发时间：iat 只有秒精度，而 JwtAuth 按 `iat <= logout_before` 判失效。
+     * 若在同一秒内先重置密码（写 logout_before）再重新登录，刚签出的令牌会立即被判死，
+     * 客户端表现为「登录成功但首个请求 401」。这里把 iat 抬到该秒之后：
+     * 旧令牌的失效判定不受影响（仍要求 iat <= logout_before），新会话则当场可用。
+     */
+    private static function iatAfterLogout(int $userId): int
+    {
+        $now = time();
+        $logoutBefore = Db::name('users')->where('id', $userId)->value('logout_before');
+        if (empty($logoutBefore)) {
+            return $now;
+        }
+        try {
+            $ts = (new \DateTimeImmutable((string) $logoutBefore, new \DateTimeZone('UTC')))->getTimestamp();
+        } catch (\Exception $e) {
+            return $now;
+        }
+        return $now <= $ts ? $ts + 1 : $now;
+    }
+
     public static function decode(string $token): object
     {
+        self::init();
         $key = new Key(self::secret(), env('jwt.ALGO', 'HS256'));
         return JWT::decode($token, $key);
     }

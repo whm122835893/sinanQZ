@@ -298,7 +298,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     token, userInfo, isLoggedIn, inventory, consignments,
     signState, todaySigned,
-    setUserInfo, login, sendCode, register, logout, fetchUserInfo, updateNickname,
+    setToken, setUserInfo, login, sendCode, register, logout, fetchUserInfo, updateNickname,
     verifyPaymentPassword, ownedCount, fetchInventory, findUserCollectibleId,
     fetchConsignments, consign, cancelConsign, isNoLocked, consignCooldownRemain,
     openBlindbox, transfer, fetchSignCalendar, doSign

@@ -7,6 +7,7 @@ use app\BaseController;
 use app\service\RealnameService;
 use app\service\CaptchaService;
 use app\service\SmsDispatchService;
+use app\service\JwtService;
 use think\facade\Db;
 
 /**
@@ -289,7 +290,8 @@ class User extends BaseController
         Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => $now]);
         Db::commit();
 
-        return $this->success();
+        // 改密会注销全部旧令牌，若不下发新令牌，用户在本设备也会当场掉线（账户安全页改密后无提示失效）
+        return $this->success(['token' => JwtService::encode($userId, $phone)]);
     }
 
     /**
@@ -343,7 +345,8 @@ class User extends BaseController
         Db::name('verification_codes')->where('id', $vc['id'])->update(['used_at' => $now]);
         Db::commit();
 
-        return $this->success();
+        // 同登录密码：重置交易密码也会注销旧令牌，必须就地换发，否则设置完当场掉线
+        return $this->success(['token' => JwtService::encode($userId, $phone)]);
     }
 
     /**
