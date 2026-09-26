@@ -232,9 +232,13 @@ function goDetail(id) { router.push('/collection/' + id) }
 function onCardClick(item) { router.push(item.type === 'raffle' ? '/raffle/' + item.id : '/collection/' + item.id) }
 
 // 关注/取消关注藏品
-function onFav(id) {
-  const fav = store.toggleFavorite(id)
-  showToast(fav ? '已关注' : '已取消关注')
+async function onFav(id) {
+  try {
+    const fav = await store.toggleFavorite(id)
+    showToast(fav ? '已关注' : '已取消关注')
+  } catch (e) {
+    showToast('操作失败，请稍后重试')
+  }
 }
 function onSign() {
   if (!requireLogin(route.fullPath)) return

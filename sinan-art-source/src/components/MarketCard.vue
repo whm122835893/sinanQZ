@@ -15,9 +15,13 @@ function goResale() {
   router.push('/resale/' + props.item.id)
 }
 
-function onFav() {
-  const fav = store.toggleFavorite(props.item.id)
-  showToast(fav ? '已关注' : '已取消关注')
+async function onFav() {
+  try {
+    const fav = await store.toggleFavorite(props.item.id)
+    showToast(fav ? '已关注' : '已取消关注')
+  } catch (e) {
+    showToast('操作失败，请稍后重试')
+  }
 }
 </script>
 
