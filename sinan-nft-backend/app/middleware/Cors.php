@@ -28,7 +28,10 @@ class Cors
         $allowOrigin = '';
         if ($origin === '*') {
             // 开发模式：回显请求源（Credentials=true 下浏览器不接受 *）
-            $allowOrigin = $reqOrigin !== '' ? $reqOrigin : '*';
+            // 生产模式必须显式配置白名单：* + Credentials 等于向任意站点开放带凭证跨域
+            if (env('app.debug', false)) {
+                $allowOrigin = $reqOrigin !== '' ? $reqOrigin : '*';
+            }
         } else {
             $allowed = array_map('trim', explode(',', (string) $origin));
             if (in_array($reqOrigin, $allowed, true)) {

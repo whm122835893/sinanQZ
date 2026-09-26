@@ -270,8 +270,10 @@ class UserController extends BaseController
         ]);
 
         // 冻结同时强制登出（写入 logout_before 使现有令牌失效）
+        // logout_before 是 UTC 语义列（JwtAuth 按 UTC 解析后与 iat 比较），必须 gmdate，
+        // 写本地时间会让新签发的 token 也被拒绝，用户被锁在门外约 8 小时
         if ($status === 0) {
-            Db::name('users')->where('id', $userId)->update(['logout_before' => $now]);
+            Db::name('users')->where('id', $userId)->update(['logout_before' => gmdate('Y-m-d H:i:s')]);
         }
 
         $this->audit('user', $status === 0 ? 'freeze' : 'unfreeze',
@@ -323,7 +325,8 @@ class UserController extends BaseController
         }
 
         Db::name('users')->where('id', $userId)->update([
-            'logout_before' => date('Y-m-d H:i:s'),
+            // logout_before 为 UTC 语义列，见 freezeUser 处注释
+            'logout_before' => gmdate('Y-m-d H:i:s'),
             'updated_at'    => date('Y-m-d H:i:s'),
         ]);
 
@@ -383,7 +386,7 @@ class UserController extends BaseController
                     'is_blacklisted' => 1,
                     'blacklist_reason' => $reason,
                     'blacklist_at'   => $now,
-                    'logout_before'  => $now,
+                    'logout_before'  => gmdate('Y-m-d H:i:s'), // UTC 语义列，见 freezeUser 处注释
                     'updated_at'     => $now,
                 ]);
             } else {

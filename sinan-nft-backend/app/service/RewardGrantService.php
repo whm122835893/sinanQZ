@@ -250,10 +250,15 @@ class RewardGrantService
                 isset($context['activityId']) ? (int) $context['activityId'] : null
             );
             // 配额消耗计入 circulate（文档 4.3.1）
-            Db::name('collectibles')
+            $circulated = Db::name('collectibles')
                 ->where('id', $collectibleId)
                 ->where('circulate + ' . $quantity . ' <= edition')
                 ->update(['circulate' => Db::raw('circulate + ' . (float)($quantity)), 'updated_at' => $now]);
+            if (!$circulated) {
+                // 与库存池支路一致：circulate 超 edition 时守护 UPDATE 命中 0 行，
+                // 不校验就会照常发放资产，击穿 edition 守恒
+                throw new RewardGrantException("流通量已达发行上限（circulate + {$quantity} > edition），无法发放 {$quantity} 份");
+            }
             $via = 'quota';
         } else {
             // 无配额 → 库存池路径（文档 5.4「或库存池充足」）

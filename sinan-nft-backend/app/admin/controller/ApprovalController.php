@@ -156,7 +156,8 @@ class ApprovalController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '审批处理失败：' . $e->getMessage());
+            \think\facade\Log::error('[approval][handle] id=' . $id . ' err=' . $e->getMessage());
+            return $this->fail(5000, '审批处理失败，请稍后重试');
         }
 
         $this->audit('approval', 'handle_' . $action,

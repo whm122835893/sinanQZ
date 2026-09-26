@@ -74,7 +74,10 @@ class JwtAuth
                     return json(['code' => 2001, 'message' => '登录已失效，请重新登录', 'data' => null]);
                 }
             } catch (\Throwable $e) {
-                // 时间解析异常时跳过，避免误杀
+                // 解析失败说明该列被写坏（如 0000-00-00），此时不能放行：
+                // 强制登出/锁定是安全边界，fail closed 让用户重新登录，而不是让失效令牌继续可用
+                \think\facade\Log::warning('[jwt][logout_before] uid=' . $request->userId . ' 解析失败，按登录失效处理: ' . $e->getMessage());
+                return json(['code' => 2001, 'message' => '登录已失效，请重新登录', 'data' => null]);
             }
         }
 

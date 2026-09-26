@@ -176,7 +176,14 @@ class RefundController extends BaseController
         $now = date('Y-m-d H:i:s');
         Db::startTrans();
         try {
-            Db::name('refunds')->where('id', $id)->update([
+            // 事务内按状态加锁重读：事务外的 status=1 预检与下面的更新之间存在窗口，
+            // 并发下 A 已 approve(2)→execute(3) 时，B 的更新会把 3 倒退回 2，重新武装 execute 造成二次打款
+            $fresh = Db::name('refunds')->where('id', $id)->where('status', 1)->lock(true)->find();
+            if (!$fresh) {
+                Db::rollback();
+                return $this->fail(4220, '退款单状态已变化（可能已被并发审批或已执行退款），请刷新后重试');
+            }
+            $affected = Db::name('refunds')->where('id', $id)->where('status', 1)->update([
                 'status'        => $action === 'approve' ? 2 : 4,
                 'approver_id'   => $this->adminId(),
                 'approver_name' => $this->adminName(),
@@ -184,6 +191,10 @@ class RefundController extends BaseController
                 'comment'       => mb_substr($comment, 0, 255) ?: null,
                 'updated_at'    => $now,
             ]);
+            if ($affected !== 1) {
+                Db::rollback();
+                return $this->fail(4220, '退款单状态已变化，请刷新后重试');
+            }
 
             // 拒绝：订单回滚 completed
             if ($action === 'reject') {

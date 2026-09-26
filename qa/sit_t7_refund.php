@@ -222,6 +222,13 @@ T('7.5.3 财务拒绝成功', $r['code']===200);
 T('7.5.4 退款单状态=4 已拒绝', v("SELECT status FROM nft_refunds WHERE id=$rf3")=='4');
 T('7.5.5 订单回滚 completed', v("SELECT status FROM nft_orders WHERE id=$o3")=='completed');
 T('7.5.6 资产未回收（仍 held）', v("SELECT COUNT(*) FROM nft_user_collectibles WHERE order_id=$o3 AND status='held'")==3);
+// 驳回后订单已回滚 completed，退款单 4=已拒绝 不应继续占用发起额度（回归：事务内复查曾把 4 也算占用）
+$r=http('POST',"/admin/orders/$o3/refund",['id'=>$o3,'reason'=>'驳回后重新发起'],$tokSuper);
+$rf3b=(int)($r['data']['refund_id']??0);
+T('7.5.7 驳回后可再次发起', $r['code']===200 && $rf3b>0, "code={$r['code']} msg={$r['message']}");
+T('7.5.8 新单独立于旧拒绝单', $rf3b>0 && $rf3b!==$rf3 && v("SELECT status FROM nft_refunds WHERE id=$rf3")=='4');
+$r=http('POST',"/admin/orders/$o3/refund",['id'=>$o3,'reason'=>'第三次发起'],$tokSuper);
+T('7.5.9 待审批单占用时再次发起被拒', $r['code']===4220, "code={$r['code']} msg={$r['message']}");
 
 echo "\n=== 7.6 审批中心：自审批拦截 + 驳回联动 ===\n";
 $r=http('POST',"/admin/orders/$o4/refund",['id'=>$o4,'reason'=>'驳回联动测试'],$tokSuper);
