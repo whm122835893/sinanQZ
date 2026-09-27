@@ -704,7 +704,7 @@ bash database/deploy.sh --verify   # 仅重跑 SQL，不重建库
 > 2. `raffle_purchase_upgrade.sql` 必须早于 `raffle_admin_upgrade.sql`（后者 `AFTER purchased_quantity`）。
 > 3. mysql 客户端默认遇错即停，单条报错会吞掉该 SQL 文件剩余全部语句。
 >
-> ⚠️ 旧合并版 `database/full_schema_all.sql`（79 表）**已落后且不可用**：缺 `nft_check_in_activities` 整表与 13 个业务字段（含必需的 `release_quantity`），且自带 8 处 Duplicate column。可用的单文件合并版是 `database/full_init.sql`。
+> ⚠️ 单文件合并版只有 `database/full_init.sql`（80 表）这一份是有效的。历史上并存过的 `full_schema_all.sql`（79 表，缺 `nft_check_in_activities` 整表与 `release_quantity` 等必需字段，自带 8 处 Duplicate column）及其生成脚本 `merge_schema.py` 已删除，勿再引用。
 
 ### 11.2 后端（sinan-nft-backend）
 

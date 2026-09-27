@@ -12,7 +12,7 @@
 -- 安全性：新值一律追加在枚举尾部，已有行的存储索引 1/2/3 不变，MySQL 原地改元数据，
 --   不重写表数据；对 balance/alipay/wechat 的历史记录零影响。
 -- 幂等：重复执行只会把同一列定义改成同一份定义。
--- 新库无需本脚本：database/full_init.sql、full_schema_all.sql、init.sql 已同步为 6 值。
+-- 新库无需本脚本：database/full_init.sql、init.sql 已同步为 6 值。
 -- ============================================================================
 
 ALTER TABLE `nft_payments`

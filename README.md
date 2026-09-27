@@ -9,7 +9,7 @@ sinanQZ/
 ├── sinan-art-source/      # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
 ├── sinan-admin/           # 管理后台（融合版，Vue 3 + Vite 5 + Pinia + Element Plus + ECharts）
 ├── sinan-nft-backend/     # 后端（ThinkPHP 8 多应用：api = C 端 / admin = 管理端）
-└── database/              # 数据库脚本（25 个 SQL + deploy.sh，存活 80 张表）
+└── database/              # 数据库脚本（24 个 SQL：21 个部署 + 2 个手工补丁 + 1 个合并版，另有 deploy.sh，存活 80 张表）
     ├── deploy.sh                        # ✅ 一键部署拆分版（含正确执行顺序 + 幂等容错）
     ├── init.sql                        # 基础建库：33 表 / 56 外键 / 16 CHECK
     ├── admin_init.sql                   # 管理端扩展：22 表（管理员/角色/权限/操作日志/风控/工单/支付渠道等）
@@ -30,8 +30,6 @@ sinanQZ/
     ├── refund_idempotency_upgrade.sql    # 退款幂等字段（⚠ 手工补丁：未接入 deploy.sh 与任何合并版，需自行执行）
     ├── payment_method_channel_align.sql  # 支付渠道枚举对齐（还原旧备份后须重放）
     ├── full_init.sql                    # ✅ 合并版（推荐）：80 表，与运行库实测双向零差异
-    ├── full_schema_all.sql              # ⚠️ 旧合并版：79 表（缺 26 字段，见下文）
-    ├── merge_schema.py                  # 合并生成脚本（python3 merge_schema.py）
     └── dev-only/seed-dev.sql            # 开发联调种子数据（生产严禁执行）
 ```
 
@@ -127,8 +125,8 @@ for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"
 </details>
 
 空库首部署也可以直接跑合并版：`mysql -uroot -p sinan_nft < database/full_init.sql`（**用这个文件**，
-它建出的 80 张表与运行库实测双向零差异）。注意 `full_schema_all.sql` 是另一份**已落后**的旧合并版，
-自带重复 ALTER，不加 `--force` 会在第 1565 行 `Duplicate column name 'qq_group'` 处中断，见下文。
+它建出的 80 张表与运行库实测双向零差异）。历史上还有过一份 `full_schema_all.sql` + `merge_schema.py`
+的旧合并版，因落后 26 个字段且自带重复 ALTER 已删除，勿再引用。
 
 > ⚠️ `deploy.sh` 不带 `--verify` 时会先执行 `DROP DATABASE IF EXISTS`，随后重放全部 SQL。
 > 它默认连 `127.0.0.1:3399`（另一套沙箱实例）。若把 `DB_PORT` 指到有数据的库上运行，
@@ -139,8 +137,7 @@ for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"
 | 方案 | 文件 | 适用场景 |
 |------|------|---------|
 | **合并版（当前有效）** | `database/full_init.sql`（199KB，单文件，80 表） | 新环境首部署、CI/CD 自动化 |
-| **拆分版** | `database/*.sql`（25 个 SQL）+ 后端 `migrations/`（17 个） | 开发迭代、增量迁移、追溯字段演进 |
-| ~~旧合并版~~ | `database/full_schema_all.sql`（137KB） | 已落后，勿用于新环境（见下方红字） |
+| **拆分版** | `database/*.sql`（`deploy.sh` 的 21 个 BASE_FILES）+ 后端 `migrations/`（17 个） | 开发迭代、增量迁移、追溯字段演进 |
 
 合并版把所有 CREATE / ALTER / DROP 拼成一份，一条 `mysql -uroot -p sinan_nft < database/full_init.sql` 搞定。
 拆分版保留了每个升级脚本的独立语义（哪个功能加了哪些字段一目了然），支持从任意版本增量升级。
@@ -148,26 +145,10 @@ for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"
 > ⚠️ 合并版从拆分版提取 ALTER 时，原脚本的动态 SQL 幂等包装被剥去了。
 > 如果目标列已存在（比如后续版本在 CREATE TABLE 里直接加了这个列），裸 ALTER 会报 `Duplicate column`。
 > 合并版仅用于**空库**，已有库增量迁移请用拆分版。
+> 拆分版有字段演进时，`full_init.sql` 需**手工同步**（曾用的一次性生成脚本产出的版本已落后 26 字段并删除，不再提供）。
 
-重新生成合并版：`python3 database/merge_schema.py`
-
-> 🔴 **旧合并版 `full_schema_all.sql` 已落后，不可用于新环境**
->
-> | 维度 | `full_schema_all.sql` | `full_init.sql` / 拆分版 + migrations（`deploy.sh`） |
-> |------|----------------------|--------------------------------------------------|
-> | 表数量 | 79 | **80**（多 `nft_check_in_activities`，`full_init.sql:923` 有建表） |
-> | 业务字段 | 缺 26 个 | 齐（含必需的 `release_quantity`） |
-> | 执行情况 | 8 处 `Duplicate column`，不加 `--force` 会在第 1565 行 `qq_group` 处中断 | 全绿 |
->
-> 差的 26 个字段 = 整张新表 `nft_check_in_activities`（13 个字段）+ 6 张已有表多出的 13 个字段：
-> `nft_collectibles`(minted_at / onchain_status / release_quantity)、
-> `nft_invite_activities`(grant_mode / invitee_conditions / invitee_reward_config)、
-> `nft_users`(realname_status / realname_submitted_at / realname_reject_reason)、
-> `nft_lucky_draw_prizes`(prize_image / reward_config)、`nft_check_in_records`(activity_id)、
-> `nft_synthesis_activities`(deleted_at)。
->
-> 其中 `release_quantity`（分批发售）是**业务必需**字段，缺失会导致 `InventoryService` 报错。
-> 走 `deploy.sh` 完成后的期望自检值为 **80 表 / 981 字段 / 75 外键**（脚本末尾会打印实测统计比对）。
+> ✅ 走 `deploy.sh` 或 `full_init.sql` 完成后的期望自检值为 **80 表 / 981 字段 / 75 外键**
+> （`deploy.sh` 末尾会打印实测统计供比对）。
 
 ### 2. 后端（sinan-nft-backend）
 
