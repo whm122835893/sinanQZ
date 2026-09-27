@@ -8,7 +8,8 @@ import request from '@/utils/request'
  * 提交前调 `await captcha.require(scene)` —— 该方法自动：
  *   1. 探测 /api/captcha/enabled 判断该场景是否需要验证
  *   2. 若需要 → 调用 dialog.open(scene) 返回 Promise(用户完成验证)
- *   3. 若不需要 → 直接 resolve(null)，业务跳过验证码字段
+ *   3. 若不需要 → 直接 resolve({})，业务跳过验证码字段
+ *      （只有"用户取消"才返回 null，业务用 `payload === null` 中断即可）
  *
  * 使用示例：
  *   <template>
@@ -23,7 +24,8 @@ import request from '@/utils/request'
  *
  *   async function onSubmit() {
  *     const payload = await captcha.require('auth_login_sms')
- *     // payload = null  → 该场景未启用验证码，跳过
+ *     // payload = null  → 用户取消验证，业务中断
+ *     // payload = {}                 → 该场景未启用验证码，跳过
  *     // payload = { captcha_id, captcha_code }   → local 图形码
  *     // payload = { captcha_verify_param }       → aliyun
  *     await api.sendCode({ ...form, ...(payload || {}) })
@@ -55,13 +57,13 @@ export function useCaptcha(dialogRef) {
   /**
    * 探测 + 弹窗，返回 Promise。
    * @param {string} scene 场景 key（见 CaptchaService::SCENES）
-   * @returns {Promise<object|null>} null=未启用验证码/用户取消；object=payload
+   * @returns {Promise<object|null>} null=用户取消；object=payload（未启用验证码时为空对象）
    */
   async function require(scene) {
-    if (!scene) return null
+    if (!scene) return {}
 
     const detected = await detectScene(scene)
-    if (!detected?.enabled) return null
+    if (!detected?.enabled) return {}
 
     // 需要验证 → 打开弹窗
     if (!dialogRef?.value || typeof dialogRef.value.open !== 'function') {

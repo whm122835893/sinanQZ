@@ -82,7 +82,7 @@ function readCache() {
 }
 
 export const useSiteStore = defineStore('site', {
-  state: () => ({ ...DEFAULTS, purchaseLimitPerUser: 5, ...readCache(), loaded: false }),
+  state: () => ({ ...DEFAULTS, purchaseLimitPerUser: 5, resaleFeeRate: 1, ...readCache(), loaded: false }),
 
   getters: {
     /** 品牌头像（优先平台头像，回退 Logo/默认） */
@@ -130,6 +130,11 @@ export const useSiteStore = defineStore('site', {
         if (cfg?.site) this.set(cfg.site)
         // 全局限购数（与后端 perUserLimit 兜底同源：purchase_limit_per_user）
         if (cfg?.purchaseLimitPerUser) this.purchaseLimitPerUser = Number(cfg.purchaseLimitPerUser) || 5
+        // 寄售手续费率（百分比数值，与后端 Resale::fee 同源：resale_fee_rate / 100）
+        if (cfg?.resaleFeeRate !== undefined && cfg?.resaleFeeRate !== null) {
+          const rate = Number(cfg.resaleFeeRate)
+          if (!Number.isNaN(rate) && rate >= 0) this.resaleFeeRate = rate
+        }
         // 图标主题：后台配置的图标风格包（功能图标与底部导航可独立切换）+ 自定义图标
         const iconTheme = useIconThemeStore()
         if (cfg?.site?.featureIconTheme) iconTheme.setFeatureTheme(cfg.site.featureIconTheme)

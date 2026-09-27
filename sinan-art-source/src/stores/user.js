@@ -209,14 +209,14 @@ export const useUserStore = defineStore('user', () => {
   // ---- 发起寄售（真实接口：POST /api/resale/listings，需交易密码）----
   async function consign(payload) {
     // payload: { userCollectibleId, price, paymentPassword }
-    await request.post('/resale/listings', {
+    const res = await request.post('/resale/listings', {
       userCollectibleId: payload.userCollectibleId,
       price: Number(payload.price),
       paymentPassword: String(payload.paymentPassword || '')
     })
     // 拉取最新库存与挂单（后端已将资产置为 consigned）
     await Promise.all([fetchInventory(), fetchConsignments()])
-    return true
+    return res // { listingId, price, feeAmount, actualAmount, feeRate }
   }
 
   // ---- 取消寄售（真实接口：POST /api/resale/listings/:listingId/cancel）----
@@ -263,26 +263,36 @@ export const useUserStore = defineStore('user', () => {
   const signState = ref({
     day: 0,
     lastSignDate: '',
-    records: [] // [{ date: 'YYYY-MM-DD' }]
+    records: [] // [{ date: 'YYYY-MM-DD', day: 连续天数 }]
   })
+
+  const padDate = (n) => String(n).padStart(2, '0')
+  const dateStr = (offset) => {
+    const d = new Date()
+    d.setDate(d.getDate() + offset)
+    return `${d.getFullYear()}-${padDate(d.getMonth() + 1)}-${padDate(d.getDate())}`
+  }
 
   async function fetchSignCalendar() {
     if (!token.value) return signState.value
-    const now = new Date()
-    const p = (n) => String(n).padStart(2, '0')
-    const res = await request.get('/check-in/records', {
-      params: { month: `${now.getFullYear()}-${p(now.getMonth() + 1)}` }
-    })
-    signState.value.day = res.currentStreak || 0
-    signState.value.records = (res.records || []).map((r) => ({ date: r.date }))
-    signState.value.lastSignDate = signState.value.records[0]?.date || ''
+    // 后端 data 直接是记录数组（按日期倒序）：[{ date, day, rewardType, rewardAmount, description }]
+    const res = await request.get('/check-in/records')
+    const records = (Array.isArray(res) ? res : [])
+      .map((r) => ({ date: String(r.date || '').slice(0, 10), day: Number(r.day) || 0 }))
+      .filter((r) => r.date)
+    signState.value.records = records
+    signState.value.lastSignDate = records[0]?.date || ''
+    // 连续天数只有"今天已签"或"昨天签过、今天还没断"才成立，中断即归零
+    const today = dateStr(0)
+    const yesterday = dateStr(-1)
+    const head = records.find((r) => r.date === today || r.date === yesterday)
+    signState.value.day = head ? head.day : 0
     return signState.value
   }
 
   const todaySigned = computed(() => {
-    const now = new Date()
-    const p = (n) => String(n).padStart(2, '0')
-    const today = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
+    const d = new Date()
+    const today = `${d.getFullYear()}-${padDate(d.getMonth() + 1)}-${padDate(d.getDate())}`
     return signState.value.records.some((r) => r.date === today)
   })
 

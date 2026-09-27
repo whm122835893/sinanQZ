@@ -153,7 +153,8 @@ async function submit() {
         price: unitPrice.value,
         qty: qty.value,
         no: orderNo.value,
-        resaleListingId: isRelease.value ? 0 : listingId.value
+        resaleListingId: isRelease.value ? 0 : listingId.value,
+        paymentPassword: payPwd.value
       })
       payNo = order.id
     }

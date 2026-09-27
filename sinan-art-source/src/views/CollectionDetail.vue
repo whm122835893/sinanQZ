@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
 import html2canvas from 'html2canvas'
 import { useLoginGate } from '@/utils/loginGate'
 import { showToast } from 'vant'
@@ -96,7 +97,10 @@ function onBuy() {
 }
 
 /* ---------- 寄售流程 ---------- */
-const FEE_RATE = 0.05
+// 手续费率取自平台配置（resale_fee_rate，单位 %），与后端 Resale/BuyRequest 计费同源
+const site = useSiteStore()
+const feeRate = computed(() => (Number(site.resaleFeeRate) || 0) / 100)
+const feeRateText = computed(() => String(parseFloat((Number(site.resaleFeeRate) || 0).toFixed(2))))
 const showConsign = ref(false)
 const showSuccess = ref(false)
 const price = ref('')
@@ -131,8 +135,10 @@ const priceNum = computed(() => {
   const n = parseFloat(price.value)
   return isNaN(n) || n <= 0 ? 0 : n
 })
-const fee = computed(() => (priceNum.value * FEE_RATE).toFixed(2))
-const actual = computed(() => (priceNum.value - priceNum.value * FEE_RATE).toFixed(2))
+// 与后端同口径：fee = round(price * rate / 100, 2)，actual = price - fee
+const feeNum = computed(() => Math.round(priceNum.value * feeRate.value * 100) / 100)
+const fee = computed(() => feeNum.value.toFixed(2))
+const actual = computed(() => (Math.round((priceNum.value - feeNum.value) * 100) / 100).toFixed(2))
 const priceError = computed(() => {
   if (!price.value) return ''
   return priceNum.value > 0 ? '' : '请输入大于 0 的价格'
@@ -173,12 +179,13 @@ function onPwdKey(k) {
 async function doConsign() {
   consigning.value = true
   try {
-    await userStore.consign({
+    const res = await userStore.consign({
       userCollectibleId: userStore.findUserCollectibleId(route.params.id, serialNo.value),
       price: priceNum.value,
       paymentPassword: payPwd.value
     })
-    lastActual.value = Number(actual.value)
+    // 到账金额以后端结算结果为准，避免与本地费率预估不一致
+    lastActual.value = Number.isFinite(Number(res?.actualAmount)) ? Number(res.actualAmount) : Number(actual.value)
     showConsign.value = false
     showSuccess.value = true
   } catch (e) {
@@ -511,7 +518,7 @@ async function drawPosterFallback() {
           <!-- 费用明细 -->
           <div class="consign__calc" v-if="priceNum > 0">
             <div class="consign__row">
-              <span>平台手续费（{{ (FEE_RATE * 100).toFixed(0) }}%）</span>
+              <span>平台手续费（{{ feeRateText }}%）</span>
               <span class="consign__minus">- ¥{{ fee }}</span>
             </div>
             <div class="consign__row consign__row--total">

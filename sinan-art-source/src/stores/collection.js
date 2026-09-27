@@ -194,11 +194,19 @@ export const useCollectionStore = defineStore('collection', () => {
       cover: d.coverImage
     }))
     return {
-      meta: resaleCollection.value || {
-        name: d.title,
-        coverImage: d.coverImage,
-        isBuyRequestEnabled: d.isBuyRequestEnabled !== false
-      },
+      meta: (resaleCollection.value && String(resaleCollection.value.id) === String(id)
+        ? resaleCollection.value
+        : {
+            id: d.id,
+            name: d.title,
+            coverImage: d.coverImage,
+            price: d.price,
+            total: d.total,
+            // 发行量/流通量：详情页已取到，交易页需与详情页同源展示
+            issueCount: d.issueCount,
+            circulationCount: d.circulationCount,
+            isBuyRequestEnabled: d.isBuyRequestEnabled !== false
+          }),
       orders: resaleOrders.value
     }
   }

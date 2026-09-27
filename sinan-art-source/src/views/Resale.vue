@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
 import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -65,8 +66,8 @@ function openBatchBuy() {
 async function submitBatchBuy() {
   const qty = parseInt(batchQty.value) || 0
   const max = batchConfig.value?.limit || 0
-  if (qty < 1) { alert('请输入购买数量'); return }
-  if (qty > max) { alert(`单次最多批量购买 ${max} 件`); return }
+  if (qty < 1) { showToast('请输入购买数量'); return }
+  if (qty > max) { showToast(`单次最多批量购买 ${max} 件`); return }
   batchSubmitting.value = true
   try {
     const res = await request.post('/resale/batch-buy', { collectibleId: route.params.id, quantity: qty })
@@ -77,7 +78,7 @@ async function submitBatchBuy() {
       query: { quantity: res.quantity, totalPrice: res.totalPrice, floorPrice: res.floorPrice }
     })
   } catch (e) {
-    alert(e?.message || '批量购买失败')
+    showToast(e?.message || '批量购买失败')
   } finally {
     batchSubmitting.value = false
   }
@@ -159,7 +160,9 @@ function acceptBuyRequest(b) {
   if (!requireLogin(route.fullPath)) return
   request.post('/buy-requests/' + b.id + '/accept').then((res) => {
     router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: res.no || '' } })
-  }).catch(() => {})
+  }).catch((e) => {
+    showToast(e?.message || '接单失败，请重试')
+  })
 }
 
 // 打开挂求购弹窗
@@ -174,11 +177,11 @@ async function submitPostBuy() {
   const price = parseFloat(postForm.value.price)
   const qty = parseInt(postForm.value.quantity) || 1
   if (!price || price <= 0) {
-    alert('请输入有效的求购单价')
+    showToast('请输入有效的求购单价')
     return
   }
   if (qty < 1) {
-    alert('求购数量至少为 1')
+    showToast('求购数量至少为 1')
     return
   }
   posting.value = true
@@ -191,7 +194,7 @@ async function submitPostBuy() {
     showPostModal.value = false
     await loadBuyRequests()
   } catch (e) {
-    alert(e?.message || '发布求购失败')
+    showToast(e?.message || '发布求购失败')
   } finally {
     posting.value = false
   }

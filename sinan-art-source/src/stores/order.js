@@ -12,13 +12,14 @@ export const useOrderStore = defineStore('order', () => {
   // 后端时间字符串（YYYY-MM-DD HH:mm:ss[.v]）→ 时间戳
   const toTs = (s) => (s ? new Date(String(s).replace(/-/g, '/')).getTime() : 0)
 
-  // 创建订单（确认支付时调用；后端校验交易密码、锁库存并生成 5 分钟待支付订单）
+  // 创建订单（确认支付时调用；后端在 create 与 pay 两级校验交易密码，锁库存并生成 5 分钟待支付订单）
   async function createOrder(payload) {
     const res = await request.post('/orders', {
       collectibleId: Number(payload.id),
       quantity: payload.qty || 1,
       resaleListingId: Number(payload.resaleListingId) || 0,
-      no: payload.no || ''
+      no: payload.no || '',
+      paymentPassword: payload.paymentPassword || ''
     })
     const order = {
       id: res.orderNo,
