@@ -685,18 +685,26 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 
 ### 11.1 数据库初始化
 
+**推荐入口：**
+
 ```bash
-mysql -uroot -p < database/init.sql              # 基础库 + C 端种子
-mysql -uroot -p < database/admin_init.sql        # 管理端表 + 角色/权限种子
-mysql -uroot -p < database/fusion_upgrade.sql    # 融合升级（三链/审批/社区/资格购）
-mysql -uroot -p < database/fusion_final_upgrade.sql
-mysql -uroot -p < database/full_feature_upgrade.sql
-mysql -uroot -p < database/marketing_activity_upgrade.sql
-mysql -uroot -p < database/activity_reward_upgrade.sql
-mysql -uroot -p < database/seed-dev.sql          # 可选：联调种子数据（生产勿执行）
+bash database/deploy.sh            # 重建并全量部署：基础库表 21 个 + 后端 migrations 17 个
+bash database/deploy.sh --verify   # 仅重跑 SQL，不重建库
 ```
 
-> 以上脚本均幂等，可重复执行。
+> ⚠️ 不带 `--verify` 时脚本会先 `DROP DATABASE IF EXISTS`，且默认连 `127.0.0.1:3399`（另一套沙箱实例）。
+> 执行前务必核对 `DB_HOST / DB_PORT / DB_NAME`——指到有数据的库上会把整库删掉。
+
+完成后的期望自检值为 **80 张表 / 981 个字段 / 75 个外键**（脚本末尾打印实测统计供比对）。
+空库首部署亦可走单文件合并版：`mysql -uroot -p sinan_nft < database/full_init.sql`（80 表，与运行库实测双向零差异）。
+详细执行顺序、踩坑警示与环境变量覆盖见 `README.md` → 快速启动 → 1. 数据库。
+
+> ⚠️ 手工执行极易出错，三个已知陷阱：
+> 1. `mysql < file.sql` 不指定库名时，文件内无 `USE` 会**静默失败**（`fusion_upgrade.sql`、`full_feature_upgrade.sql`、`raffle_admin_upgrade.sql` 等 7 个文件均属此类）。
+> 2. `raffle_purchase_upgrade.sql` 必须早于 `raffle_admin_upgrade.sql`（后者 `AFTER purchased_quantity`）。
+> 3. mysql 客户端默认遇错即停，单条报错会吞掉该 SQL 文件剩余全部语句。
+>
+> ⚠️ 旧合并版 `database/full_schema_all.sql`（79 表）**已落后且不可用**：缺 `nft_check_in_activities` 整表与 13 个业务字段（含必需的 `release_quantity`），且自带 8 处 Duplicate column。可用的单文件合并版是 `database/full_init.sql`。
 
 ### 11.2 后端（sinan-nft-backend）
 
