@@ -40,9 +40,8 @@ const filters = [
 
 const actionMap = {
   markPaid: { title: '标记已支付', msg: '补单确认：标记后订单进入已支付状态并发放藏品。', type: 'warning' },
-  complete: { title: '完成订单', msg: '确认将订单标记为已完成？', type: 'warning' },
   cancel: { title: '取消订单', msg: '确认取消该订单？取消后库存回滚。', type: 'error' },
-  applyRefund: { title: '转退款', msg: '确认将该订单转入退款流程？', type: 'warning' }
+  refund: { title: '转退款', msg: '确认将该订单转入退款流程？', type: 'warning' }
 }
 
 function openDetail(o) {
@@ -50,13 +49,17 @@ function openDetail(o) {
   drawerShow.value = true
 }
 
+const tableRef = ref(null)
+
 async function onAction(action) {
   const cfg = actionMap[action]
   await ElMessageBox.confirm(cfg.msg, cfg.title, { type: cfg.type })
   const res = await orderAction(detail.value.id, action)
   if (res.code === 0) {
-    detail.value.status = res.data
-    ElMessage.success('操作成功')
+    ElMessage.success(res.message || '操作成功')
+    // 状态由后端流转（completed → refunding 等），关闭抽屉并回读列表，避免本地状态失真
+    drawerShow.value = false
+    tableRef.value?.refresh()
   }
 }
 
@@ -67,7 +70,7 @@ function onExport() {
 
 <template>
   <div class="adm-page">
-    <AdminTablePage :fetch="getOrderList" :filters="filters" search-placeholder="搜索订单号 / 用户 / 藏品">
+    <AdminTablePage ref="tableRef" :fetch="getOrderList" :filters="filters" search-placeholder="搜索订单号 / 用户 / 藏品">
       <template #extra>
         <el-button :icon="Download" @click="onExport">导出报表</el-button>
       </template>
@@ -150,9 +153,9 @@ function onExport() {
             <el-button type="danger" plain @click="onAction('cancel')">取消订单</el-button>
             <el-button type="primary" @click="onAction('markPaid')">标记已支付</el-button>
           </template>
-          <template v-else-if="detail.status === 'paid'">
-            <el-button type="warning" plain @click="onAction('applyRefund')">转退款</el-button>
-            <el-button type="primary" @click="onAction('complete')">完成订单</el-button>
+          <!-- 与后端 OrderController::refund 同口径：已完成且非市场单可转退款（市场单涉买卖双方结算） -->
+          <template v-else-if="detail.status === 'completed' && detail.source !== 'market'">
+            <el-button type="warning" plain @click="onAction('refund')">转退款</el-button>
           </template>
           <template v-else-if="detail.status === 'abnormal'">
             <el-button type="danger" plain @click="onAction('cancel')">取消订单</el-button>

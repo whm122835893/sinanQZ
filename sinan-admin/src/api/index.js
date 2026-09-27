@@ -18,7 +18,7 @@ const RESALE_STATUS = { selling: 'onsale', sold: 'sold', cancelled: 'cancelled' 
 const TRANSFER_STATUS = { pending: 'pending', accepted: 'completed', rejected: 'rejected', cancelled: 'revoked' }
 const ORDER_STATUS_MAP = { pending: 'pending', completed: 'completed', cancelled: 'cancelled', refunding: 'refunding', refunded: 'refunded' }
 // 钱包流水 trans_type → 前端语义（consume 对应 buy）
-const TX_TYPE_MAP = { recharge: 'recharge', reward: 'reward', buy: 'consume', withdraw: 'withdraw' }
+const TX_TYPE_MAP = { recharge: 'recharge', reward: 'reward', buy: 'consume', withdraw: 'withdraw', refund: 'refund' }
 
 // 类目名 → ID（后端按 category_id 存储；种子数据约定 1水墨 2国潮 3限定）
 const CATEGORY_NAME_TO_ID = { 水墨: 1, 国潮: 2, 限定: 3, 青铜: 2 }
@@ -340,6 +340,7 @@ const adaptCollectible = (c) => ({
   availablePool: n(c.availablePool),
   isTransferable: n(c.isTransferable) === 1,
   isResaleable: n(c.isResaleable) === 1,
+  isBuyRequestEnabled: n(c.isBuyRequestEnabled) === 1,
   resalePriceMode: n(c.resalePriceMode),   // 0=不限价 1=固定价 2=区间价
   resalePriceMin: c.resalePriceMin,
   resalePriceMax: c.resalePriceMax,
@@ -925,7 +926,7 @@ export async function getOrderList(params) {
         orderNo: s(o.orderNo),
         userId: n(o.userId),
         userName: s(o.username),
-        userPhone: '',
+        userPhone: s(o.phone),
         collectibleId: n(o.collectibleId),
         collectibleName: s(o.collectibleName),
         quantity: n(o.quantity),
@@ -973,7 +974,7 @@ export async function getRefundList(params) {
           orderNo: s(r.orderNo || rf.orderNo),
           userId: n(rf.userId),
           userName: s(r.username),
-          userPhone: '',
+          userPhone: s(r.phone),
           collectibleName: s(r.collectibleName),
           amount: n(rf.amount),
           reason: s(rf.reason),
@@ -1970,9 +1971,12 @@ export function removeQualificationWhitelist(qualificationId, whitelistId) {
 // ============================================================
 
 export async function getWalletTransactions(params) {
-  // 类型筛选：前端语义 → 后端枚举（consume→buy；退款入账属 reward 不单列）
+  // 类型筛选：前端语义 → 后端入参名与枚举（后端只认 transType；consume→buy，退款入账为独立 refund 类型）
   const query = { ...params }
-  if (query.type === 'consume') query.type = 'buy'
+  if (query.type) {
+    query.transType = query.type === 'consume' ? 'buy' : query.type
+    delete query.type
+  }
   const res = await get('/wallet/transactions', query)
   if (res.code !== 0) return res
   const d = res.data || {}
