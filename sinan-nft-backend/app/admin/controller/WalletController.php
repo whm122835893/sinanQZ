@@ -55,7 +55,7 @@ class WalletController extends BaseController
 
         $query = Db::name('wallet_transactions')->alias('t');
         $transType = (string) $this->request->param('transType', '');
-        if ($transType !== '' && in_array($transType, ['recharge', 'buy', 'withdraw', 'reward'], true)) {
+        if ($transType !== '' && in_array($transType, ['recharge', 'buy', 'withdraw', 'reward', 'refund'], true)) {
             $query->where('t.trans_type', $transType);
         }
         $userId = $this->positiveInt('userId');
@@ -196,11 +196,12 @@ class WalletController extends BaseController
         $feeTotal     = (float) Db::name('resale_listings')->where('status', 'sold')->sum('fee_amount');
         $rechargeTotal = (float) Db::name('wallet_transactions')->where('trans_type', 'recharge')->where('direction', 1)->sum('amount');
         $rewardTotal  = (float) Db::name('wallet_transactions')->where('trans_type', 'reward')->where('direction', 1)->sum('amount');
+        $refundTotal  = (float) Db::name('wallet_transactions')->where('trans_type', 'refund')->where('direction', 1)->sum('amount');
         $withdrawTotal = (float) Db::name('wallet_transactions')->where('trans_type', 'withdraw')->where('direction', 2)->sum('amount');
         $buyTotal     = (float) Db::name('wallet_transactions')->where('trans_type', 'buy')->where('direction', 2)->sum('amount');
 
         $left  = round($balanceTotal + $feeTotal + $withdrawTotal, 2);
-        $right = round($rechargeTotal + $rewardTotal, 2);
+        $right = round($rechargeTotal + $rewardTotal + $refundTotal, 2);
         $diff  = round($left - $right, 2);
         $conserved = abs($diff) < 0.01;
 
@@ -242,12 +243,13 @@ class WalletController extends BaseController
             })->count();
 
         $result = [
-            'formula' => '用户余额总和 + 平台手续费 + 已提现 = 总充值 + 总奖励收入',
+            'formula' => '用户余额总和 + 平台手续费 + 已提现 = 总充值 + 总奖励收入 + 退款入账',
             'balanceTotal'   => round($balanceTotal, 2),
             'feeTotal'       => round($feeTotal, 2),
             'withdrawTotal'  => round($withdrawTotal, 2),
             'rechargeTotal'  => round($rechargeTotal, 2),
             'rewardTotal'    => round($rewardTotal, 2),
+            'refundTotal'    => round($refundTotal, 2),
             'buyTotal'       => round($buyTotal, 2),
             'left'           => $left,
             'right'          => $right,

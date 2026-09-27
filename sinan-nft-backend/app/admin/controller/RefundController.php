@@ -299,7 +299,7 @@ class RefundController extends BaseController
                 ->update(['updated_at' => $now]);
             Db::name('wallet_transactions')->insert([
                 'user_id'       => $refund['user_id'],
-                'trans_type'    => 'reward',
+                'trans_type'    => 'refund',
                 'title'         => '订单退款入账',
                 'direction'     => 1,
                 'amount'        => $refund['amount'],

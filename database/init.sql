@@ -158,7 +158,7 @@ CREATE TABLE `nft_wallets` (
 CREATE TABLE `nft_wallet_transactions` (
   `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `user_id`       BIGINT UNSIGNED NOT NULL                COMMENT '用户ID，FK→nft_users.id',
-  `trans_type`    ENUM('recharge','buy','withdraw','reward') NOT NULL COMMENT '交易类型：recharge充值/buy消费/withdraw提现/reward奖励',
+  `trans_type`    ENUM('recharge','buy','withdraw','reward','refund') NOT NULL COMMENT '交易类型：recharge充值/buy消费/withdraw提现/reward奖励(发放·结算)/refund订单退款入账',
   `title`         VARCHAR(64)     NOT NULL                COMMENT '明细标题',
   `direction`     TINYINT         NOT NULL                COMMENT '资金方向：1收入 2支出',
   `amount`        DECIMAL(12,2)   NOT NULL                COMMENT '金额（绝对值）',

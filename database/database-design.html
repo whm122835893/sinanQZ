@@ -181,10 +181,10 @@ const T=[
  ix:['UNIQUE uk_user(user_id)']},
 
 {d:'U',t:'wallet_transactions',cn:'钱包流水表',tag:'patch',ty:'流水/日志',src:'Wallet.vue 交易明细（补回）',
- desc:'纯日志表（无 updated_at）。充值/消费/提现/奖励四类，记录余额快照便于对账。',
+ desc:'纯日志表（无 updated_at）。充值/消费/提现/奖励/退款五类，记录余额快照便于对账。',
  f:[['id','BIGINT UNSIGNED AI','PK','—','主键','规范'],
  ['user_id','BIGINT UNSIGNED','必填','—','FK→users.id','—'],
- ['trans_type','ENUM(recharge,buy,withdraw,reward)','必填','—','充值/消费/提现/奖励','Mock·type recharge/buy/withdraw'],
+ ['trans_type','ENUM(recharge,buy,withdraw,reward,refund)','必填','—','充值/消费/提现/奖励(发放·结算)/退款','Mock·type recharge/buy/withdraw'],
  ['title','VARCHAR(64)','必填','—','明细标题','Mock·title 账户充值/购买《司南·青铜纹样》'],
  ['direction','TINYINT','必填','—','1收入 2支出','Mock·amount +2,000.00 符号拆分'],
  ['amount','DECIMAL(12,2)','必填','—','金额（绝对值）','Mock·amount'],

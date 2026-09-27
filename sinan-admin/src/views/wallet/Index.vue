@@ -17,7 +17,8 @@ const filters = [
       { value: 'recharge', label: '充值' },
       { value: 'consume', label: '消费' },
       { value: 'reward', label: '奖励' },
-      { value: 'withdraw', label: '提现' }
+      { value: 'withdraw', label: '提现' },
+      { value: 'refund', label: '退款' }
     ]
   }
 ]

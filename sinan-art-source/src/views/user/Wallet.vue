@@ -32,7 +32,7 @@ async function fetchRecords() {
   const res = await request.get('/wallet/transactions', { params: { page: 1, pageSize: 20 } })
   records.value = (res.list || []).map((t) => ({
     id: t.id,
-    type: t.transType, // recharge充值 / buy消费 / withdraw提现 / reward奖励
+    type: t.transType, // recharge充值 / buy消费 / withdraw提现 / reward奖励 / refund退款
     title: t.title,
     time: String(t.createdAt || '').slice(0, 16),
     amount: (t.direction === 'in' ? '+' : '-') + fmt(t.amount),
@@ -58,7 +58,7 @@ onMounted(() => {
 
 function toggleVisible() { visible.value = !visible.value }
 
-const icons = { recharge: 'wallet', buy: 'cube', withdraw: 'horn', reward: 'gift' }
+const icons = { recharge: 'wallet', buy: 'cube', withdraw: 'horn', reward: 'gift', refund: 'wallet' }
 
 // ---- 充值（真实接口：POST /api/wallet/recharge，模拟入账）----
 const showRecharge = ref(false)
@@ -244,6 +244,7 @@ function action(name) {
   &.is-buy { background: $color-primary; }
   &.is-withdraw { background: #E8A33D; }
   &.is-reward { background: #9B59F0; }
+  &.is-refund { background: #5A7A9B; }
 }
 .wallet-records__info { flex: 1; min-width: 0; }
 .wallet-records__name { margin: 0 0 4px; font-size: 14px; color: $color-text-primary; @include ellipsis; }

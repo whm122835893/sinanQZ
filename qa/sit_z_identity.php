@@ -3,9 +3,9 @@
  *  资金恒等式：∑(balance) = ∑(充值) - ∑(消费) - ∑(提现)
  *    前提：任何「直接 SQL 写余额」的夹具都必须经 qa_seed_wallet_ledger() 补一条 recharge 开账流水
  *    （与 sit_baseline_reset 同一口径）；缺了这一步夹具就会自己把恒等式打穿。
- *    注：trans_type 枚举只有 recharge/buy/withdraw/reward，法币退款与求购结算被记为 reward，
- *    与「司南币发放」同名。Z1-1 用「法币入账必带 biz_no」把两者分开，Z1-2 守住这条口径；
- *    这是权宜之计——彻底解法见审查报告的 ledger 建模建议（给枚举加 refund/settlement）。
+ *    注：法币入账自 wallet_refund_trans_type_upgrade.sql 起分两类：refund=订单退款入账、
+ *    reward+biz_no=寄售/求购成交结算；纯积分发放是不带 biz_no 的 reward。
+ *    Z1-1 按此口径把两类法币入账都计入收入侧，Z1-2 守住「reward 不得再混入退款」这条口径。
  *    direction 口径为 1=收入 2=支出（与表注释及全部写入点一致）
  *  库存恒等式：edition ≥ circulate ≥ sold；发行类完成订单量 ≤ sold（夹具会删订单，只能单向）
  *  盲盒恒等式：逐盒 opened_count == 奖池 quantity_distributed 汇总
@@ -24,13 +24,16 @@ $wallets=(float)q1("SELECT COALESCE(SUM(balance),0) FROM nft_wallets");
 $recharges=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='recharge' AND direction=1");
 $consumes=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='buy' AND direction=2");
 $withdraw=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='withdraw' AND direction=2");
-// trans_type 枚举只有 recharge/buy/withdraw/reward：法币入账（退款、求购成交结算）被迫记成 reward，
-// 而司南币发放也是 reward。两者靠「法币入账必带 biz_no」区分（产品写入点全部遵守；缺 biz_no 的 reward 一律是积分）。
-$fiatCredits=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type='reward' AND direction=1 AND biz_no IS NOT NULL");
+// 法币入账两类：refund=订单退款入账；reward 且带 biz_no=寄售/求购成交结算。
+// 司南币发放也是 reward，但不带 biz_no（它记的是 points 快照，不入法币余额）。
+$fiatCredits=(float)q1("SELECT COALESCE(SUM(amount),0) FROM nft_wallet_transactions WHERE trans_type IN ('reward','refund') AND direction=1 AND biz_no IS NOT NULL");
 $diff=round($recharges + $fiatCredits - $consumes - $withdraw - $wallets, 2);
 T('Z1-1 全库余额 = 充值+法币入账-消费-提现（差异≤0.01）', abs($diff)<=0.01, "wallet=$wallets rec=$recharges fiatIn=$fiatCredits buy=$consumes wd=$withdraw diff=$diff");
-$orphanFiat=(int)q1("SELECT COUNT(*) FROM nft_wallet_transactions WHERE trans_type='reward' AND direction=1 AND biz_no IS NOT NULL AND title NOT LIKE '%结算%' AND title NOT LIKE '%退款%'");
-T('Z1-2 带 biz_no 的 reward 只能是法币入账（退款/结算），不得混入积分发放', $orphanFiat===0, "违规=$orphanFiat");
+$orphanFiat=(int)q1("SELECT COUNT(*) FROM nft_wallet_transactions WHERE trans_type IN ('reward','refund') AND direction=1 AND biz_no IS NOT NULL AND title NOT LIKE '%结算%' AND title NOT LIKE '%退款%'");
+T('Z1-2 带 biz_no 的 reward/refund 只能是法币入账（退款/结算），不得混入积分发放', $orphanFiat===0, "违规=$orphanFiat");
+// 台账分类口径：退款入账必须归 refund，reward 只留发放与结算（wallet_refund_trans_type_upgrade.sql 回填后的不变量）
+$misclassified=(int)q1("SELECT COUNT(*) FROM nft_wallet_transactions WHERE trans_type='reward' AND title LIKE '%退款%'");
+T('Z1-3 退款入账不得记为 reward（必须 refund）', $misclassified===0, "错记=$misclassified");
 
 echo "\n=== Z2 藏品库存恒等式 ===\n";
 $cols=q("SELECT id,name,edition,sold,circulate FROM nft_collectibles WHERE deleted_at IS NULL");

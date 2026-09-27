@@ -75,7 +75,8 @@ export const WALLET_TYPE = {
   recharge: { label: '充值', type: 'primary' },
   reward:   { label: '奖励', type: 'success' },
   consume:  { label: '消费', type: 'warning' },
-  withdraw: { label: '提现', type: 'danger' }
+  withdraw: { label: '提现', type: 'danger' },
+  refund:   { label: '退款', type: 'info' }
 }
 
 // 配额类型（与后端 quota_type 枚举一致）
