@@ -27,7 +27,7 @@ sinanQZ/
     ├── 002_add_snapshots.sql             # 快照表补建
     ├── announcement_publish_upgrade.sql  # 公告发布状态字段
     ├── artifact_status_upgrade.sql       # 藏品状态字段
-    ├── refund_idempotency_upgrade.sql    # 退款幂等字段
+    ├── refund_idempotency_upgrade.sql    # 退款幂等字段（⚠ 手工补丁：未接入 deploy.sh 与任何合并版，需自行执行）
     ├── payment_method_channel_align.sql  # 支付渠道枚举对齐（还原旧备份后须重放）
     ├── full_init.sql                    # ✅ 合并版（推荐）：80 表，与运行库实测双向零差异
     ├── full_schema_all.sql              # ⚠️ 旧合并版：79 表（缺 26 字段，见下文）
