@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -11,6 +11,8 @@ const router = useRouter()
 const user = useUserStore()
 
 const realNameText = computed(() => (user.userInfo.isRealName ? '已认证' : '未认证'))
+// 实名状态来自缓存，进页拉一次，避免后台过审后仍显示「未认证」
+onMounted(() => user.refreshQuietly())
 
 // 昵称行内编辑（真实接口：PUT /api/user/profile）
 const editingNick = ref(false)

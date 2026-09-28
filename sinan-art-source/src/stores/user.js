@@ -125,6 +125,15 @@ export const useUserStore = defineStore('user', () => {
     return userInfo.value
   }
 
+  // ---- 静默刷新用户态（展示类页面进入时调用）----
+  // isRealName / hasPassword / hasTransactionPassword / realnameStatus 只有这里会更新，
+  // 后台过审、设置操作密码之后不重新拉取就会长期显示旧状态；失败时沿用缓存值，不打扰用户。
+  async function refreshQuietly() {
+    try {
+      await fetchUserInfo()
+    } catch { /* 网络或登录态异常：保持缓存渲染，由具体页面的后续操作再报错 */ }
+  }
+
   // ---- 更新昵称（真实接口：PUT /api/user/profile，昵称 2~20 字）----
   async function updateNickname(nickname) {
     const res = await request.put('/user/profile', { nickname })
@@ -308,7 +317,7 @@ export const useUserStore = defineStore('user', () => {
   return {
     token, userInfo, isLoggedIn, inventory, consignments,
     signState, todaySigned,
-    setToken, setUserInfo, login, sendCode, register, logout, fetchUserInfo, updateNickname,
+    setToken, setUserInfo, login, sendCode, register, logout, fetchUserInfo, refreshQuietly, updateNickname,
     verifyPaymentPassword, ownedCount, fetchInventory, findUserCollectibleId,
     fetchConsignments, consign, cancelConsign, isNoLocked, consignCooldownRemain,
     openBlindbox, transfer, fetchSignCalendar, doSign

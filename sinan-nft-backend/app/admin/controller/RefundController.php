@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
+use app\service\WalletService;
 use think\facade\Db;
 
 /**
@@ -283,13 +284,7 @@ class RefundController extends BaseController
             }
 
             // 3. 资金退回：入账用户余额（余额支付原路退回；三方支付本环境入账余额并留渠道备注）
-            $wallet = Db::name('wallets')->where('user_id', $refund['user_id'])->lock(true)->find();
-            if (!$wallet) {
-                Db::name('wallets')->insert([
-                    'user_id' => $refund['user_id'], 'created_at' => $now, 'updated_at' => $now,
-                ]);
-                $wallet = Db::name('wallets')->where('user_id', $refund['user_id'])->find();
-            }
+            $wallet = WalletService::ensureLocked((int) $refund['user_id']);
             $channel = trim((string) $this->request->param('refund_channel', '')) ?: $refund['refund_no'];
             // M4 修复：inc 替代 Db::raw(float)
             $refundAmount = (float) $refund['amount'];

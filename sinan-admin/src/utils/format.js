@@ -25,6 +25,12 @@ export function fmtNumber(n) {
   return Number(n ?? 0).toLocaleString('zh-CN')
 }
 
+// 钱包流水方向：后端 direction 是 1=收入 / 2=支出 的正数枚举（不是正负号），
+// 判 direction > 0 会让支出/提现行全部显示成「收入 +金额」
+export function isIncome(direction) {
+  return Number(direction) === 1
+}
+
 // 库存池计算（与后端 InventoryService 同公式）
 export function stockPool(c) {
   return (c.edition || 0) - (c.sold || 0) - (c.lockedQuantity || 0)

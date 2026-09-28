@@ -1,4 +1,5 @@
 <script setup>
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -6,6 +7,8 @@ import AppListItem from '@/components/AppListItem.vue'
 
 const router = useRouter()
 const user = useUserStore()
+// 「已认证 / 登录密码 / 操作密码」三处状态都读缓存，进页拉一次最新值
+onMounted(() => user.refreshQuietly())
 </script>
 
 <template>

@@ -5,6 +5,7 @@ namespace app\controller;
 use app\BaseController;
 use app\service\ActivityRewardService;
 use app\service\PaymentService;
+use app\service\WalletService;
 
 use think\facade\Db;
 
@@ -331,7 +332,7 @@ class Orders extends BaseController
 
             // 余额支付：扣钱包 + 写流水
             if ($method === 'balance') {
-                $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
+                $wallet = WalletService::ensureLocked($userId);
                 if ((float) $wallet['available'] < (float) $order['total_price']) {
                     Db::rollback();
                     return $this->fail(4003, '余额不足');
@@ -451,10 +452,7 @@ class Orders extends BaseController
                     }
 
                     // 卖家结算：到账 = 挂单价 - 手续费
-                    $sellerWallet = Db::name('wallets')
-                        ->where('user_id', $listing['seller_id'])
-                        ->lock(true)
-                        ->find();
+                    $sellerWallet = WalletService::ensureLocked((int) $listing['seller_id']);
                     // M4 修复：inc 替代 Db::raw(float)
                     $settleAmount = (float) $listing['actual_amount'];
                     Db::name('wallets')->where('user_id', $listing['seller_id'])

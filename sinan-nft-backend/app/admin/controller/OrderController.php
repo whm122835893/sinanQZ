@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
+use app\service\WalletService;
 use think\facade\Db;
 
 /**
@@ -297,7 +298,7 @@ class OrderController extends BaseController
                     Db::rollback();
                     return $this->fail(4220, '藏品状态异常，过户失败');
                 }
-                $sellerWallet = Db::name('wallets')->where('user_id', $listing['seller_id'])->lock(true)->find();
+                $sellerWallet = WalletService::ensureLocked((int) $listing['seller_id']);
                 $settleAmount = (float) $listing['actual_amount'];
                 Db::name('wallets')->where('user_id', $listing['seller_id'])
                     ->inc('balance', $settleAmount)

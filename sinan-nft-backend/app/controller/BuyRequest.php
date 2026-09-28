@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\BaseController;
+use app\service\WalletService;
 use think\facade\Db;
 
 /**
@@ -232,7 +233,7 @@ class BuyRequest extends BaseController
             $feeAmount    = round($totalPrice * $feeRate / 100, 2);
             $actualAmount = round($totalPrice - $feeAmount, 2);
 
-            $sellerWallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
+            $sellerWallet = WalletService::ensureLocked($userId);
             // M4 修复：inc 替代 Db::raw(float)
             Db::name('wallets')->where('user_id', $userId)
                 ->inc('balance', $actualAmount)

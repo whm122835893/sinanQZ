@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 use app\service\ActivityRewardService;
+use app\service\WalletService;
 
 use think\facade\Db;
 
@@ -82,7 +83,7 @@ class Wallet extends BaseController
 
         Db::startTrans();
         try {
-            $wallet = Db::name('wallets')->where('user_id', $userId)->lock(true)->find();
+            $wallet = WalletService::ensureLocked($userId);
             // M4：用 inc 绑定运算，避免浮点转字符串拼接的精度/分隔符风险
             Db::name('wallets')->where('user_id', $userId)
                 ->inc('balance', $amount)

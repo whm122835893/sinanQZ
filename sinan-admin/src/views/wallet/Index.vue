@@ -4,7 +4,7 @@ import { getWalletTransactions, getWalletStats } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { WALLET_TYPE } from '@/utils/maps'
-import { fmtMoney, fmtNumber } from '@/utils/format'
+import { fmtMoney, fmtNumber, isIncome } from '@/utils/format'
 
 const loading = ref(true)
 const stats = ref(null)
@@ -36,8 +36,8 @@ const exportColumns = [
   { label: '用户', prop: 'userName' },
   { label: '手机号', prop: 'userPhone' },
   { label: '类型', prop: 'type', format: (r) => WALLET_TYPE[r.type]?.label || r.type },
-  { label: '方向', prop: 'direction', format: (r) => (r.direction > 0 ? '收入' : '支出') },
-  { label: '发生额（元）', prop: 'amount', format: (r) => `${r.direction > 0 ? '+' : '-'}${fmtMoney(r.amount)}` },
+  { label: '方向', prop: 'direction', format: (r) => (isIncome(r.direction) ? '收入' : '支出') },
+  { label: '发生额（元）', prop: 'amount', format: (r) => `${isIncome(r.direction) ? '+' : '-'}${fmtMoney(r.amount)}` },
   { label: '余额快照（元）', prop: 'balanceAfter', format: (r) => fmtMoney(r.balanceAfter) },
   { label: '时间', prop: 'createTime' }
 ]
@@ -89,16 +89,16 @@ onMounted(async () => {
 
         <el-table-column label="方向" width="80" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.direction > 0 ? 'success' : 'danger'" effect="plain" size="small" disable-transitions>
-              {{ row.direction > 0 ? '收入' : '支出' }}
+            <el-tag :type="isIncome(row.direction) ? 'success' : 'danger'" effect="plain" size="small" disable-transitions>
+              {{ isIncome(row.direction) ? '收入' : '支出' }}
             </el-tag>
           </template>
         </el-table-column>
 
         <el-table-column label="发生额（元）" width="120" align="right">
           <template #default="{ row }">
-            <span :class="row.direction > 0 ? 't-success' : ''" class="price">
-              {{ row.direction > 0 ? '+' : '-' }}{{ fmtMoney(row.amount) }}
+            <span :class="isIncome(row.direction) ? 't-success' : ''" class="price">
+              {{ isIncome(row.direction) ? '+' : '-' }}{{ fmtMoney(row.amount) }}
             </span>
           </template>
         </el-table-column>
