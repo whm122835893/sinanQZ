@@ -176,6 +176,53 @@ class RealnameFlowTest extends ApiTestCase
         $this->assertNotNull($row['realname_verified_at']);
     }
 
+    /**
+     * 姓名格式：后端与 C 端 Realname.vue 的 /^[\u4e00-\u9fa5·a-zA-Z]{2,15}$/ 同口径
+     * （原先 strlen() 数字节，1 个汉字或 "123456" 都能通过）
+     */
+    public function testRealNameFormatMatchesFrontendRule(): void
+    {
+        $phone = $this->phone();
+        $token = $this->registerAndLogin($phone);
+
+        foreach ([
+            '单个汉字'      => '张',
+            '纯数字'        => '123456',
+            '含空格'        => '张 伟',
+            '含标点'        => '张·伟!@#',
+            '超长 16 字'    => '张'.str_repeat('伟', 15),
+            '空字符串'      => '',
+        ] as $label => $badName) {
+            $res = $this->http('POST', '/api/user/realname', ['realName' => $badName, 'idCard' => self::IDCARD], $token);
+            $this->assertSame(1001, $res['code'], "{$label} 应被拒绝");
+            $this->assertSame('请输入 2-15 位真实姓名', $res['message'], "{$label} 应命中姓名校验");
+        }
+
+        // 被拒的提交不得留下任何审核痕迹（不能先落库再校验）
+        $row = $this->fetch("SELECT real_name, realname_status FROM nft_users WHERE phone = ?", [$phone]);
+        $this->assertSame('', (string) $row['real_name'], '格式非法时不得写入证件');
+        $this->assertSame(0, (int) $row['realname_status']);
+
+        // 合法：2 字中文
+        $data = $this->assertOk(
+            $this->http('POST', '/api/user/realname', ['realName' => '张三', 'idCard' => self::IDCARD], $token),
+            '「张三」应通过'
+        );
+        $this->assertSame('pending', $data['status']);
+
+        // 含中文间隔号的少数民族姓名（另一个账号，避免撞上「审核中不得重复提交」）
+        $phone2 = $this->phone();
+        $token2 = $this->registerAndLogin($phone2);
+        $data = $this->assertOk(
+            $this->http('POST', '/api/user/realname', ['realName' => ' 阿卜杜拉·买买提 ', 'idCard' => self::IDCARD], $token2),
+            '「阿卜杜拉·买买提」应通过'
+        );
+        $this->assertSame('pending', $data['status']);
+
+        $stored = aes_decrypt((string) $this->fetch("SELECT real_name FROM nft_users WHERE phone = ?", [$phone2])['real_name']);
+        $this->assertSame('阿卜杜拉·买买提', $stored, '前后空格应被 trim 掉');
+    }
+
     public function testInvalidAuditModeRejected(): void
     {
         $admin = $this->adminLogin();

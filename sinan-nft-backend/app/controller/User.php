@@ -114,10 +114,14 @@ class User extends BaseController
             return $this->fail(1001, '实名认证审核中，请耐心等待');
         }
 
-        $realName = $this->request->post('realName', '');
-        $idCard   = $this->request->post('idCard', '');
+        $realName = trim((string) $this->request->post('realName', ''));
+        $idCard   = trim((string) $this->request->post('idCard', ''));
 
-        if (strlen($realName) < 2) return $this->fail(1001, '真实姓名不能为空');
+        // 与 C 端 Realname.vue 的 /^[\u4e00-\u9fa5·a-zA-Z]{2,15}$/ 同口径。
+        // 原先用 strlen() 数字节：1 个汉字（3 字节）甚至 "123456" 都能通过，两端规则各判一次
+        if (!preg_match('/^[\x{4e00}-\x{9fa5}\x{00B7}a-zA-Z]{2,15}$/u', $realName)) {
+            return $this->fail(1001, '请输入 2-15 位真实姓名');
+        }
         if (!preg_match('/^[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/', $idCard)) {
             return $this->fail(1001, '身份证号格式错误');
         }
