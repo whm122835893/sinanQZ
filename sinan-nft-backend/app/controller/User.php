@@ -103,20 +103,23 @@ class User extends BaseController
         $userId = $this->userId();
         if (!$userId) return $this->fail(2001, '未登录');
 
+        $user = Db::name('users')->where('id', $userId)->find();
+        if (!$user) return $this->fail(2001, '登录状态已失效，请重新登录');
+
+        // 实名信息一经审核通过即与账号身份绑定，任何入口都不得再改（后台只读，客服走人工变更）
+        if ((int) $user['is_realname'] === 1 && (int) $user['realname_status'] === 2) {
+            return $this->fail(1001, '实名认证已通过，实名信息不可修改，如需变更请联系客服');
+        }
+        if ((int) ($user['realname_status'] ?? 0) === 1) {
+            return $this->fail(1001, '实名认证审核中，请耐心等待');
+        }
+
         $realName = $this->request->post('realName', '');
         $idCard   = $this->request->post('idCard', '');
 
         if (strlen($realName) < 2) return $this->fail(1001, '真实姓名不能为空');
         if (!preg_match('/^[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/', $idCard)) {
             return $this->fail(1001, '身份证号格式错误');
-        }
-
-        $user = Db::name('users')->where('id', $userId)->find();
-        if ((int) $user['is_realname'] === 1 && (int) $user['realname_status'] === 2) {
-            return $this->fail(1001, '已完成实名认证');
-        }
-        if ((int) ($user['realname_status'] ?? 0) === 1) {
-            return $this->fail(1001, '实名认证审核中，请耐心等待');
         }
 
         // 审核模式开关（后台「全局参数」realname_audit_mode，实时生效）：

@@ -69,6 +69,54 @@ class RealnameFlowTest extends ApiTestCase
         $this->assertNotSame('请先完成实名认证', $after['message']);
     }
 
+    /**
+     * 实名信息一经审核通过即与账号身份绑定，任何入口都不得再改
+     */
+    public function testApprovedRealnameCannotBeChanged(): void
+    {
+        $phone = $this->phone();
+        $uid   = fn () => (int) $this->fetch("SELECT id FROM nft_users WHERE phone = ?", [$phone])['id'];
+        $token = $this->registerAndLogin($phone);
+        $this->assertOk(
+            $this->http('POST', '/api/user/realname', ['realName' => self::NAME, 'idCard' => self::IDCARD], $token),
+            '提交实名'
+        );
+
+        $admin = $this->adminLogin();
+        $this->assertOk(
+            $this->http('POST', '/admin/realname/audit', ['user_id' => $uid(), 'action' => 'approve'], $admin),
+            '管理员审核通过'
+        );
+
+        $before = $this->fetch("SELECT real_name, id_card, is_realname, realname_status FROM nft_users WHERE id = ?", [$uid()]);
+        $this->assertNotEmpty($before['real_name']);
+
+        // 换一套材料重新提交：必须拒绝，且密文原封不动
+        $res = $this->http('POST', '/api/user/realname', [
+            'realName' => '冒用姓名', 'idCard' => '310101198801011234',
+        ], $token);
+        $this->assertSame(1001, $res['code'], '已实名用户重新提交应被拒绝');
+        $this->assertSame('实名认证已通过，实名信息不可修改，如需变更请联系客服', $res['message']);
+
+        $after = $this->fetch("SELECT real_name, id_card, is_realname, realname_status FROM nft_users WHERE id = ?", [$uid()]);
+        $this->assertSame($before['real_name'], $after['real_name'], '姓名密文不得被覆盖');
+        $this->assertSame($before['id_card'], $after['id_card'], '身份证密文不得被覆盖');
+        $this->assertSame(1, (int) $after['is_realname'], '实名能力不得被撤销');
+        $this->assertSame(2, (int) $after['realname_status'], '工作流态不得回退到待审核');
+
+        // 自动通过模式同样不得绕过该限制
+        $this->assertOk(
+            $this->http('PUT', '/admin/system/configs/realname_audit_mode', ['config_value' => 'auto'], $admin),
+            '切换自动审核'
+        );
+        $res = $this->http('POST', '/api/user/realname', [
+            'realName' => '冒用姓名', 'idCard' => '310101198801011234',
+        ], $token);
+        $this->assertSame(1001, $res['code'], 'auto 模式下已实名用户同样拒绝');
+        $after = $this->fetch("SELECT real_name, id_card FROM nft_users WHERE id = ?", [$uid()]);
+        $this->assertSame($before['real_name'], $after['real_name']);
+    }
+
     public function testAdminRejectThenResubmit(): void
     {
         $phone = $this->phone();
@@ -91,9 +139,19 @@ class RealnameFlowTest extends ApiTestCase
         $this->assertSame(3, $profile['realnameStatus']);
         $this->assertSame('证件照片模糊', $profile['realnameRejectReason']);
 
+        // 能力位与工作流态必须成对（qa 夹具当年只写 is_realname，C 端两页就自相矛盾）：
+        // 驳回即收回交易能力，realname_status=3 供后台「已驳回」列表与 C 端驳回原因取数
+        $row = $this->fetch("SELECT is_realname, realname_status FROM nft_users WHERE id = ?", [$uid()]);
+        $this->assertSame(0, (int) $row['is_realname'], '驳回后应失去实名能力');
+        $this->assertSame(3, (int) $row['realname_status'], '驳回后工作流态应为已驳回');
+
         // 重新提交 → 再次进入待审核
         $res = $this->http('POST', '/api/user/realname', ['realName' => self::NAME, 'idCard' => self::IDCARD], $token);
         $this->assertSame('pending', $this->assertOk($res, '重新提交')['status']);
+
+        $row = $this->fetch("SELECT is_realname, realname_status FROM nft_users WHERE id = ?", [$uid()]);
+        $this->assertSame(0, (int) $row['is_realname'], '待审核期间不应有实名能力');
+        $this->assertSame(1, (int) $row['realname_status'], '重新提交应回到待审核');
     }
 
     public function testAutoModeApprovesImmediately(): void

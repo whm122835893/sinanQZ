@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import request from '@/utils/request'
@@ -14,11 +14,18 @@ const user = useUserStore()
 
 // 实名状态（后端 realnameStatus）：0未提交 1待审核 2已通过 3已驳回
 const status = computed(() => user.userInfo.realnameStatus ?? 0)
-// 已认证则默认展示认证结果；驳回时展示原因并允许重新提交
-const editing = ref(status.value !== 2)
+// 后端只对「未提交 / 已驳回」放行提交：待审核与已认证都拒绝，所以这两种状态展示结果页而不是表单
+const canEdit = (s) => s === 0 || s === 3
+const editing = ref(canEdit(status.value))
 const realName = ref('')
 const idCard = ref('')
 const submitting = ref(false)
+
+// realnameStatus 来自缓存：进页拉一次最新审核结果，用户还没开始填写时复位到对应视图
+onMounted(async () => {
+  await user.refreshQuietly()
+  if (!realName.value && !idCard.value) editing.value = canEdit(status.value)
+})
 
 const nameValid = computed(() => /^[\u4e00-\u9fa5·a-zA-Z]{2,15}$/.test(realName.value.trim()))
 const idValid = computed(() => /^\d{17}[\dXx]$/.test(idCard.value.trim()))
@@ -57,9 +64,6 @@ async function onSubmit() {
     submitting.value = false
   }
 }
-function onEdit() {
-  editing.value = true
-}
 </script>
 
 <template>
@@ -89,7 +93,8 @@ function onEdit() {
       </div>
 
       <div v-if="status === 2" class="realname-actions">
-        <AppButton type="outline" @click="onEdit">修改认证信息</AppButton>
+        <p class="realname-actions__tip">实名认证已通过，实名信息不可修改</p>
+        <AppButton type="outline" @click="router.push('/user/service')">联系客服</AppButton>
       </div>
     </template>
 
@@ -124,7 +129,7 @@ function onEdit() {
         <h3 class="realname-notice__title">认证须知</h3>
         <p>1. 实名信息须与本人身份证件一致，虚假信息将导致提现失败。</p>
         <p>2. 平台采用加密存储，不会向第三方泄露您的实名信息。</p>
-        <p>3. 每个账号仅可绑定一个实名身份，认证后如需修改请联系客服。</p>
+        <p>3. 每个账号仅可绑定一个实名身份，认证通过后实名信息不可修改，如需变更请联系客服。</p>
       </div>
     </template>
   </div>
@@ -168,5 +173,8 @@ function onEdit() {
     .fail { color: #e54d42; }
   }
 }
-.realname-actions { padding: 20px 16px 0; }
+.realname-actions {
+  padding: 20px 16px 0;
+  &__tip { margin: 0 0 14px; font-size: 12px; text-align: center; color: $color-text-tertiary; }
+}
 </style>
