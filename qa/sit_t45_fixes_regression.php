@@ -65,7 +65,7 @@ if($oldIds){$oldIds=implode(',',array_column($oldIds,'id'));
 T('R0.1 用户A/B注册',( $uidA>0 && $uidB>0 ),"uidA=$uidA uidB=$uidB");
 // 实名 + 交易密码 + 钱包
 $tradeHash=password_hash('Trade#2026',PASSWORD_BCRYPT);
-exe("UPDATE nft_users SET is_realname=1, transaction_password='$tradeHash' WHERE id IN ($uidA,$uidB)");
+exe("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$tradeHash' WHERE id IN ($uidA,$uidB)");
 foreach([$uidA,$uidB] as $u){
   exe("DELETE FROM nft_wallets WHERE user_id=$u");
   exe("DELETE FROM nft_wallet_transactions WHERE user_id=$u");

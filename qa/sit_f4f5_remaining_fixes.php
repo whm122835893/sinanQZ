@@ -62,7 +62,7 @@ exe("DELETE FROM nft_verification_codes WHERE phone LIKE '139000081%'");
 [$uidB,$tokB]=regUser('13900008102','修复回归B');
 T('R0.1 用户A/B注册',($uidA>0&&$uidB>0),"uidA=$uidA uidB=$uidB");
 $tradeHash=password_hash('Trade#2026',PASSWORD_BCRYPT);
-exe("UPDATE nft_users SET is_realname=1, transaction_password='$tradeHash' WHERE id IN ($uidA,$uidB)");
+exe("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$tradeHash' WHERE id IN ($uidA,$uidB)");
 foreach([$uidA,$uidB] as $u){
   exe("DELETE FROM nft_wallets WHERE user_id=$u");
   exe("DELETE FROM nft_wallet_transactions WHERE user_id=$u");
@@ -170,7 +170,7 @@ T('DC03.10 已消耗资产不可重复分解', $r['code']!==0, "code={$r['code']
 
 echo "\n=== RF11 中签人数=winner_count ===\n";
 [$uidC,$tokC]=regUser('13900008103','修复回归C');
-exe("UPDATE nft_users SET is_realname=1, transaction_password='$tradeHash' WHERE id=$uidC");
+exe("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$tradeHash' WHERE id=$uidC");
 // 新表结构：draw_code 体系列 + max_wins_per_user（无 limit_per_user 列）
 exe("INSERT INTO nft_raffle_activities (collectible_id,name,description,ticket_price,draw_code_enabled,draw_code_price,buy_code_limit,
      winner_count,max_wins_per_user,sale_quantity,sale_price,registration_start,registration_end,draw_time,purchase_start,purchase_end,status,created_at,updated_at)

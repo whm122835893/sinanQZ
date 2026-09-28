@@ -123,8 +123,10 @@ $seedUsers = [
     ['13999990009', '尾九A', 1, 0, $now],          // 尾号9（软删除 → 排除）
 ];
 $st = $PDO->prepare("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,password,status,is_blacklisted,deleted_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+// 第三个参数是"是否实名通过"，realname_status 必须由它推出（通过=2，未提交=0），
+// 直接复用会让"实名通过"的夹具用户变成 realname_status=1（待审核）
 foreach ($seedUsers as $i => $u) {
-    $st->execute([$u[0], $u[1], '', 'E' . str_pad((string)($i + 1), 5, '0', STR_PAD_LEFT), 'EC' . $i . 'X', $u[2], $u[2], $pwd, 1, 0, null, $u[4], $u[4]]);
+    $st->execute([$u[0], $u[1], '', 'E' . str_pad((string)($i + 1), 5, '0', STR_PAD_LEFT), 'EC' . $i . 'X', $u[2], $u[2] ? 2 : 0, $pwd, 1, 0, null, $u[4], $u[4]]);
 }
 $PDO->exec("UPDATE nft_users SET deleted_at='$now' WHERE phone='13999990009'");     // 尾九A → 软删除
 $PDO->exec("UPDATE nft_users SET is_blacklisted=1 WHERE phone='13977770027'");      // 尾七C → 黑名单

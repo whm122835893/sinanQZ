@@ -11,7 +11,7 @@ $CACHE_DIR=getenv('QA_RUNTIME_CACHE') ?: dirname(__DIR__) . '/sinan-nft-backend/
 $CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // 确保冒烟用户 id=1/2/3 实名 + 交易密码，签到用户 id=4/6/7/8 就绪
 $pwdHash='$2y$12$MOtq8as9FfrvOSoK1LOjCusHuC9Y8Qc7ydjTyaZUIkBpfcTrX81fW'; // password_hash('Trade#2026', PASSWORD_BCRYPT)
-$PDO->exec("UPDATE nft_users SET is_realname=1, transaction_password='$pwdHash' WHERE id IN (1,2,3)");
+$PDO->exec("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$pwdHash' WHERE id IN (1,2,3)");
 // 给冒烟用户补钱包（列名对齐实际表结构；已有钱包但可用不足时补足，保证 QF 购买用例有资金）
 // 补足走 recharge 开账流水：保证 Z1-1 全库恒等式（balance = 充值-消费-提现）不因夹具注资而破坏
 foreach([1,2,3] as $uid){
@@ -493,10 +493,10 @@ $ldD=$r['data']['id']??0;
 http('POST','/admin/marketing/lucky',['activity_id'=>$ldD,'prizes'=>[['tier_name'=>'实名专享','prize_type'=>'points','coin_amount'=>3,'total'=>10,'probability'=>1.0]]],$atok);
 http('POST','/admin/marketing/lucky-activity',['id'=>$ldD,'name'=>'SIT抽奖D','status'=>1,'eligibility_type'=>'realname','grant_mode'=>'realtime'],$atok);
 http('POST','/admin/marketing/lucky-activity',['id'=>$ldC,'name'=>'SIT抽奖C','status'=>0],$atok);
-exe("UPDATE nft_users SET is_realname=0 WHERE id=$U8"); // 确保 $U8 非实名（id=8 漂移不存在，原 UPDATE 0 行无效致 user8 仍实名→3003）
+exe("UPDATE nft_users SET is_realname=0, realname_status=0 WHERE id=$U8"); // 确保 $U8 非实名（id=8 漂移不存在，原 UPDATE 0 行无效致 user8 仍实名→3003）
 $r=http('POST','/api/lucky-draw/draw',[],$tok['8']);
 T('TC-LD09a 非实名抽奖被拒3002', ($r['code']??0)===3002, "code={$r['code']} msg={$r['message']}");
-exe("UPDATE nft_users SET is_realname=1 WHERE id=$U8"); // 恢复实名，避免污染后续用例
+exe("UPDATE nft_users SET is_realname=1, realname_status=2 WHERE id=$U8"); // 恢复实名，避免污染后续用例
 exe("DELETE FROM nft_lucky_draw_chances WHERE user_id=1");
 $r=http('POST','/api/lucky-draw/draw',[],$tok['1']);
 T('TC-LD09b 实名用户可抽', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");

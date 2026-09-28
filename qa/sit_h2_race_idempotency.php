@@ -114,10 +114,11 @@ $USERS = [ // phone => balance
   '15200000007' => 100.00, // SYN 合成
 ];
 $i = 0; $vals = [];
+// 实名位必须成对（is_realname=1 ↔ realname_status=2），只写前者会让后台实名列表与用户列表自相矛盾
 foreach ($USERS as $ph => $bal) {
-  $vals[] = "('$ph','H2-$i','','UH2" . str_pad((string)$i,4,'0',STR_PAD_LEFT) . "','IH2$i',1,'$hash')"; $i++;
+  $vals[] = "('$ph','H2-$i','','UH2" . str_pad((string)$i,4,'0',STR_PAD_LEFT) . "','IH2$i',1,2,'$hash')"; $i++;
 }
-exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,transaction_password) VALUES " . implode(',', $vals));
+exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,transaction_password) VALUES " . implode(',', $vals));
 $uids = [];
 foreach (q("SELECT id,phone FROM nft_users WHERE phone LIKE '1520000%'") as $u) $uids[$u['phone']] = (int)$u['id'];
 $wvals = [];

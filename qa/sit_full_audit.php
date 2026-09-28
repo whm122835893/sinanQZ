@@ -68,7 +68,7 @@ if(v("SELECT COUNT(*) FROM nft_artifacts WHERE id=1")==0){
 }
 T('0.2 测试用户甲/乙/丙注册', $uidA>0&&$uidB>0&&$uidC>0, "A=$uidA B=$uidB C=$uidC");
 $th=password_hash('Trade#2026',PASSWORD_BCRYPT);
-exe("UPDATE nft_users SET is_realname=1, transaction_password='$th' WHERE id IN ($uidA,$uidB,$uidC)");
+exe("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$th' WHERE id IN ($uidA,$uidB,$uidC)");
 foreach([$uidA,$uidB,$uidC] as $u){exe("DELETE FROM nft_wallets WHERE user_id=$u");
   exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,points,created_at,updated_at) VALUES ($u,100000,100000,0,0,NOW(),NOW())");
   exe("INSERT INTO nft_wallet_transactions (user_id,trans_type,title,direction,amount,balance_after,created_at) VALUES ($u,'recharge','审计开账',1,100000,100000,NOW())");}

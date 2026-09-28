@@ -51,8 +51,8 @@ foreach (['nft_wallet_transactions', 'nft_payments', 'nft_orders', 'nft_wallets'
 }
 exe("DELETE FROM nft_users WHERE phone LIKE '1580000%'");
 exe("DELETE FROM nft_collectibles WHERE name LIKE 'T77-%'");
-exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,transaction_password,created_at,updated_at)
-     VALUES ('$PHONE','T77探针','','T7700001','T7700001',1,'$hash',NOW(3),NOW(3))");
+exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,transaction_password,created_at,updated_at)
+     VALUES ('$PHONE','T77探针','','T7700001','T7700001',1,2,'$hash',NOW(3),NOW(3))");
 $uid = (int) v("SELECT id FROM nft_users WHERE phone='$PHONE'");
 exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,points) VALUES ($uid,1000.00,1000.00,0.00,0.00)");
 qa_seed_wallet_ledger($PDO, [$uid]);

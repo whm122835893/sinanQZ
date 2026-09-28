@@ -160,11 +160,12 @@ $PHONES = ['15400000000' => 'SYN1', '15400000001' => 'SYN3', '15400000002' => 'D
            '15400000003' => 'DECD1', '15400000004' => 'DECD2', '15400000005' => 'DECD3',
            '15400000006' => 'DECD4', '15400000007' => 'DECD5', '15400000008' => 'LDF', '15400000009' => 'RAF'];
 $vals = []; $i = 0;
+// 实名位必须成对：is_realname=1 要配 realname_status=2（审核通过）
 foreach ($PHONES as $ph => $tag) {
-    $vals[] = "('$ph','H5-$tag','','UH5" . str_pad((string) $i, 4, '0', STR_PAD_LEFT) . "','IH5" . substr(md5($ph), 0, 8) . "',1,'$hash')";
+    $vals[] = "('$ph','H5-$tag','','UH5" . str_pad((string) $i, 4, '0', STR_PAD_LEFT) . "','IH5" . substr(md5($ph), 0, 8) . "',1,2,'$hash')";
     $i++;
 }
-exe('INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,transaction_password) VALUES ' . implode(',', $vals));
+exe('INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,transaction_password) VALUES ' . implode(',', $vals));
 $uids = [];
 foreach (q("SELECT id,phone FROM nft_users WHERE phone LIKE '$PH'") as $u) $uids[$u['phone']] = (int) $u['id'];
 $wvals = [];

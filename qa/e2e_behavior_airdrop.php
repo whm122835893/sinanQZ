@@ -98,7 +98,8 @@ $seedUsers = [
 ];
 $st = $PDO->prepare("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,password,status,is_blacklisted,deleted_at,created_at,updated_at,login_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
 foreach ($seedUsers as $i => $u) {
-    $st->execute([$u[0], $u[1], '', 'B' . str_pad((string)($i + 1), 5, '0', STR_PAD_LEFT), 'BC' . $i . 'X', $u[2], $u[2], $pwd, 1, $u[3], $u[4], $u[5], $u[5], $u[6]]);
+    // is_realname 与 realname_status 必须成对：通过=1/2（复用标记位会变成"待审核"）
+    $st->execute([$u[0], $u[1], '', 'B' . str_pad((string)($i + 1), 5, '0', STR_PAD_LEFT), 'BC' . $i . 'X', $u[2], $u[2] ? 2 : 0, $pwd, 1, $u[3], $u[4], $u[5], $u[5], $u[6]]);
 }
 $uid = fn($p) => (int) $q("SELECT id FROM nft_users WHERE phone='$p'");
 

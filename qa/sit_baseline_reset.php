@@ -49,9 +49,10 @@ $users = [
 $codes=['SN2026AA','SN2026BB','SN2026CC','SN2026DD','SN2026EE','SN2026FF','SN2026GG','SN2026HH'];
 $st=$PDO->prepare("INSERT INTO nft_users
   (id,phone,username,avatar,uid,invite_code,is_realname,realname_status,password,transaction_password,status,created_at,updated_at)
-  VALUES (?,?,?,'',?,?,?,1,?,?,1,NOW(3),NOW(3))");
+  VALUES (?,?,?,'',?,?,?,?,?,?,1,NOW(3),NOW(3))");
+// 实名位必须成对：通过=1/2，未提交=0/0（写死 realname_status=1 会让未实名用户挂在「待审核」里）
 foreach($users as $i=>$u){
-  $st->execute([$u[0],$u[1],$u[2],'U'.str_pad((string)$u[0],6,'0',STR_PAD_LEFT),$codes[$i],$u[3],$pwdLogin,$u[3]?$pwdTrade:null]);
+  $st->execute([$u[0],$u[1],$u[2],'U'.str_pad((string)$u[0],6,'0',STR_PAD_LEFT),$codes[$i],$u[3],$u[3]?2:0,$pwdLogin,$u[3]?$pwdTrade:null]);
 }
 echo "[OK] 已重建用户 id=1~8\n";
 

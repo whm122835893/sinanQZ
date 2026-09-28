@@ -112,10 +112,11 @@ exe("DELETE FROM nft_collectibles WHERE name LIKE 'H1-%'");
 $NUSERS = 220;
 $hash = password_hash('Pay#2026', PASSWORD_BCRYPT);
 $vals = [];
+// 实名位必须成对（is_realname=1 ↔ realname_status=2），只写前者会让后台实名列表与用户列表自相矛盾
 for ($i = 0; $i < $NUSERS; $i++) {
-  $vals[] = "('1510000" . str_pad((string)$i, 4, '0', STR_PAD_LEFT) . "','H1压测员" . $i . "','','UH1" . str_pad((string)$i, 5, '0', STR_PAD_LEFT) . "','IH1" . $i . "',1,'$hash')";
+  $vals[] = "('1510000" . str_pad((string)$i, 4, '0', STR_PAD_LEFT) . "','H1压测员" . $i . "','','UH1" . str_pad((string)$i, 5, '0', STR_PAD_LEFT) . "','IH1" . $i . "',1,2,'$hash')";
 }
-exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,transaction_password) VALUES " . implode(',', $vals));
+exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,transaction_password) VALUES " . implode(',', $vals));
 $uids = array_map('current', q("SELECT id FROM nft_users WHERE phone LIKE '1510000%' ORDER BY id"));
 $wvals = [];
 foreach ($uids as $uid) $wvals[] = "($uid,100000.00,100000.00,0.00,0.00)";

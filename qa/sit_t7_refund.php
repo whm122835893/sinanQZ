@@ -76,7 +76,7 @@ $phone='13900007101';
 exe("INSERT INTO nft_verification_codes (phone,scene,code,expires_at,sent_at,ip,created_at) VALUES ('$phone','register','".password_hash('654321',PASSWORD_BCRYPT)."','".date('Y-m-d H:i:s',time()+600)."',NOW(),'127.0.0.1',NOW())");
 $r=json_decode((function()use($BASE,$phone){$ch=curl_init($BASE.'/api/auth/register');curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>30,CURLOPT_HTTPHEADER=>['Content-Type: application/json'],CURLOPT_POSTFIELDS=>json_encode(['phone'=>$phone,'code'=>'654321','password'=>'Pass#2026','nickname'=>'退款用户'])]);$raw=curl_exec($ch);curl_close($ch);return $raw;})(),true);
 $uid=(int)v("SELECT id FROM nft_users WHERE phone='$phone'");
-exe("UPDATE nft_users SET is_realname=1 WHERE id=$uid");
+exe("UPDATE nft_users SET is_realname=1, realname_status=2 WHERE id=$uid");
 exe("DELETE FROM nft_wallets WHERE user_id=$uid");
 exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,created_at,updated_at) VALUES ($uid,1000,1000,0,NOW(),NOW())");
 qa_seed_wallet_ledger($PDO, [$uid]); // 直接写余额必须补开账流水，否则 Z1-1 全局恒等式被夹具打破

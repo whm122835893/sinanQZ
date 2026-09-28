@@ -151,10 +151,11 @@ exe("DELETE FROM nft_collectibles WHERE name LIKE 'H3-%'");
 $hash = password_hash('Pay#2026', PASSWORD_BCRYPT);
 $USERS = ['15300000000' => 12.00 /* W 支付风暴：20 单×1 元 → 12 成功 */, '15300000001' => 10.00 /* R 读者 */, '15300000002' => 10.00 /* S 挂单风暴 */];
 $i = 0; $vals = [];
+// 实名位必须成对：is_realname=1 要配 realname_status=2（审核通过）
 foreach ($USERS as $ph => $bal) {
-  $vals[] = "('$ph','H3-$i','','UH3" . str_pad((string)$i,4,'0',STR_PAD_LEFT) . "','IH3$i',1,'$hash')"; $i++;
+  $vals[] = "('$ph','H3-$i','','UH3" . str_pad((string)$i,4,'0',STR_PAD_LEFT) . "','IH3$i',1,2,'$hash')"; $i++;
 }
-exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,transaction_password) VALUES " . implode(',', $vals));
+exe("INSERT INTO nft_users (phone,username,avatar,uid,invite_code,is_realname,realname_status,transaction_password) VALUES " . implode(',', $vals));
 $uids = [];
 foreach (q("SELECT id,phone FROM nft_users WHERE phone LIKE '1530000%'") as $u) $uids[$u['phone']] = (int)$u['id'];
 $wvals = [];
