@@ -23,9 +23,6 @@ class SmsService
     /** 验证码有效期（秒） */
     public const CODE_TTL = 300;
 
-    /** 验证码失败尝试上限 */
-    public const CODE_MAX_ATTEMPTS = 5;
-
     /** 支持的渠道 */
     public const PROVIDERS = ['mock', 'aliyun', 'tencent'];
 

@@ -22,9 +22,6 @@ use think\facade\Db;
  */
 class RewardGrantService
 {
-    /** 资产类奖励（写 airdrop_records 发放台账） */
-    public const ASSET_TYPES = ['collectible', 'blindbox'];
-
     /** 奖励类型全集 */
     public const TYPES = [
         'collectible', 'priority_qualification', 'eligibility_qualification',

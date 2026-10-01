@@ -2,20 +2,6 @@
 // 格式化工具
 // ============================================================
 
-const pad = (n) => String(n).padStart(2, '0')
-
-export function fmtDateTime(t) {
-  if (!t) return '-'
-  const d = new Date(t)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-export function fmtDate(t) {
-  if (!t) return '-'
-  const d = new Date(t)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
 export function fmtMoney(n, symbol = false) {
   const s = Number(n ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return symbol ? `¥${s}` : s
