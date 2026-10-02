@@ -86,6 +86,7 @@ const routes = [
       { path: 'system/payment', name: 'payment', component: () => import('@/views/system/Payment.vue'), meta: { title: '支付渠道', perm: 'system' } },
       { path: 'system/security', name: 'security', component: () => import('@/views/system/Security.vue'), meta: { title: '安全策略', perm: 'system' } },
       { path: 'system/cleanup', name: 'cleanup', component: () => import('@/views/system/Cleanup.vue'), meta: { title: '平台清库', perm: 'cleanup' } },
+      { path: 'system/images', name: 'image-cleanup', component: () => import('@/views/system/ImageCleanup.vue'), meta: { title: '图片清理', perm: 'system:image-cleanup' } },
 
       // ---- 抽签购（三大模块：活动 / 报名与中签 / 抽签码）----
       { path: 'marketing/raffle', name: 'raffle', component: () => import('@/views/marketing/Raffle.vue'), meta: { title: '抽签活动管理', perm: 'marketing' } },

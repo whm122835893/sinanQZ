@@ -451,6 +451,36 @@ export function uploadImage(file, biz = 'collection') {
 }
 
 // ============================================================
+// 上传图片清理（system:image-cleanup 权限）
+// ============================================================
+
+/** 扫描零引用上传图，返回 { items:[{url,biz,size,mtime}], total, summary } */
+export function getUnreferencedImages(params = {}) {
+  return get('/upload-cleanup/unreferenced', params, { silent: true })
+}
+
+/** 勾选式批量移入回收站，body { urls:[] } */
+export function trashImages(urls) {
+  return post('/upload-cleanup/trash', { urls })
+}
+
+/** 回收站图列表，返回 { items:[{url,size,deletedAt}], total } */
+export function getImageTrash(params = {}) {
+  return get('/upload-cleanup/trash', params, { silent: true })
+}
+
+/** 从回收站恢复，body { urls:[] } */
+export function restoreImages(urls) {
+  return post('/upload-cleanup/trash/restore', { urls })
+}
+
+/** 物理删除回收站图：{ urls } 勾选删除或 { all:1 } 清空 */
+export function purgeImages(payload) {
+  return post('/upload-cleanup/trash/purge', payload)
+}
+
+
+// ============================================================
 // 站点装修（C 端全局风格）
 // ============================================================
 

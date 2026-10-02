@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use app\admin\service\AdminLogService;
+use app\admin\service\UploadCleanupService;
 use app\service\InventoryException;
 use app\service\InventoryService;
 use think\facade\Db;
@@ -379,8 +380,31 @@ class CollectibleController extends BaseController
         $update['updated_at'] = date('Y-m-d H:i:s');
         Db::name('collectibles')->where('id', $id)->update($update);
 
+        // 换下的旧图若已无引用，回收进图片清理回收站（best-effort，不影响主流程）
+        $this->maybeReleaseOldImage((string) ($c['image'] ?? ''), $update);
+
         $this->audit('collectible', 'update', '编辑藏品「' . $c['name'] . '」', $update, 'collectible', $id);
         return $this->success(null, '藏品信息已更新');
+    }
+
+    /**
+     * 藏品换图/删除后，释放旧的上传图（仅 /uploads/ 路径且全库零引用时移入回收站）。
+     * 任何异常都吞掉——回收失败绝不能阻断藏品写操作主流程。
+     */
+    private function maybeReleaseOldImage(string $oldImage, array $update): void
+    {
+        if ($oldImage === '') {
+            return;
+        }
+        // 本次未改 image，或改成同一张，无需回收
+        if (!array_key_exists('image', $update) || (string) $update['image'] === $oldImage) {
+            return;
+        }
+        try {
+            (new UploadCleanupService())->releaseIfUnreferenced($oldImage);
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[upload-cleanup] 释放旧图失败: ' . $e->getMessage());
+        }
     }
 
     /**

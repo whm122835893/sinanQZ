@@ -111,6 +111,7 @@ export const menuGroups = [
       { path: '/system/payment', title: '支付渠道', icon: 'CreditCard', perm: 'system' },
       { path: '/system/security', title: '安全策略', icon: 'Lock', perm: 'system' },
       { path: '/system/cleanup', title: '平台清库', icon: 'Delete', perm: 'cleanup' },
+      { path: '/system/images', title: '图片清理', icon: 'Files', perm: 'system:image-cleanup' },
       { path: '/system/trash', title: '回收站', icon: 'DeleteFilled', perm: 'trash' }
     ]
   }

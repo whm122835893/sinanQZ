@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\admin\controller;
 
+use app\admin\service\UploadCleanupService;
 use think\facade\Db;
 
 /**
@@ -110,7 +111,11 @@ class TrashController extends BaseController
         if (!isset(self::TABLE_MAP[$type])) return $this->fail(4220, '不支持的表类型');
         if ($id === null) return $this->failMissing(['id']);
 
+        $row = Db::name(self::TABLE_MAP[$type])->where('id', $id)->whereNotNull('deleted_at')->find();
         Db::name(self::TABLE_MAP[$type])->where('id', $id)->whereNotNull('deleted_at')->delete();
+        if ($row) {
+            $this->releaseRowImages([$row]);
+        }
         $this->audit('回收站', 'purge', "物理删除 [{$type}] id={$id}");
         return $this->success(['type' => $type, 'id' => $id]);
     }
@@ -123,9 +128,39 @@ class TrashController extends BaseController
         $type = (string) $this->request->param('type');
         if (!isset(self::TABLE_MAP[$type])) return $this->fail(4220, '不支持的表类型');
 
-        $count = (int) Db::name(self::TABLE_MAP[$type])->whereNotNull('deleted_at')->count();
+        $rows = Db::name(self::TABLE_MAP[$type])->whereNotNull('deleted_at')->select()->toArray();
+        $count = count($rows);
         Db::name(self::TABLE_MAP[$type])->whereNotNull('deleted_at')->delete();
+        $this->releaseRowImages($rows);
         $this->audit('回收站', 'purge-all', "清空 [{$type}] 回收站，共 {$count} 条");
         return $this->success(['type' => $type, 'purged' => $count]);
+    }
+
+    /**
+     * 记录被物理删除后，释放其中不再被引用的上传图（移入回收站）。
+     * best-effort：任何异常不得阻断回收站删除主流程。
+     *
+     * @param array<int, array> $rows
+     */
+    private function releaseRowImages(array $rows): void
+    {
+        if (!$rows) {
+            return;
+        }
+        try {
+            $service = new UploadCleanupService();
+            foreach ($rows as $row) {
+                foreach ($row as $value) {
+                    if (!is_string($value)) {
+                        continue;
+                    }
+                    foreach ($service->extractUploadUrls($value) as $url) {
+                        $service->releaseIfUnreferenced($url);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[upload-cleanup] 释放记录旧图失败: ' . $e->getMessage());
+        }
     }
 }

@@ -42,6 +42,17 @@ Route::post('upload/image', 'UploadController/image')
     ->middleware(AdminPermission::class, 'system:upload');
 
 // ---------------------------------------------------------------------------
+// 上传图片清理（system:image-cleanup）
+// ---------------------------------------------------------------------------
+Route::group('upload-cleanup', function () {
+    Route::get('unreferenced', 'UploadCleanupController/unreferenced');
+    Route::post('trash', 'UploadCleanupController/trash');
+    Route::get('trash', 'UploadCleanupController/trashList');
+    Route::post('trash/restore', 'UploadCleanupController/trashRestore');
+    Route::post('trash/purge', 'UploadCleanupController/trashPurge');
+})->middleware(AdminAuth::class)->middleware(AdminPermission::class, 'system:image-cleanup');
+
+// ---------------------------------------------------------------------------
 // 仪表盘（dashboard:view）
 // ---------------------------------------------------------------------------
 Route::group('dashboard', function () {
