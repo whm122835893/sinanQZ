@@ -2059,6 +2059,7 @@ CREATE TABLE `nft_refunds` (
   `amount` decimal(10,2) NOT NULL COMMENT '退款金额',
   `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '退款原因',
   `status` tinyint NOT NULL DEFAULT '1' COMMENT '状态：1待审批 2已批准 3已退款 4已拒绝',
+  `active_order_id` bigint unsigned GENERATED ALWAYS AS (CASE WHEN `status` IN (1, 2, 3, 4) THEN `order_id` ELSE NULL END) STORED COMMENT '唯一约束辅助列（生成列）：非作废退款单时取订单ID，否则NULL',
   `applicant_id` int unsigned NOT NULL COMMENT '申请人（管理员）ID',
   `applicant_name` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '申请人姓名',
   `approver_id` int unsigned DEFAULT NULL COMMENT '审批人ID',

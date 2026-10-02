@@ -51,7 +51,7 @@ BASE_FILES=(
   fusion_final_upgrade.sql
   payment_yeepay_upgrade.sql
   swap_c2c_removal.sql
-  # ---- 以下 3 个为 README 未登记的补丁，按语义排在后方 ----
+  # ---- 以下 4 个为 README 未登记的补丁，按语义排在后方 ----
   002_add_snapshots.sql
   announcement_publish_upgrade.sql
   artifact_status_upgrade.sql
