@@ -49,7 +49,6 @@ export const useAdminStore = defineStore('admin', {
   getters: {
     isLogged: (s) => !!s.token,
     displayName: (s) => s.info?.realName || s.info?.name || s.info?.username || '管理员',
-    avatar: (s) => s.info?.avatar || '',
     role: (s) => ROLE_CODE_MAP[s.info?.roleCode] || s.info?.role || 'operator',
     roleLabel() {
       const map = { super: '超级管理员', operator: '运营专员', finance: '财务专员', risk: '风控专员', support: '客服专员' }

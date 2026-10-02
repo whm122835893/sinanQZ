@@ -87,6 +87,42 @@ class Collections extends BaseController
     }
 
     /**
+     * GET /api/collections/calendar
+     * 发售日历：历史发售记录 + 即将发售提醒
+     * 与 featured（首页发售区，剔除售罄）不同：日历含 soldout（历史回顾），仅剔除强制下架 off；
+     * 全量返回不分页，倒计时/已结束分段由前端按 saleTime/saleEndTime/stock 计算
+     */
+    public function calendar()
+    {
+        $list = Db::name('collectibles')
+            ->whereNull('deleted_at')
+            ->where('is_release', 1)
+            ->where('status', '<>', 'off')
+            ->order('onsale_at', 'desc')
+            ->select()
+            ->toArray();
+
+        $items = array_map(function ($c) {
+            $sold    = (int) ($c['sold'] ?? 0);
+            $locked  = (int) ($c['locked_quantity'] ?? 0);
+            $edition = (int) ($c['edition'] ?? 0);
+            return [
+                'id'          => (int) $c['id'],
+                'name'        => $c['name'],
+                'price'       => (float) $c['price'],
+                'edition'     => $edition,
+                'image'       => $c['image'],
+                'saleTime'    => $c['onsale_at'],
+                'saleEndTime' => $c['off_sale_at'],
+                'status'      => $c['status'],
+                'stock'       => max(0, $edition - $sold - $locked),
+            ];
+        }, $list);
+
+        return $this->success($items);
+    }
+
+    /**
      * GET /api/collections/:id
      * 藏品详情
      */

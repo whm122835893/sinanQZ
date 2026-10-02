@@ -31,27 +31,25 @@ export const useCollectionStore = defineStore('collection', () => {
     return featured.value
   }
 
-  // 市场寄售藏品（真实接口：GET /api/market/collections 聚合挂单最低价）
-  const resaleCollection = ref(null)
-  async function fetchResaleCollection(id) {
-    const c = await request.get(`/collections/${id}`)
-    resaleCollection.value = {
+  // 发售日历（真实接口：GET /api/collections/calendar）
+  // 与 featured 数据源不同：含历史售罄/已结束记录（首页发售区只展示可购藏品）
+  const calendar = ref([])
+  async function fetchCalendar() {
+    const list = await request.get('/collections/calendar')
+    calendar.value = (list || []).map((c) => ({
       id: String(c.id),
       name: c.name,
-      tag: c.tag,
       price: Number(c.price).toFixed(2),
       total: `${c.edition}份`,
       coverImage: c.image,
-      issueCount: String(c.issueCount),
-      circulationCount: String(c.circulationCount),
-      todayCount: String(c.todayCount),
-      limitPrice: String(Number(c.resalePriceMin) || 0), // 寄售限价下限（后端 resale_price_min，0 = 不限）
-      isBuyRequestEnabled: c.isBuyRequestEnabled !== false
-    }
-    return resaleCollection.value
+      saleTime: toTs(c.saleTime),
+      saleEndTime: toTs(c.saleEndTime),
+      soldOut: c.status === 'soldout' || c.stock <= 0,
+      stock: c.stock
+    }))
+    return calendar.value
   }
 
-  const collections = ref([])
   const filters = ref({ category: 'all', keyword: '' })
   const detail = ref(null)
 
@@ -148,12 +146,6 @@ export const useCollectionStore = defineStore('collection', () => {
     return fetchMarket()
   }
 
-  async function fetchList() {
-    await fetchMarket()
-    collections.value = marketCollections.value
-    return collections.value
-  }
-
   // 藏品详情（真实接口：GET /api/collections/:id，含 myOwned）
   async function fetchDetail(id) {
     const d = await request.get(`/collections/${id}`)
@@ -194,19 +186,17 @@ export const useCollectionStore = defineStore('collection', () => {
       cover: d.coverImage
     }))
     return {
-      meta: (resaleCollection.value && String(resaleCollection.value.id) === String(id)
-        ? resaleCollection.value
-        : {
-            id: d.id,
-            name: d.title,
-            coverImage: d.coverImage,
-            price: d.price,
-            total: d.total,
-            // 发行量/流通量：详情页已取到，交易页需与详情页同源展示
-            issueCount: d.issueCount,
-            circulationCount: d.circulationCount,
-            isBuyRequestEnabled: d.isBuyRequestEnabled !== false
-          }),
+      meta: {
+        id: d.id,
+        name: d.title,
+        coverImage: d.coverImage,
+        price: d.price,
+        total: d.total,
+        // 发行量/流通量：详情页已取到，交易页需与详情页同源展示
+        issueCount: d.issueCount,
+        circulationCount: d.circulationCount,
+        isBuyRequestEnabled: d.isBuyRequestEnabled !== false
+      },
       orders: resaleOrders.value
     }
   }
@@ -220,18 +210,6 @@ export const useCollectionStore = defineStore('collection', () => {
     if (item.saleTime && now < item.saleTime) return 'countdown'
     if (item.saleEndTime && now >= item.saleEndTime) return 'soldout'
     return 'selling'
-  }
-
-  // 倒计时文案
-  function getCountdownText(item) {
-    if (!item || !item.saleTime) return ''
-    const diff = item.saleTime - Date.now()
-    if (diff <= 0) return ''
-    const h = Math.floor(diff / 3600000)
-    const m = Math.floor((diff % 3600000) / 60000)
-    const s = Math.floor((diff % 60000) / 1000)
-    const pad = (n) => String(n).padStart(2, '0')
-    return pad(h) + ':' + pad(m) + ':' + pad(s)
   }
 
   // 按 id 获取 featured 藏品
@@ -287,8 +265,8 @@ export const useCollectionStore = defineStore('collection', () => {
 
   return {
     featured,
-    resaleCollection,
-    collections,
+    calendar,
+    fetchCalendar,
     filters,
     detail,
     resaleOrders,
@@ -305,12 +283,9 @@ export const useCollectionStore = defineStore('collection', () => {
     toggleFavorite,
     fetchFeatured,
     fetchMarket,
-    fetchResaleCollection,
-    fetchList,
     fetchDetail,
     fetchResale,
     getSaleStatus,
-    getCountdownText,
     getFeaturedById,
     exhibits,
     fetchExhibits,

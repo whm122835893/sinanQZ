@@ -55,6 +55,7 @@ BASE_FILES=(
   002_add_snapshots.sql
   announcement_publish_upgrade.sql
   artifact_status_upgrade.sql
+  refund_idempotency_upgrade.sql
 )
 
 apply_sql() {

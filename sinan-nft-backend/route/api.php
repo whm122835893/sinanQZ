@@ -22,6 +22,8 @@ Route::group('/api', function () {
     // 藏品（无需登录；详情/合成公式支持可选登录以返回 myOwned/myAvailable）
     Route::get('collections/categories', 'Collections/categories');
     Route::get('collections/featured',   'Collections/featured');
+    // 发售日历（历史发售记录 + 即将发售提醒；静态路由需注册在 :id 通配之前）
+    Route::get('collections/calendar',   'Collections/calendar');
     Route::get('collections/:id',        'Collections/detail')
         ->middleware(\app\middleware\OptionalJwtAuth::class);
     Route::get('market/collections',     'Collections/market');

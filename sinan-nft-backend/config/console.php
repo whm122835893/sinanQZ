@@ -7,5 +7,7 @@ return [
     'commands' => [
         'ApiDoc' => \app\command\ApiDoc::class,
         'ScheduleDispatch' => \app\command\ScheduleDispatch::class,
+        'rekey:encrypted' => \app\command\RekeyEncrypted::class,
+        'admin:reset-password' => \app\command\AdminResetPassword::class,
     ],
 ];

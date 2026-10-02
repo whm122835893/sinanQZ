@@ -92,16 +92,6 @@ describe('collection store · 发售状态', () => {
     expect(store.featured[1].tag).toBe('首发')
     expect(store.featured[1].type).toBe('blindbox')
   })
-
-  it('倒计时文案为 HH:MM:SS，无预约时间或已开售时为空串', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2026, 8, 26, 10, 0, 0))
-    const inTwoHours = new Date(2026, 8, 26, 12, 30, 5).getTime()
-    expect(store.getCountdownText({ saleTime: inTwoHours })).toBe('02:30:05')
-    expect(store.getCountdownText({ saleTime: Date.now() - 1000 })).toBe('')
-    expect(store.getCountdownText({})).toBe('')
-    vi.useRealTimers()
-  })
 })
 
 function featuredPayload(overrides = {}) {

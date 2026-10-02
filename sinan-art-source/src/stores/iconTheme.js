@@ -10,7 +10,7 @@ import { ref, computed } from 'vue'
 //      a) tabs      —— 底部导航栏 4 个 Tab 图标（SVG 矢量名 / 位图路径）
 //      b) features  —— 页面功能入口图标（日历/活动/抽奖/库存/钱包等）
 //   3. 当前激活主题持久化到 localStorage，刷新不丢失
-//   4. 预留 setTheme() 方法，后期接入管理后台即可一键切换全站风格
+//   4. setFeatureTheme()/setTabTheme() 供管理后台下发的主题配置在 site.js init 时注入
 //
 // 新增风格只需在 ICON_THEMES 中追加一个条目即可，无需改组件代码。
 // 若某风格暂未生成功能图标位图，features 可省略，自动回退到经典 SVG。
@@ -165,9 +165,6 @@ export const useIconThemeStore = defineStore('iconTheme', () => {
   const featureTheme = computed(() => ICON_THEMES[featureThemeId.value] || ICON_THEMES.classic)
   const tabTheme = computed(() => ICON_THEMES[tabThemeId.value] || ICON_THEMES.classic)
 
-  // 供后台展示的所有可选主题
-  const themes = Object.values(ICON_THEMES)
-
   /**
    * 切换功能图标主题（日历/活动/抽奖/库存/钱包/邀请好友）
    * @param {string} id - 主题 id，需在 ICON_THEMES 中存在
@@ -188,15 +185,6 @@ export const useIconThemeStore = defineStore('iconTheme', () => {
     tabThemeId.value = id
     localStorage.setItem(STORAGE_KEY_TAB, id)
     return true
-  }
-
-  /**
-   * 一键同时切换功能与导航图标（向后兼容旧调用）
-   * @param {string} id - 主题 id
-   */
-  function setTheme(id) {
-    const ok = setFeatureTheme(id)
-    return setTabTheme(id) && ok
   }
 
   /**
@@ -235,14 +223,8 @@ export const useIconThemeStore = defineStore('iconTheme', () => {
   }
 
   return {
-    featureThemeId,
-    tabThemeId,
-    featureTheme,
-    tabTheme,
-    themes,
     setFeatureTheme,
     setTabTheme,
-    setTheme,
     setCustomIcons,
     getTabIcon,
     getFeatureIcon

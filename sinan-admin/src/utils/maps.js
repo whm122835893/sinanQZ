@@ -59,11 +59,6 @@ export const ACTIVITY_STATUS = {
   disabled: { label: '已停用', type: 'info' }
 }
 
-export const CONTENT_STATUS = {
-  published: { label: '已发布', type: 'success' },
-  draft:     { label: '草稿', type: 'info' }
-}
-
 // 公告分类（与用户端 subtype 一致：活动/合成/运营）
 export const NOTICE_TYPE = {
   activity:    { label: '活动公告', type: 'success' },
@@ -168,18 +163,6 @@ export const CHAIN_TX_STATUS = {
   success: { label: '成功', type: 'success' },
   pending: { label: '上链中', type: 'warning' },
   failed: { label: '失败', type: 'danger' }
-}
-
-// 内容审核
-export const AUDIT_STATUS = {
-  pending:  { label: '待审核', type: 'warning' },
-  approved: { label: '已通过', type: 'success' },
-  rejected: { label: '已驳回', type: 'danger' }
-}
-
-export const CONTENT_AUDIT_TYPE = {
-  ugc_collectible: '用户自建藏品',
-  community_post: '社区帖子'
 }
 
 // 审批工作流

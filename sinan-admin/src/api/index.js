@@ -607,16 +607,6 @@ export function swapCollectible({ oldCollectibles, newCollectibleId, reason = ''
   })
 }
 
-/** 统一置换计划列表（回收+按比例空投记录） */
-export function getSwapPlans(params = {}) {
-  return get('/swap/plans', params)
-}
-
-/** 统一置换计划详情（源配置 + 用户名单 + 资产明细，名单/明细分页） */
-export function getSwapPlanDetail(id, params = {}) {
-  return get(`/swap/plans/${id}`, params)
-}
-
 // ============================================================
 // 盲盒管理
 // ============================================================
@@ -1194,38 +1184,6 @@ export async function getCheckinConfig() {
       grantMode: s(d.grantMode) || 'realtime'
     }
   }
-}
-
-/** 签到活动开关（实时生效） */
-export function toggleCheckin(enabled) {
-  return post('/marketing/checkin', { enabled: enabled ? 1 : 0 })
-}
-
-/** 保存签到活动信息（名称/起止时间） */
-export function saveCheckinActivity({ name, startTime, endTime }) {
-  return post('/marketing/checkin', {
-    name,
-    start_time: startTime || '',
-    end_time: endTime || ''
-  })
-}
-
-/** 保存签到参与资格与发放方式（realtime 实时到账 / manual 记录名单统一发放） */
-export function saveCheckinSettings({ eligibility, grantMode }) {
-  return post('/marketing/checkin', {
-    eligibility_type: eligibility?.type || 'all',
-    eligibility_config: eligibility?.config || {},
-    grant_mode: grantMode || 'realtime'
-  })
-}
-
-/** 保存签到奖励规则（rules: [{day, rewards: [{type,...}]}]，六类奖励） */
-export function saveCheckinRules(rules) {
-  const rewardConfig = {}
-  ;(rules || []).forEach((r) => {
-    if (Array.isArray(r.rewards) && r.rewards.length) rewardConfig[r.day] = r.rewards
-  })
-  return post('/marketing/checkin', { reward_config: rewardConfig })
 }
 
 // ---- 签到活动（新建活动模式：多活动列表 + 新建/编辑/删除） ----
