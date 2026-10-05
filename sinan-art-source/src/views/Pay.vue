@@ -77,7 +77,18 @@ onMounted(async () => {
   } else {
     const res = await store.fetchResale(id)
     meta.value = res.meta
-    const target = res.orders.find(o => o.no === no) || res.orders[0]
+    const wanted = res.orders.find(o => o.no === no)
+    if (wanted && wanted.locked) {
+      showToast('该挂单正在交易中，请选择其他编号')
+      router.back()
+      return
+    }
+    const target = wanted || res.orders.find(o => !o.locked)
+    if (!target) {
+      showToast('暂无可购买的挂单')
+      router.back()
+      return
+    }
     unitPrice.value = target.price
     orderNo.value = target.no
     listingId.value = target.listingId || 0

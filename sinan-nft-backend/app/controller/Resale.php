@@ -374,9 +374,36 @@ class Resale extends BaseController
         $priceMax      = $this->request->param('priceMax');
         $sort          = $this->strParam('sort', 'price-asc');
 
+        // 「锁定中」挂单：status 已是 sold 但对应市场订单仍 pending 且未超时（含批量单），
+        // 展示在列表里置灰提示，而非直接消失；订单支付成功/超时回滚后自然不再出现
+        $lockedSet = [];
+        $pending = Db::name('orders')
+            ->where('status', 'pending')
+            ->where('source', 'market')
+            ->where('expires_at', '>', date('Y-m-d H:i:s'))
+            ->field('resale_listing_id,batch_listing_ids')
+            ->select();
+        foreach ($pending as $o) {
+            if (!empty($o['resale_listing_id'])) $lockedSet[(int) $o['resale_listing_id']] = true;
+            if (!empty($o['batch_listing_ids'])) {
+                foreach (explode(',', (string) $o['batch_listing_ids']) as $i) {
+                    $i = (int) trim($i);
+                    if ($i > 0) $lockedSet[$i] = true;
+                }
+            }
+        }
+        $lockIds = array_keys($lockedSet);
+
         $query = Db::name('resale_listings')->alias('l')
             ->join('users u', 'u.id = l.seller_id')
-            ->where('l.status', 'selling');
+            ->where(function ($q) use ($lockIds) {
+                $q->where('l.status', 'selling');
+                if ($lockIds) {
+                    $q->whereOr(function ($q2) use ($lockIds) {
+                        $q2->where('l.status', 'sold')->whereIn('l.id', $lockIds);
+                    });
+                }
+            });
         if ($collectibleId > 0) $query->where('l.collectible_id', $collectibleId);
         if ($priceMin !== null && $priceMin !== '') $query->where('l.price', '>=', (float) $priceMin);
         if ($priceMax !== null && $priceMax !== '') $query->where('l.price', '<=', (float) $priceMax);
@@ -388,7 +415,7 @@ class Resale extends BaseController
 
         $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
-            'l.id as listing_id', 'l.price', 'l.user_collectible_id', 'l.listed_at',
+            'l.id as listing_id', 'l.status', 'l.price', 'l.user_collectible_id', 'l.listed_at',
             'u.phone as seller_phone', 'uc.serial',
         ])->leftJoin('user_collectibles uc', 'uc.id = l.user_collectible_id')
             ->select()->toArray();
@@ -401,21 +428,33 @@ class Resale extends BaseController
                 'price'        => (float) $l['price'],
                 'listedAt'     => $l['listed_at'],
                 'sellerPhone'  => mask_phone($l['seller_phone']),
+                'locked'       => $l['status'] === 'sold',
             ];
         }, $list);
 
-        // 聚合：地板价 + 挂单数
+        // 锁定数量（与当前筛选范围同口径）
+        $lockedCount = 0;
+        if ($lockIds) {
+            $lcQ = Db::name('resale_listings')->whereIn('id', $lockIds)->where('status', 'sold');
+            if ($collectibleId > 0) $lcQ->where('collectible_id', $collectibleId);
+            if ($priceMin !== null && $priceMin !== '') $lcQ->where('price', '>=', (float) $priceMin);
+            if ($priceMax !== null && $priceMax !== '') $lcQ->where('price', '<=', (float) $priceMax);
+            $lockedCount = $lcQ->count();
+        }
+
+        // 聚合：地板价 + 挂单数（仅可购买的 selling 挂单，不含锁定中）
         $floor    = Db::name('resale_listings')->where('status', 'selling')->min('price');
         $cnt      = Db::name('resale_listings')->where('status', 'selling')->count();
 
         return $this->success([
-            'list'        => $items,
-            'total'       => $total,
-            'floorPrice'  => (float) ($floor ?? 0),
-            'ordersCount' => $cnt,
-            'page'        => $p['page'],
-            'pageSize'    => $p['pageSize'],
-            'lastPage'    => (int) ceil($total / max($p['pageSize'], 1)),
+            'list'         => $items,
+            'total'        => $total,
+            'floorPrice'   => (float) ($floor ?? 0),
+            'ordersCount'  => $cnt,
+            'lockedCount'  => $lockedCount,
+            'page'         => $p['page'],
+            'pageSize'     => $p['pageSize'],
+            'lastPage'     => (int) ceil($total / max($p['pageSize'], 1)),
         ]);
     }
 
@@ -432,6 +471,24 @@ class Resale extends BaseController
             ->join('users u', 'u.id = l.seller_id', 'LEFT')
             ->join('user_collectibles uc', 'uc.id = l.user_collectible_id', 'LEFT')
             ->where('l.status', 'sold');
+        // 排除仍在锁定中（买家未付款）的挂单——它们展示在挂单池的「锁定中」状态，不算成交
+        $lockIds = Db::name('orders')
+            ->where('status', 'pending')->where('source', 'market')
+            ->where('expires_at', '>', date('Y-m-d H:i:s'))
+            ->where('resale_listing_id', '>', 0)
+            ->column('resale_listing_id');
+        $batchRaw = Db::name('orders')
+            ->where('status', 'pending')->where('source', 'market')
+            ->where('expires_at', '>', date('Y-m-d H:i:s'))
+            ->where('batch_listing_ids', '<>', '')
+            ->column('batch_listing_ids');
+        foreach ($batchRaw as $raw) {
+            foreach (explode(',', (string) $raw) as $i) {
+                $i = (int) trim($i);
+                if ($i > 0) $lockIds[] = $i;
+            }
+        }
+        if ($lockIds) $query->whereNotIn('l.id', array_unique($lockIds));
         if ($collectibleId > 0) {
             $query->where('l.collectible_id', $collectibleId);
         }

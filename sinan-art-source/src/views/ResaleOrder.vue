@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
 import { useLoginGate } from '@/utils/loginGate'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -17,7 +18,7 @@ onMounted(async () => {
   const no = decodeURIComponent(route.params.no)
   const res = await store.fetchResale(route.params.id)
   meta.value = res.meta
-  order.value = res.orders.find(o => o.no === no) || res.orders[0]
+  order.value = res.orders.find(o => o.no === no) || res.orders.find(o => !o.locked) || res.orders[0]
 })
 
 const intro = computed(() => {
@@ -32,6 +33,7 @@ const notices = [
 ]
 
 function onBuy() {
+  if (order.value && order.value.locked) { showToast('该挂单正在交易中，请选择其他编号'); return }
   if (!requireLogin(route.fullPath)) return
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: order.value.no } })
 }

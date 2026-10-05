@@ -171,6 +171,7 @@ export const useCollectionStore = defineStore('collection', () => {
 
   // 寄售挂单（真实接口：GET /api/resale/listings?collectibleId=）
   const resaleOrders = ref([])
+  const resaleLockedCount = ref(0)
   async function fetchResale(id) {
     // 详情与藏品名/封面（挂单项内不再重复返回）
     const d = detail.value && String(detail.value.id) === String(id)
@@ -183,8 +184,10 @@ export const useCollectionStore = defineStore('collection', () => {
       price: Number(l.price).toFixed(2),
       payment: '余额',
       name: d.title,
-      cover: d.coverImage
+      cover: d.coverImage,
+      locked: !!l.locked
     }))
+    resaleLockedCount.value = Number(res.lockedCount) || 0
     return {
       meta: {
         id: d.id,
@@ -197,7 +200,8 @@ export const useCollectionStore = defineStore('collection', () => {
         circulationCount: d.circulationCount,
         isBuyRequestEnabled: d.isBuyRequestEnabled !== false
       },
-      orders: resaleOrders.value
+      orders: resaleOrders.value,
+      lockedCount: resaleLockedCount.value
     }
   }
 
@@ -270,6 +274,7 @@ export const useCollectionStore = defineStore('collection', () => {
     filters,
     detail,
     resaleOrders,
+    resaleLockedCount,
     marketViewMode,
     marketCollections,
     marketSort,

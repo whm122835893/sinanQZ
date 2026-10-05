@@ -14,7 +14,8 @@ const store = useCollectionStore()
 const { requireLogin } = useLoginGate()
 
 const meta = ref(null)
-const orders = ref([])           // 寄售挂单（onsale tab）
+const orders = ref([])           // 寄售挂单（onsale tab，含锁定中）
+const lockedCount = ref(0)       // 当前藏品锁定中（他人下单未付款）挂单数
 const buyRequests = ref([])      // 求购挂单（buying tab）
 const history = ref([])          // 成交动态（history tab）
 const activeTab = ref('onsale')
@@ -95,6 +96,7 @@ async function loadAll() {
     const res = await store.fetchResale(route.params.id)
     meta.value = res.meta
     orders.value = res.orders
+    lockedCount.value = res.lockedCount || 0
     await Promise.allSettled([loadBuyRequests(), loadHistory()])
   } finally {
     loading.value = false
@@ -143,16 +145,20 @@ function sortPrice() {
 function onQuickBuy() {
   if (!orders.value.length) return
   if (!requireLogin(route.fullPath)) return
-  const min = orders.value.reduce((m, o) => (parseFloat(o.price) < parseFloat(m.price) ? o : m), orders.value[0])
+  const avail = orders.value.filter((o) => !o.locked)
+  if (!avail.length) { showToast('当前挂单正在交易中，请稍后再试'); return }
+  const min = avail.reduce((m, o) => (parseFloat(o.price) < parseFloat(m.price) ? o : m), avail[0])
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: min.no } })
 }
 
 function goPay(o) {
+  if (o.locked) { showToast('该挂单正在交易中，请选择其他编号'); return }
   if (!requireLogin(route.fullPath)) return
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: o.no } })
 }
 
 function goOrder(o) {
+  if (o.locked) { showToast('该挂单正在交易中'); return }
   router.push('/resale-order/' + route.params.id + '/' + encodeURIComponent(o.no))
 }
 
@@ -237,6 +243,9 @@ async function submitPostBuy() {
         <span class="resale-sort__item active" :class="sort" @click="sortPrice">
           价格排序 <i class="arrow"></i>
         </span>
+        <span class="resale-toolbar__locked" v-if="lockedCount > 0">
+          <van-icon name="lock" /> 锁定中 {{ lockedCount }}
+        </span>
       </div>
       <div class="resale-toolbar__right" v-if="activeTab === 'buying'">
         <button class="resale-toolbar__btn" @click="openPostBuy">+ 我要挂求购</button>
@@ -246,18 +255,19 @@ async function submitPostBuy() {
     <section class="resale-list">
       <!-- 当前寄售 -->
       <template v-if="activeTab === 'onsale'">
-        <div class="resale-list__item" v-for="o in orders" :key="o.no" @click="goOrder(o)">
+        <div class="resale-list__item" :class="{ 'resale-list__item--locked': o.locked }" v-for="o in orders" :key="o.no" @click="goOrder(o)">
           <img class="resale-list__thumb" :src="o.cover" alt="" draggable="false" @contextmenu.prevent />
           <div class="resale-list__info">
             <div class="resale-list__title">
               <span class="resale-list__name">{{ o.name }}</span>
+              <span class="resale-list__lock" v-if="o.locked"><van-icon name="lock" /> 锁定中</span>
               <span class="resale-list__pay">{{ o.payment }}</span>
             </div>
             <p class="resale-list__no">#{{ o.no }}</p>
           </div>
           <div class="resale-list__right">
             <span class="resale-list__price">¥{{ o.price }}</span>
-            <button class="resale-list__buy" @click.stop="goPay(o)">购买</button>
+            <button class="resale-list__buy" v-if="!o.locked" @click.stop="goPay(o)">购买</button>
           </div>
         </div>
       </template>
@@ -366,6 +376,23 @@ async function submitPostBuy() {
   padding: 5px 14px; border-radius: $radius-pill;
   background: rgba(255, 255, 255, 0.08);
   color: $color-text-primary;
+}
+
+.resale-toolbar__locked {
+  margin-left: 12px;
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 12px; color: #eab308;
+}
+.resale-list__item--locked {
+  opacity: 0.45; pointer-events: auto;
+  filter: grayscale(0.6);
+}
+.resale-list__lock {
+  display: inline-flex; align-items: center; gap: 3px;
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 600; color: #a16207;
+  background: #facc15; border-radius: 4px;
+  padding: 2px 7px;
 }
 
 .resale-buy {
