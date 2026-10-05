@@ -24,7 +24,7 @@ function adminLogin($u,$p){$r=http('POST','/admin/auth/login',['username'=>$u,'p
 echo "=== 7.2.1 权限字典与路由绑定完整性 ===\n";
 $dict=[];
 foreach(q("SELECT code FROM nft_admin_permissions WHERE status=1") as $row) $dict[$row['code']]=1;
-T('7.2.1a 启用权限码共 103 个（91 原始 + 7 项漂移修复 + 抽签管理 + 抽签码查询 + 回收站列表 + 合成明细列表）', count($dict)===103, 'count='.count($dict));
+T('7.2.1a 启用权限码共 104 个（91 原始 + 7 项漂移修复 + 抽签管理 + 抽签码查询 + 回收站列表 + 合成明细列表 + 图片清理）', count($dict)===104, 'count='.count($dict));
 $disabled=(int)v("SELECT COUNT(*) FROM nft_admin_permissions WHERE status<>1");
 T('7.2.1b 无残留禁用权限码', $disabled===0, "disabled=$disabled");
 // 解析路由文件：所有 AdminPermission 绑定码必须在字典内

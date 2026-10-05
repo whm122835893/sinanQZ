@@ -156,12 +156,33 @@ T('7.6.3b 错误验证码拒绝', $r['code']===4220 && strpos($r['message'],'验
 $lines=array_filter(array_map('trim',explode("\n",str_replace("\r",'',(string)(strncasecmp(PHP_OS,'WIN',3)===0
   ? shell_exec('where mysqldump 2>NUL') : shell_exec('which -a mysqldump 2>/dev/null'))))));
 if(($qb=(string)getenv('QA_MYSQLDUMP'))!==''&&is_file($qb)) array_unshift($lines,$qb);
+// QA_MYSQLDUMP_ALL：后端进程 PATH 能解析、但本测试进程 PATH 枚举不到的 mysqldump 副本（逗号分隔）。
+// 典型案例：本机同时存在 phpstudy / BtSoft / mariadb / G:\mysql 多份 mysqldump，后端以哪份取决于其启动环境。
+foreach(explode(',', (string) getenv('QA_MYSQLDUMP_ALL')) as $extra){
+    $extra=trim($extra);
+    if($extra!=='' && is_file($extra)) $lines[]=$extra;
+}
 $bins=array_values(array_unique(array_filter($lines,'is_file')));
 if(!$bins){
-  fwrite(STDERR,"[qa] FATAL：无法定位后端可用的 mysqldump（请将与后端一致的 mysql bin 目录加入 PATH 或设置 QA_MYSQLDUMP）。拒绝继续，防止阻断演练变成真实清库\n");
+  fwrite(STDERR,"[qa] FATAL：无法定位后端可用的 mysqldump（请将与后端一致的 mysql bin 目录加入 PATH 或设置 QA_MYSQLDUMP/QA_MYSQLDUMP_ALL）。拒绝继续，防止阻断演练变成真实清库\n");
   exit(1);
 }
-foreach($bins as $b) rename($b,$b.'.qabak');
+foreach($bins as $b){
+    if(!rename($b,$b.'.qabak')){
+        fwrite(STDERR,"[qa] FATAL：rename 失败（文件被占用或权限不足）：$b。拒绝继续\n");
+        foreach($bins as $r) if(is_file($r.'.qabak')) rename($r.'.qabak',$r);
+        exit(1);
+    }
+}
+// 防退化护栏：改名后必须确认 cmd 环境下 mysqldump 已不可见（Windows 下后端 exec 走 cmd.exe，
+// 其可解析路径可能与 shell_exec('where') 不完全一致；若仍可见则立即恢复并拒绝继续，避免"阻断演练"退化为真实清库）
+$stillVisible = trim((string)(strncasecmp(PHP_OS,'WIN',3)===0
+  ? shell_exec('where mysqldump 2>NUL') : shell_exec('which -a mysqldump 2>/dev/null'))) !== '';
+if($stillVisible){
+  foreach($bins as $b) if(is_file($b.'.qabak')) rename($b.'.qabak',$b);
+  fwrite(STDERR,"[qa] FATAL：屏蔽全部已定位 mysqldump 后 cmd 仍能解析到 mysqldump（存在未被枚举的副本，请用 QA_MYSQLDUMP_ALL 补全）。拒绝继续，防止阻断演练变成真实清库\n");
+  exit(1);
+}
 // 阻断场景基线：7.6.2f 发码插入的验证码行属测试自身合法写入（发码业务），不属被阻断清库的变动
 $blkBase=snap();
 $r=http('POST','/admin/platform/cleanup-execute',['code'=>$code1,'reason'=>'备份失败应阻断清库演练'],$tokSuper);
