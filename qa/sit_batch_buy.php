@@ -185,6 +185,9 @@ T('1.7b 接口 floorPrice 不计入锁定挂单（等于全站 selling 最低价
 foreach ($expect3 as $lid) T("1.8 DB 挂单 $lid 状态 sold（锁定语义）", v("SELECT status FROM nft_resale_listings WHERE id=$lid") === 'sold');
 $r = http('GET', '/api/resale/batch-buy/config', null, $tokB);
 T('1.9 batch-buy/config 返回 enabled=true limit=5', ($r['code'] ?? -1) === 0 && ($r['data']['enabled'] ?? false) === true && (int)($r['data']['limit'] ?? 0) === 5, json_encode($r['data'] ?? []));
+// 业务规则：B 手上这笔批量单未付款前，不得再次批量锁定
+$r = http('POST', '/api/resale/batch-buy', ['collectibleId' => CID, 'quantity' => 1], $tokB);
+T('1.9b 有待支付订单时再次批量下单被拒 3005', ($r['code'] ?? 0) === 3005, "code={$r['code']} msg={$r['message']}");
 // 卖家本人批量购买应因排除自己而无单可买
 $r = http('POST', '/api/resale/batch-buy', ['collectibleId' => CID, 'quantity' => 1], $tokA);
 T('1.10 A 自购被排除（1002 暂无可购买的挂单）', ($r['code'] ?? 0) === 1002, "code={$r['code']} msg={$r['message']}");

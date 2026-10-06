@@ -27,6 +27,7 @@ const no = route.params.no
 const meta = ref(null)                  // { name, coverImage, issueCount, circulationCount }
 const unitPrice = ref('0')
 const orderNo = ref('')
+const createdNo = ref('')           // 本次已创建的待支付订单号：支付失败重试时沿用，避免同一用户挂出第二笔
 const listingId = ref(0)                // 挂单模式：寄售挂单 ID
 const batchTotal = ref(null)            // 批量模式：订单总额（不同地板价累加，非单价×数量）
 const payMethods = ref([])   // [{ method, name }] 后台启用的支付渠道
@@ -157,17 +158,20 @@ async function submit() {
   try {
     let payNo = orderNo.value
     if (!isBatch.value) {
-      const order = await orderStore.createOrder({
-        id,
-        name: meta.value.name,
-        coverImage: meta.value.coverImage,
-        price: unitPrice.value,
-        qty: qty.value,
-        no: orderNo.value,
-        resaleListingId: isRelease.value ? 0 : listingId.value,
-        paymentPassword: payPwd.value
-      })
-      payNo = order.id
+      if (!createdNo.value) {
+        const order = await orderStore.createOrder({
+          id,
+          name: meta.value.name,
+          coverImage: meta.value.coverImage,
+          price: unitPrice.value,
+          qty: qty.value,
+          no: orderNo.value,
+          resaleListingId: isRelease.value ? 0 : listingId.value,
+          paymentPassword: payPwd.value
+        })
+        createdNo.value = order.id
+      }
+      payNo = createdNo.value
     }
     await orderStore.payOrder(payNo, {
       paymentMethod: payMethod.value || 'balance',

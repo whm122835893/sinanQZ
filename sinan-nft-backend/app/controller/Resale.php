@@ -277,9 +277,25 @@ class Resale extends BaseController
         $limit = $access['limit'];
         if ($quantity > $limit) $quantity = $limit;
 
+        // 待支付订单判重要读到最新已提交数据，与 Orders::create 一致改用 READ COMMITTED
+        Db::execute('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         Db::startTrans();
         try {
             $now = date('Y-m-d H:i:s.v');
+
+            // 业务规则：同一用户同一时刻只能挂一笔待支付的市场订单，付款成功或取消后才能再次锁定。
+            // 先锁 users 行把同一用户的并发请求串行化，否则两个请求会各自通过下面的判重。
+            Db::name('users')->where('id', $userId)->lock(true)->find();
+            $pendingNo = Db::name('orders')
+                ->where('user_id', $userId)
+                ->where('source', 'market')
+                ->where('status', 'pending')
+                ->where('expires_at', '>', date('Y-m-d H:i:s'))
+                ->value('order_no');
+            if ($pendingNo) {
+                Db::rollback();
+                return $this->fail(3005, '您还有一笔订单正在支付中，请先完成支付或取消订单');
+            }
 
             // 从地板价起按价格升序锁定最多 quantity 份在售挂单（排除自己）
             $listings = Db::name('resale_listings')
@@ -460,38 +476,43 @@ class Resale extends BaseController
 
     /**
      * GET /api/resale/history?collectibleId=
-     * 某藏品的成交动态（已售出的寄售挂单）
+     * 某藏品的成交动态（以已完成的市场订单为准）
      */
     public function history()
     {
         $p             = $this->pagination();
         $collectibleId = $this->intParam('collectibleId');
+        if ($collectibleId <= 0) {
+            // 无藏品范围的成交动态没有业务入口，且需要全表扫订单，直接返回空页
+            return $this->paginate([], 0, $p['page'], $p['pageSize']);
+        }
+
+        // 挂单 status=sold 既可能是已结算、也可能是待付订单过期后尚未被 ScheduleDispatch 回收，
+        // 用「sold 且不在锁定中」倒推成交会把后者冒充成成交记录，因此只认 completed 市场订单
+        $settled = [];
+        $orders  = Db::name('orders')
+            ->where('status', 'completed')->where('source', 'market')
+            ->where('collectible_id', $collectibleId)
+            ->field('resale_listing_id,batch_listing_ids')
+            ->select()->toArray();
+        foreach ($orders as $o) {
+            $lid = (int) ($o['resale_listing_id'] ?? 0);
+            if ($lid > 0) $settled[] = $lid;
+            foreach (explode(',', (string) ($o['batch_listing_ids'] ?? '')) as $i) {
+                $i = (int) trim($i);
+                if ($i > 0) $settled[] = $i;
+            }
+        }
+        $settled = array_values(array_unique($settled));
+        if (!$settled) {
+            return $this->paginate([], 0, $p['page'], $p['pageSize']);
+        }
 
         $query = Db::name('resale_listings')->alias('l')
             ->join('users u', 'u.id = l.seller_id', 'LEFT')
             ->join('user_collectibles uc', 'uc.id = l.user_collectible_id', 'LEFT')
-            ->where('l.status', 'sold');
-        // 排除仍在锁定中（买家未付款）的挂单——它们展示在挂单池的「锁定中」状态，不算成交
-        $lockIds = Db::name('orders')
-            ->where('status', 'pending')->where('source', 'market')
-            ->where('expires_at', '>', date('Y-m-d H:i:s'))
-            ->where('resale_listing_id', '>', 0)
-            ->column('resale_listing_id');
-        $batchRaw = Db::name('orders')
-            ->where('status', 'pending')->where('source', 'market')
-            ->where('expires_at', '>', date('Y-m-d H:i:s'))
-            ->where('batch_listing_ids', '<>', '')
-            ->column('batch_listing_ids');
-        foreach ($batchRaw as $raw) {
-            foreach (explode(',', (string) $raw) as $i) {
-                $i = (int) trim($i);
-                if ($i > 0) $lockIds[] = $i;
-            }
-        }
-        if ($lockIds) $query->whereNotIn('l.id', array_unique($lockIds));
-        if ($collectibleId > 0) {
-            $query->where('l.collectible_id', $collectibleId);
-        }
+            ->whereIn('l.id', $settled)
+            ->where('l.collectible_id', $collectibleId);
 
         $total = (clone $query)->count();
         $rows  = $query->order('l.updated_at', 'desc')

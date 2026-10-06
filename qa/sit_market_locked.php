@@ -1,6 +1,7 @@
 <?php
 /** 市场挂单「锁定中」展示回归：
  *   1) 下单未付款 → 挂单仍在池中但 locked=true，lockedCount=1，成交动态不含它
+ *      同一买家再下单被拒 3005（待支付订单未处理完不得再次锁定），他人买该单被拒 1002
  *   2) 取消订单   → 挂单恢复 selling，locked=false，lockedCount=0
  *   3) 下单并支付 → 挂单从池中消失，成交动态出现
  *  自清洁：手机号段 139000092xx、藏品段 96xx，可重复执行
@@ -53,12 +54,13 @@ exe("INSERT INTO nft_collectibles (id,category_id,name,subtitle,image,price,edit
   VALUES (9611,1,'锁定回归藏品','','',100,1000,0,0,0,10,1,1,1,0,0,0,'onsale','司南文创','司南',NOW(),NOW())");
 [$uidA, $tokA] = regUser('13900009201', '锁定甲');
 [$uidB, $tokB] = regUser('13900009202', '锁定乙');
+[$uidC, $tokC] = regUser('13900009203', '锁定丙');
 $th = password_hash('Trade#2026', PASSWORD_BCRYPT);
-exe("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$th' WHERE id IN ($uidA,$uidB)");
-foreach ([$uidA, $uidB] as $u) { exe("DELETE FROM nft_wallets WHERE user_id=$u");
+exe("UPDATE nft_users SET is_realname=1, realname_status=2, transaction_password='$th' WHERE id IN ($uidA,$uidB,$uidC)");
+foreach ([$uidA, $uidB, $uidC] as $u) { exe("DELETE FROM nft_wallets WHERE user_id=$u");
   exe("INSERT INTO nft_wallets (user_id,balance,available,frozen,points,created_at,updated_at) VALUES ($u,100000,100000,0,0,NOW(),NOW())");
   exe("INSERT INTO nft_wallet_transactions (user_id,trans_type,title,direction,amount,balance_after,created_at) VALUES ($u,'recharge','锁定回归开账',1,100000,100000,NOW())"); }
-T('0.1 用户 A/B 就绪', $uidA > 0 && $uidB > 0 && $tokA !== '' && $tokB !== '', "A=$uidA B=$uidB");
+T('0.1 用户 A/B/C 就绪', $uidA > 0 && $uidB > 0 && $uidC > 0 && $tokA !== '' && $tokB !== '' && $tokC !== '', "A=$uidA B=$uidB C=$uidC");
 
 $uc = seedHolder($uidA, 9611);
 $r = http('POST', '/api/resale/listings', ['userCollectibleId' => $uc, 'price' => 88, 'paymentPassword' => 'Trade#2026'], $tokA);
@@ -77,7 +79,9 @@ T('1.3 locked=true 且 lockedCount=1', ($row['locked'] ?? false) === true && $lc
 T('1.4 成交动态不含锁定单', !inHistory($lid));
 T('1.5 DB 挂单状态 sold（锁定语义不变）', v("SELECT status FROM nft_resale_listings WHERE id=$lid") === 'sold');
 $r2 = http('POST', '/api/orders', ['resaleListingId' => $lid, 'paymentPassword' => 'Trade#2026'], $tokB);
-T('1.6 锁定期间他人下单被拒 1002', ($r2['code'] ?? 0) === 1002, "code={$r2['code']} msg={$r2['message']}");
+T('1.6 B 有未付款订单时再次下单被拒 3005', ($r2['code'] ?? 0) === 3005, "code={$r2['code']} msg={$r2['message']}");
+$r3 = http('POST', '/api/orders', ['resaleListingId' => $lid, 'paymentPassword' => 'Trade#2026'], $tokC);
+T('1.7 他人买锁定中的挂单仍被拒 1002', ($r3['code'] ?? 0) === 1002, "code={$r3['code']} msg={$r3['message']}");
 
 echo "\n========== 2. 取消订单 → 恢复可售 ==========\n";
 $r = http('POST', "/api/orders/$orderNo/cancel", null, $tokB);
@@ -89,7 +93,7 @@ T('2.3 DB 挂单恢复 selling', v("SELECT status FROM nft_resale_listings WHERE
 echo "\n========== 3. 下单并支付 → 移出池、进成交动态 ==========\n";
 $r = http('POST', '/api/orders', ['resaleListingId' => $lid, 'paymentPassword' => 'Trade#2026'], $tokB);
 $orderNo2 = (string)($r['data']['orderNo'] ?? '');
-T('3.1 B 再次下单', $orderNo2 !== '');
+T('3.1 B 取消后可再次下单（未付款限制已解除）', $orderNo2 !== '', "msg=" . ($r['message'] ?? ''));
 $r = http('POST', "/api/orders/$orderNo2/pay", ['paymentMethod' => 'balance', 'paymentPassword' => 'Trade#2026'], $tokB);
 T('3.2 B 支付成功', ($r['code'] ?? -1) === 0, "code={$r['code']} msg={$r['message']}");
 [$row, $lc] = poolRow($lid);
@@ -108,10 +112,10 @@ if (getenv('QA_KEEP')) {
   exit($fail > 0 ? 1 : 0);
 }
 exe("SET FOREIGN_KEY_CHECKS=0");
-foreach (['nft_wallets', 'nft_wallet_transactions', 'nft_user_collectibles', 'nft_orders', 'nft_payments', 'nft_buy_requests'] as $tb) { exe("DELETE FROM $tb WHERE user_id IN ($uidA,$uidB)"); }
-exe("DELETE FROM nft_transfers WHERE from_user_id IN ($uidA,$uidB) OR to_user_id IN ($uidA,$uidB)");
-exe("DELETE FROM nft_resale_listings WHERE seller_id IN ($uidA,$uidB)");
-exe("DELETE FROM nft_users WHERE id IN ($uidA,$uidB)");
+foreach (['nft_wallets', 'nft_wallet_transactions', 'nft_user_collectibles', 'nft_orders', 'nft_payments', 'nft_buy_requests'] as $tb) { exe("DELETE FROM $tb WHERE user_id IN ($uidA,$uidB,$uidC)"); }
+exe("DELETE FROM nft_transfers WHERE from_user_id IN ($uidA,$uidB,$uidC) OR to_user_id IN ($uidA,$uidB,$uidC)");
+exe("DELETE FROM nft_resale_listings WHERE seller_id IN ($uidA,$uidB,$uidC)");
+exe("DELETE FROM nft_users WHERE id IN ($uidA,$uidB,$uidC)");
 exe("DELETE FROM nft_collectibles WHERE id=9611");
 exe("DELETE FROM nft_verification_codes WHERE phone LIKE '139000092%'");
 exe("SET FOREIGN_KEY_CHECKS=1");

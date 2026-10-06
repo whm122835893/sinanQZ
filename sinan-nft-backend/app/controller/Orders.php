@@ -49,6 +49,20 @@ class Orders extends BaseController
 
             if ($resaleListingId > 0) {
                 // ===== 市场挂单购买 =====
+                // 业务规则：同一用户同一时刻只能挂一笔待支付的市场订单，付款成功或取消后才能再次锁定。
+                // 先锁 users 行把同一用户的并发请求串行化，否则两个请求会各自通过下面的判重。
+                Db::name('users')->where('id', $userId)->lock(true)->find();
+                $pendingNo = Db::name('orders')
+                    ->where('user_id', $userId)
+                    ->where('source', 'market')
+                    ->where('status', 'pending')
+                    ->where('expires_at', '>', date('Y-m-d H:i:s'))
+                    ->value('order_no');
+                if ($pendingNo) {
+                    Db::rollback();
+                    return $this->fail(3005, '您还有一笔订单正在支付中，请先完成支付或取消订单');
+                }
+
                 $listing = Db::name('resale_listings')
                     ->where('id', $resaleListingId)
                     ->where('status', 'selling')

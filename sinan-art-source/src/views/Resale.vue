@@ -15,7 +15,6 @@ const { requireLogin } = useLoginGate()
 
 const meta = ref(null)
 const orders = ref([])           // 寄售挂单（onsale tab，含锁定中）
-const lockedCount = ref(0)       // 当前藏品锁定中（他人下单未付款）挂单数
 const buyRequests = ref([])      // 求购挂单（buying tab）
 const history = ref([])          // 成交动态（history tab）
 const activeTab = ref('onsale')
@@ -96,7 +95,6 @@ async function loadAll() {
     const res = await store.fetchResale(route.params.id)
     meta.value = res.meta
     orders.value = res.orders
-    lockedCount.value = res.lockedCount || 0
     await Promise.allSettled([loadBuyRequests(), loadHistory()])
   } finally {
     loading.value = false
@@ -243,9 +241,6 @@ async function submitPostBuy() {
         <span class="resale-sort__item active" :class="sort" @click="sortPrice">
           价格排序 <i class="arrow"></i>
         </span>
-        <span class="resale-toolbar__locked" v-if="lockedCount > 0">
-          <van-icon name="lock" /> 锁定中 {{ lockedCount }}
-        </span>
       </div>
       <div class="resale-toolbar__right" v-if="activeTab === 'buying'">
         <button class="resale-toolbar__btn" @click="openPostBuy">+ 我要挂求购</button>
@@ -367,6 +362,107 @@ async function submitPostBuy() {
 </template>
 
 <style scoped lang="scss">
+/* 底部固定操作条会遮挡列表末行，预留等高手柄 */
+.resale { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+
+/* 藏品头部：封面卡 + 名称 + 发行/流通量 */
+.resale-asset {
+  &__card {
+    position: relative; margin: 12px $page-padding 0; height: 300px;
+    background: $color-card; border-radius: $radius-lg; overflow: hidden;
+  }
+  &__cover {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+  }
+  &__name {
+    margin: 12px $page-padding 0; text-align: center;
+    font-size: 18px; font-weight: 700; color: $color-text-primary;
+  }
+  &__stats {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    margin: 12px $page-padding 0; padding: 14px 0;
+    background: $color-card; border-radius: $radius-lg;
+  }
+  &__stat {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    &:first-child::after {
+      content: ''; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+      width: 1px; height: 28px; background: $color-border;
+    }
+  }
+  &__label { font-size: 12px; color: $color-text-tertiary; font-family: $font-price; }
+  &__value { font-size: 15px; font-weight: 700; color: $color-text-primary; font-family: $font-price; }
+}
+
+/* 寄售 / 求购 / 成交 切换 */
+.resale-tabs {
+  display: flex; margin-top: 16px;
+  border-bottom: 1px solid $color-border;
+  &__item {
+    position: relative; flex: 1; padding: 12px 0 9px; text-align: center; cursor: pointer;
+    font-size: 15px; font-weight: 500; color: $color-text-tertiary;
+    &.active { color: $color-text-primary; font-weight: 700; }
+    &.active::after {
+      content: ''; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+      width: 22px; height: 4px; border-radius: 2px; background: $color-primary;
+    }
+  }
+}
+
+/* 价格排序 + 锁定中提示 + 挂求购入口 */
+.resale-toolbar {
+  display: flex; align-items: center; min-height: 32px;
+  margin: 12px $page-padding 10px;
+}
+.resale-sort {
+  display: flex; align-items: center;
+  &__item {
+    display: flex; align-items: center; gap: 4px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: $color-text-primary;
+  }
+  .arrow {
+    width: 0; height: 0;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-bottom: 5px solid $color-text-tertiary;
+    transition: transform 0.2s;
+  }
+  &__item.price-desc .arrow { transform: rotate(180deg); }
+}
+
+/* 挂单/求购列表：横条行 */
+.resale-list {
+  padding: 0 $page-padding 16px;
+  &__item {
+    display: flex; align-items: center; gap: 12px;
+    background: $color-card; border-radius: $radius-lg;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  &__thumb {
+    width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex-shrink: 0;
+    background: #141415; -webkit-user-drag: none; user-select: none; pointer-events: none;
+  }
+  &__info { flex: 1; min-width: 0; }
+  &__title { display: flex; align-items: center; gap: 6px; }
+  &__name {
+    min-width: 0; font-size: 15px; font-weight: 600; color: $color-text-primary;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  &__pay { flex-shrink: 0; font-size: 11px; color: $color-text-tertiary; }
+  &__no { margin: 4px 0 0; font-size: 12px; color: $color-text-tertiary; font-family: $font-price; }
+  &__right {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0;
+  }
+  &__price { font-size: 15px; font-weight: 700; color: $color-primary; font-family: $font-price; }
+  &__buy {
+    border: none; cursor: pointer; color: #fff;
+    font-size: 12px; font-weight: 500;
+    padding: 5px 14px; border-radius: $radius-pill;
+    background: linear-gradient(135deg, #D00000, #B00000);
+  }
+  &__empty { padding: 40px 0; text-align: center; font-size: 13px; color: $color-text-tertiary; }
+}
+
 .resale-toolbar__right {
   margin-left: auto;
 }
@@ -378,21 +474,17 @@ async function submitPostBuy() {
   color: $color-text-primary;
 }
 
-.resale-toolbar__locked {
-  margin-left: 12px;
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 12px; color: #eab308;
-}
+/* 锁定行：仅压暗内容，红色徽标保持醒目（整行加 opacity/grayscale 会把徽标一起洗白） */
 .resale-list__item--locked {
-  opacity: 0.45; pointer-events: auto;
-  filter: grayscale(0.6);
+  .resale-list__thumb { opacity: .45; filter: grayscale(.6); }
+  .resale-list__name, .resale-list__no, .resale-list__pay, .resale-list__price { opacity: .45; }
 }
 .resale-list__lock {
-  display: inline-flex; align-items: center; gap: 3px;
+  display: inline-flex; align-items: center; gap: 2px;
   flex-shrink: 0;
-  font-size: 11px; font-weight: 600; color: #a16207;
-  background: #facc15; border-radius: 4px;
-  padding: 2px 7px;
+  font-size: 10px; font-weight: 600; line-height: 1.4; color: #fff;
+  background: $color-primary; border-radius: 4px;
+  padding: 1px 6px;
 }
 
 .resale-buy {
