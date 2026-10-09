@@ -9,7 +9,7 @@ sinanQZ/
 ├── sinan-art-source/      # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
 ├── sinan-admin/           # 管理后台（融合版，Vue 3 + Vite 5 + Pinia + Element Plus + ECharts）
 ├── sinan-nft-backend/     # 后端（ThinkPHP 8 多应用：api = C 端 / admin = 管理端）
-└── database/              # 数据库脚本（24 个 SQL：21 个部署 + 2 个手工补丁 + 1 个合并版，另有 deploy.sh，存活 80 张表）
+└── database/              # 数据库脚本（28 个 SQL + dev-only 1 个：23 个由 deploy.sh 按序执行、full_init.sql 为合并版、其余为手工/数据修补，存活 80 张表）
     ├── deploy.sh                        # ✅ 一键部署拆分版（含正确执行顺序 + 幂等容错）
     ├── init.sql                        # 基础建库：33 表 / 56 外键 / 16 CHECK
     ├── admin_init.sql                   # 管理端扩展：22 表（管理员/角色/权限/操作日志/风控/工单/支付渠道等）
@@ -27,9 +27,11 @@ sinanQZ/
     ├── 002_add_snapshots.sql             # 快照表补建
     ├── announcement_publish_upgrade.sql  # 公告发布状态字段
     ├── artifact_status_upgrade.sql       # 藏品状态字段
-    ├── refund_idempotency_upgrade.sql    # 退款幂等字段（⚠ 手工补丁：未接入 deploy.sh 与任何合并版，需自行执行）
-    ├── payment_method_channel_align.sql  # 支付渠道枚举对齐（还原旧备份后须重放）
-    ├── full_init.sql                    # ✅ 合并版（推荐）：80 表，与运行库实测双向零差异
+    ├── refund_idempotency_upgrade.sql    # 退款幂等字段（已接入 deploy.sh，按序执行）
+    ├── payment_method_channel_align.sql  # 支付渠道枚举对齐（未接入 deploy.sh；还原旧备份后须手工重放）
+    ├── realname_status_pair_repair_upgrade.sql # 数据修补：is_realname / realname_status 成对归位（deploy.sh 第 4 步）
+    ├── wallet_row_backfill_upgrade.sql    # 数据修补：给无钱包行的存量用户补空钱包（deploy.sh 第 4 步）
+    ├── full_init.sql                    # ✅ 合并版（推荐）：80 表；本文件内声明 985 个列，与运行库的双向零差异为历史实测结论（见 deploy/RUNBOOK.md 第 3 节）
     └── dev-only/seed-dev.sql            # 开发联调种子数据（生产严禁执行）
 ```
 
@@ -136,8 +138,8 @@ for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"
 
 | 方案 | 文件 | 适用场景 |
 |------|------|---------|
-| **合并版（当前有效）** | `database/full_init.sql`（199KB，单文件，80 表） | 新环境首部署、CI/CD 自动化 |
-| **拆分版** | `database/*.sql`（`deploy.sh` 的 21 个 BASE_FILES）+ 后端 `migrations/`（17 个） | 开发迭代、增量迁移、追溯字段演进 |
+| **合并版（当前有效）** | `database/full_init.sql`（208KB，单文件，80 表） | 新环境首部署、CI/CD 自动化 |
+| **拆分版** | `database/*.sql`（`deploy.sh` 的 23 个 BASE_FILES + 2 个 REPAIR_FILES）+ 后端 `migrations/`（19 个） | 开发迭代、增量迁移、追溯字段演进 |
 
 合并版把所有 CREATE / ALTER / DROP 拼成一份，一条 `mysql -uroot -p sinan_nft < database/full_init.sql` 搞定。
 拆分版保留了每个升级脚本的独立语义（哪个功能加了哪些字段一目了然），支持从任意版本增量升级。

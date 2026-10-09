@@ -688,7 +688,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 **推荐入口：**
 
 ```bash
-bash database/deploy.sh            # 重建并全量部署：基础库表 21 个 + 后端 migrations 17 个
+bash database/deploy.sh            # 重建并全量部署：基础库表 23 个 + 后端 migrations 19 个 + 数据修补 2 个
 bash database/deploy.sh --verify   # 仅重跑 SQL，不重建库
 ```
 

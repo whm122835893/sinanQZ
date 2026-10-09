@@ -1,77 +1,66 @@
-![](https://www.thinkphp.cn/uploads/images/20230630/300c856765af4d8ae758c503185f8739.png)
+# 司南珍藏 · 后端（ThinkPHP 8 多应用）
 
-ThinkPHP 8
-===============
+数字藏品平台的接口层，一套代码两个应用：`api`（C 端 H5）与 `admin`（管理后台）。
+项目整体说明看仓库根目录的 [README.md](../README.md) 与 [PROJECT_DOC.md](../PROJECT_DOC.md)；
+上线与运维集中在 [deploy/RUNBOOK.md](../deploy/RUNBOOK.md)。
+框架本身的说明见 [LICENSE.txt](LICENSE.txt) 与官方手册，这份文件只讲本项目怎么用这套后端。
 
-## 特性
+## 目录职责
 
-* 基于PHP`8.0+`重构
-* 升级`PSR`依赖
-* 依赖`think-orm`3.0+版本
-* 全新的`think-dumper`服务，支持远程调试
-* 支持`6.0`/`6.1`无缝升级
+| 位置 | 作用 |
+|---|---|
+| `public/index.php` | 唯一入口，Nginx 站点 root 指到这里 |
+| `route/api.php` | C 端路由，统一 `/api` 前缀 |
+| `app/admin/route/app.php` | 管理端路由，统一 `/admin` 前缀 |
+| `app/controller/` | C 端控制器 |
+| `app/admin/controller/` | 管理端控制器 |
+| `app/service/`、`app/admin/service/` | 业务逻辑（钱包、库存、实名、抽奖、短信、链、快照、上传清理等） |
+| `app/middleware/` | `JwtAuth`（必须登录）、`OptionalJwtAuth`（带令牌就认人、不带照常匿名）、`Cors` |
+| `app/admin/middleware/` | `AdminAuth`（令牌 + 实时状态）、`AdminPermission`（权限码精确校验） |
+| `app/command/` | 4 个 `think` 命令，见下 |
+| `migrations/` | 增量 SQL，按文件名日期排序，也被 `../database/deploy.sh` 应用 |
+| `tests/` | PHPUnit 用例 |
+| `docs/DEPLOY.md` | 简版部署指南；生产实际步骤以 `../deploy/RUNBOOK.md` 为准 |
 
-> ThinkPHP8的运行环境要求PHP8.0+
+`config/route.php` 里 `url_route_must = true`：**没写进路由文件的 action，线上根本请求不到**。
+所以新增接口必须先加路由；反过来，路由文件里能看到的都还在用。
 
-现在开始，你可以使用官方提供的[ThinkChat](https://chat.topthink.com/)，让你在学习ThinkPHP的旅途中享受私人AI助理服务！
+## 本地跑起来
 
-![](https://www.topthink.com/uploads/assistant/20230630/4d1a3f0ad2958b49bb8189b7ef824cb0.png)
+```bash
+composer install                              # vendor/ 不入库，要自己装
+cp .env.example .env                          # 把所有 change-me 换成真实值
+php -S 127.0.0.1:8080 -t public public/router.php
+```
 
-ThinkPHP生态服务由[顶想云](https://www.topthink.com)（TOPThink Cloud）提供，为生态提供专业的开发者服务和价值之选。
+`.env.example` 顶部那几条硬约束别绕过去：`APP_DEBUG=false` 时若 `APP_KEY` /
+`JWT.SECRET` / `JWT.ADMIN_SECRET` 还留着占位串，代码会直接抛异常拒绝启动（fail-closed），
+防止照抄示例配置上线。密钥各自独立生成，不要复用。
 
-## 文档
+**换 `APP_KEY` 之前必须先轮换存量密文**，否则实名信息、短信密钥、支付渠道配置、
+链网络密钥全部解不开（数据变砖）：
 
-[完全开发手册](https://doc.thinkphp.cn)
+```bash
+php think rekey:encrypted <旧密钥> <新密钥> --dry-run   # 先看影响面
+php think rekey:encrypted <旧密钥> <新密钥>             # 再执行
+```
 
+## 四个 think 命令
 
-## 赞助
+| 命令 | 用途 |
+|---|---|
+| `think ScheduleDispatch` | 定时上架 / 定时开盒等到期任务，生产由 cron 每分钟拉起（缺了会静默故障） |
+| `think admin:reset-password <账号>` | 重置后台管理员密码；省略第二个参数会随机生成一个强密码并只打印一次 |
+| `think rekey:encrypted` | APP_KEY 轮换，见上 |
+| `think ApiDoc` | 扫描控制器里的 `@openapi` 注释，产出 `runtime/openapi.json` 与 `public/api-docs.html` |
 
-全新的[赞助计划](https://www.thinkphp.cn/sponsor)可以让你通过我们的网站、手册、欢迎页及GIT仓库获得巨大曝光，同时提升企业的品牌声誉，也更好保障ThinkPHP的可持续发展。
+## 测试
 
-[![](https://www.thinkphp.cn/sponsor/special.svg)](https://www.thinkphp.cn/sponsor/special)
+```bash
+php vendor/bin/phpunit --testsuite unit   # 纯逻辑：脱敏、加解密、库存计算，不碰数据库
+php vendor/bin/phpunit                    # unit + api 流程套件（api 那批需要本地库和已启动的服务）
+```
 
-[![](https://www.thinkphp.cn/sponsor.svg)](https://www.thinkphp.cn/sponsor)
-
-## 安装
-
-~~~
-composer create-project topthink/think tp
-~~~
-
-启动服务
-
-~~~
-cd tp
-php think run
-~~~
-
-然后就可以在浏览器中访问
-
-~~~
-http://localhost:8000
-~~~
-
-如果需要更新框架使用
-~~~
-composer update topthink/framework
-~~~
-
-## 命名规范
-
-`ThinkPHP`遵循PSR-2命名规范和PSR-4自动加载规范。
-
-## 参与开发
-
-直接提交PR或者Issue即可
-
-## 版权信息
-
-ThinkPHP遵循Apache2开源协议发布，并提供免费使用。
-
-本项目包含的第三方源码和二进制文件之版权信息另行标注。
-
-版权所有Copyright © 2006-2024 by ThinkPHP (http://thinkphp.cn) All rights reserved。
-
-ThinkPHP® 商标和著作权所有者为上海顶想信息科技有限公司。
-
-更多细节参阅 [LICENSE.txt](LICENSE.txt)
+`tests/unit/` 是无副作用的单元测试；`tests/` 根目录那批是接口流程回归。
+仓库外还有一组端到端 / 系统集成脚本在 `../qa/`，它们靠 `APP_ENV=sit` 加 `QA_DB_*`
+指向沙箱库，**不要对着生产库执行**。

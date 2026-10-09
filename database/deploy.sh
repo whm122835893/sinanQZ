@@ -51,12 +51,27 @@ BASE_FILES=(
   fusion_final_upgrade.sql
   payment_yeepay_upgrade.sql
   swap_c2c_removal.sql
-  # ---- 以下 5 个为 README 未登记的补丁，按语义排在后方 ----
+  # ---- 以下 5 个是补建/字段类补丁，按语义排在后方 ----
   002_add_snapshots.sql
   announcement_publish_upgrade.sql
   artifact_status_upgrade.sql
   refund_idempotency_upgrade.sql
   upload_image_cleanup_upgrade.sql
+)
+
+# ---------------------------------------------------------------- 数据修补
+# 这两份没有 DDL，只修数据：库结构（BASE_FILES + migrations）落定后才跑，
+# 因为它们依赖前面脚本建好的列。两份都是幂等的条件 UPDATE，重复执行不产生新变化。
+#   realname_status_pair_repair —— is_realname 与 realname_status 必须成对
+#                                  （合法组合只有 0/0、0/1、0/3、1/2），
+#                                  qa 夹具与 full_init 种子都可能只写了能力位；
+#   wallet_row_backfill        —— 给「有用户、无 nft_wallets 行」的存量用户补空钱包，
+#                                  否则充值/余额支付/卖家结算会拿到 null 后 5001。
+#                                  代码侧已有 WalletService::ensureLocked 兜底，
+#                                  本脚本负责把历史脏数据一次归位。
+REPAIR_FILES=(
+  realname_status_pair_repair_upgrade.sql
+  wallet_row_backfill_upgrade.sql
 )
 
 apply_sql() {
@@ -91,12 +106,12 @@ echo "=============================================="
 
 if [ "${1:-}" != "--verify" ]; then
   "${MYSQL_ARGS[@]}" -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`; CREATE DATABASE \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  echo "[1/3] 数据库已重建"
+  echo "[1/4] 数据库已重建"
 else
-  echo "[1/3] 跳过重建（--verify 模式）"
+  echo "[1/4] 跳过重建（--verify 模式）"
 fi
 
-echo "[2/3] 应用基础库表 SQL"
+echo "[2/4] 应用基础库表 SQL"
 pass=0; fail=0
 for f in "${BASE_FILES[@]}"; do
   path="$DB_DIR/$f"
@@ -105,13 +120,22 @@ for f in "${BASE_FILES[@]}"; do
 done
 echo "      基础 SQL: 成功 $pass / 告警 $fail"
 
-echo "[3/3] 应用后端 migrations"
+echo "[3/4] 应用后端 migrations"
 mpass=0; mfail=0
 for path in "$MIG_DIR"/*.sql; do
   [ -e "$path" ] || continue
   if apply_sql "$path" "migrations/$(basename "$path")"; then mpass=$((mpass+1)); else mfail=$((mfail+1)); fi
 done
 echo "      迁移 SQL: 成功 $mpass / 告警 $mfail"
+
+echo "[4/4] 应用数据修补脚本（无 DDL，只归位存量脏数据）"
+rpass=0; rfail=0
+for f in "${REPAIR_FILES[@]}"; do
+  path="$DB_DIR/$f"
+  [ -f "$path" ] || { echo "  [SKIP] $f (文件不存在)"; continue; }
+  if apply_sql "$path" "$f"; then rpass=$((rpass+1)); else rfail=$((rfail+1)); fi
+done
+echo "      修补脚本: 成功 $rpass / 告警 $rfail"
 
 echo "----------------------------------------------"
 echo " 部署结果统计"
