@@ -8,12 +8,14 @@ import InboxPopup from '@/components/InboxPopup.vue'
 import { useSiteStore } from '@/stores/site'
 import { useUserStore } from '@/stores/user'
 import { useInboxStore } from '@/stores/inbox'
+import { useCollectionStore } from '@/stores/collection'
 
 const route = useRoute()
 const refreshing = ref(false)
 const site = useSiteStore()
 const user = useUserStore()
 const inbox = useInboxStore()
+const collection = useCollectionStore()
 
 function onRefresh() {
   setTimeout(() => {
@@ -21,12 +23,18 @@ function onRefresh() {
   }, 1000)
 }
 
-// 登录后轮询收件箱，登出时停
+// 登录后：轮询收件箱 + 拉「我的关注」全集（关注态只能由 /user/favorites 说了算，
+// 市场列表不覆盖未开寄售开关的藏品，拿它当全集会让关注刷新后丢失）；登出时停轮询、清关注
 watch(
   () => user.isLoggedIn,
   (logged) => {
-    if (logged) inbox.startPoll()
-    else inbox.stopPoll()
+    if (logged) {
+      inbox.startPoll()
+      collection.fetchFavorites()
+    } else {
+      inbox.stopPoll()
+      collection.clearFavorites()
+    }
   },
   { immediate: true }
 )

@@ -29,9 +29,13 @@ const item = {
   name: '大绵羊',
   coverImage: '/uploads/a.png',
   price: '99.90',
+  listingCount: 2,
   issueCount: '100',
   circulationCount: '40'
 }
+
+// 后台开了寄售开关、但目前还没有藏主挂单（后端 price=null / ordersCount=0）
+const noListingItem = { ...item, price: '', listingCount: 0 }
 
 async function mountFavCard(component, className) {
   const wrapper = mount(component, { props: { item } })
@@ -53,6 +57,21 @@ describe('MarketCard', () => {
     expect(wrapper.find('.market-card__meta').text()).toContain('发行 100')
     expect(wrapper.find('.market-card__meta').text()).toContain('流通 40')
     expect(wrapper.find('.market-card__price').text()).toBe('¥99.90')
+  })
+
+  // 2026-10-09：市场展示门槛改为后台「寄售开关」，开了开关但没人挂单的藏品也会进列表，
+  // 此时不能显示 ¥（空价格），要显示「暂无寄售」
+  it('无在售挂单时不显示地板价，改显示「暂无寄售」', () => {
+    const wrapper = mount(MarketCard, { props: { item: noListingItem } })
+    expect(wrapper.find('.market-card__price').exists()).toBe(false)
+    expect(wrapper.find('.market-card__floor').exists()).toBe(false)
+    expect(wrapper.find('.market-card__none').text()).toBe('暂无寄售')
+  })
+
+  it('无挂单卡片依然能点进寄售详情', async () => {
+    const wrapper = mount(MarketCard, { props: { item: noListingItem } })
+    await wrapper.find('.market-card').trigger('click')
+    expect(shared.push).toHaveBeenCalledWith('/resale/9696')
   })
 
   it('点击卡片进入寄售详情', async () => {
@@ -94,6 +113,12 @@ describe('MarketCard', () => {
 })
 
 describe('ResaleItem', () => {
+  it('列表视图同样要处理无挂单：出「暂无寄售」而不是 ¥', () => {
+    const wrapper = mount(ResaleItem, { props: { item: noListingItem } })
+    expect(wrapper.find('.resale-item__price').exists()).toBe(false)
+    expect(wrapper.find('.resale-item__none').text()).toBe('暂无寄售')
+  })
+
   it('取消关注同样要 await，提示与图标同步翻转', async () => {
     const wrapper = await mountFavCard(ResaleItem, '.resale-item__fav')
     expect(shared.showToast).toHaveBeenCalledWith('已关注')

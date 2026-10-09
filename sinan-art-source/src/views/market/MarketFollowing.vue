@@ -7,10 +7,9 @@ import AppEmpty from '@/components/AppEmpty.vue'
 
 const store = useCollectionStore()
 
-// 已关注的市场藏品（跟随价格排序与关键词过滤）
-const followed = computed(() =>
-  store.sortedMarketCollections.filter(c => store.isFavorite(c.id))
-)
+// 我关注过的藏品：来自 store.followedCollections（关注全集 = /user/favorites + 市场行补价格），
+// 跟随市场的关键词筛选与价格排序。市场里查不到的（寄售开关关着）也会在这里出现，卡片显示「暂无寄售」。
+const followed = computed(() => store.followedCollections)
 </script>
 
 <template>

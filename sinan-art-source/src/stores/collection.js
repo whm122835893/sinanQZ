@@ -1,14 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import request from '@/utils/request'
+import { toTs } from '@/utils/datetime'
 import { useSiteStore } from './site'
 
 // 藏品状态：列表 / 详情 / 筛选
 export const useCollectionStore = defineStore('collection', () => {
   // 限购兜底与后端 perUserLimit 同源：purchase_limit_per_user 系统配置（/api/config）
   const site = useSiteStore()
-  // 后端时间字符串（YYYY-MM-DD HH:mm:ss）→ 时间戳
-  const toTs = (s) => (s ? new Date(String(s).replace(/-/g, '/')).getTime() : 0)
+  // 后端时间串 → 时间戳：统一走 utils/datetime 的 toTs（iOS Safari 解析不了 "…:00:00.000"）
 
   // 首页发售区藏品（真实接口：GET /api/collections/featured）
   const featured = ref([])
@@ -73,14 +73,26 @@ export const useCollectionStore = defineStore('collection', () => {
   // 市场视图模式：'list' 横条 | 'grid' 卡片（一行两个）
   const marketViewMode = ref('grid')
 
+  // ---- 市场分栏（2026-10-09）----
+  // 归属市场：activity 活动市场 / free 自由市场 / all 不限（「我的关注」跨两个市场看）
+  // 两个市场的藏品由后端 nft_collectibles.market_type 区分，数据互不相通，
+  // 所以顶部 tab 切换必须重新拉取（旧版两个 tab 共用同一份列表）。
+  const marketType = ref('activity')
+  // 只看「推荐」：仅活动市场有推荐分类，自由市场/我的关注恒为 false
+  const marketRecommend = ref(false)
+
   // 市场藏品列表（真实接口：GET /api/market/collections）
-  // orders 为该藏品寄售挂单价格，列表价格取其中的最低价（后端已聚合 min_price）
+  // 展示门槛在后台「寄售开关」上：开关开 + 已发售的藏品就会出现在这里，
+  // 与当前有没有人挂寄售无关。后端把挂单最低价放在 price 上，无人挂单时返回 null，
+  // 前端据此显示「暂无寄售」（issuePrice 是发售价，仅作排序参照，不直接展示）。
   const marketCollections = ref([])
   async function fetchMarket(params = {}) {
     const q = {
       category: filters.value.category,
       keyword: filters.value.keyword,
       sort: marketSort.value,
+      marketType: marketType.value,
+      recommend: marketRecommend.value ? 1 : 0,
       page: 1,
       pageSize: 50,
       ...params
@@ -94,52 +106,141 @@ export const useCollectionStore = defineStore('collection', () => {
       circulationCount: String(c.circulationCount),
       todayCount: String(c.todayCount),
       limitPrice: String(Number(c.resalePriceMin) || 0), // 寄售限价下限（后端 resale_price_min，0 = 不限）
-      orders: [Number(c.price).toFixed(2)],
-      isFavorite: !!c.isFavorite
+      // 后端 price = 在售挂单最低价；null/缺省 = 当前无人寄售 → 卡片显示「暂无寄售」
+      price: c.price === null || c.price === undefined ? '' : Number(c.price).toFixed(2),
+      listingCount: Number(c.ordersCount) || 0,
+      issuePrice: Number(c.issuePrice || 0).toFixed(2),
+      orders: c.price === null || c.price === undefined ? [] : [Number(c.price).toFixed(2)],
+      isFavorite: !!c.isFavorite,
+      // 归属市场 + 是否上推荐（后端 market_type / is_market_recommended）
+      marketType: c.marketType || 'activity',
+      recommended: !!c.recommended
     }))
-    // 同步关注态（后端已按登录用户返回 isFavorite）
+    // 关注态同步：**只增不删**。市场列表只覆盖"开了寄售开关"的那部分藏品，
+    // 拿它当全集去删，会把用户从首页/其他市场关注、当前不在本列表里的藏品误抹掉
+    // （这正是"刷新一次关注就没了"的成因）。全集由 fetchFavorites() 从 /user/favorites 取。
     marketCollections.value.forEach((c) => {
-      const key = c.id
-      const has = favorites.value.includes(key)
-      if (c.isFavorite && !has) favorites.value.push(key)
-      if (!c.isFavorite && has) favorites.value.splice(favorites.value.indexOf(key), 1)
+      if (c.isFavorite && !favorites.value.includes(c.id)) favorites.value.push(c.id)
     })
     return marketCollections.value
   }
 
+  /**
+   * 进入某个市场（首次进页 / 切顶部 tab）并决定默认落点（2026-10-10 口径）：
+   * - 后台「推荐」分类总开关开着 且 当前在活动市场 → 默认停在「推荐」；
+   *   但一件推荐藏品都没有（当前分类/关键词下查空）就自动退回「全部」，
+   *   不让用户一进市场就看到空列表（用户选定：空了就退回，不是显示空态）。
+   * - 开关关着 / 自由市场 / 我的关注 → 默认「全部」。
+   */
+  function setMarketType(type) {
+    marketType.value = ['activity', 'free', 'all'].includes(type) ? type : 'activity'
+    marketRecommend.value = false
+    if (marketType.value !== 'activity' || !site.marketRecommendTabEnabled) return fetchMarket()
+    marketRecommend.value = true
+    return fetchMarket().then((list) => {
+      if (list.length) return list
+      marketRecommend.value = false // 推荐位是空的 → 退回「全部」再拉一次
+      return fetchMarket()
+    })
+  }
+
+  /** 只看推荐（仅活动市场生效，其他市场调用即等于取消） */
+  function setMarketRecommend(on) {
+    marketRecommend.value = !!on && marketType.value === 'activity'
+    return fetchMarket()
+  }
+
   // ---- 藏品关注（真实接口：POST /api/collections/:id/favorite，对应 user_favorites 表）----
   const favorites = ref([])
+  // /user/favorites 返回的关注全集（精简行）：市场里没有的藏品靠它出现在「我的关注」
+  const favoriteRows = ref([])
   function isFavorite(id) {
     return favorites.value.includes(String(id))
+  }
+  /**
+   * 拉取"我关注的藏品"全集（GET /api/user/favorites，需登录）。
+   * 这是关注态的权威来源：市场列表只覆盖在架藏品，不能反过来当全集用。
+   */
+  async function fetchFavorites() {
+    if (!localStorage.getItem('jc_token')) return favoriteRows.value // 未登录：不打 401 的请求
+    try {
+      const res = await request.get('/user/favorites', { params: { page: 1, pageSize: 100 } })
+      const list = (res.list || []).map((f) => ({
+        id: String(f.id),
+        name: f.name,
+        coverImage: f.image,
+        // 关注行没有挂单信息：价格留空 → 卡片显示「暂无寄售」，发售价用于排序兜底
+        price: '',
+        listingCount: 0,
+        orders: [],
+        issuePrice: Number(f.price || 0).toFixed(2),
+        issueCount: String(f.issueCount ?? 0),
+        circulationCount: String(f.circulationCount ?? 0),
+        todayCount: '0',
+        limitPrice: '0',
+        marketType: f.marketType || 'activity',
+        recommended: false,
+        isFavorite: true
+      }))
+      favoriteRows.value = list
+      favorites.value = list.map((f) => f.id)
+    } catch { /* 拉取失败保留现有态，不打断页面 */ }
+    return favoriteRows.value
+  }
+  function clearFavorites() {
+    favorites.value = []
+    favoriteRows.value = []
   }
   async function toggleFavorite(id) {
     const key = String(id)
     const target = !favorites.value.includes(key)
-    try {
-      // 先调接口，成功后再改本地态（失败回滚）
-      await request.post(`/collections/${key}/favorite`, { favorite: target })
-    } catch (e) {
-      throw e
+    // 先调接口，成功后才改本地态；失败直接抛出，卡片上的心形保持原样（调用方 toast）
+    await request.post(`/collections/${key}/favorite`, { favorite: target })
+    if (target) {
+      if (!favorites.value.includes(key)) favorites.value.push(key)
+      fetchFavorites() // 关注行可能不在市场列表里（如首页发售卡）→ 回源补全「我的关注」
+    } else {
+      favorites.value.splice(favorites.value.indexOf(key), 1)
+      favoriteRows.value = favoriteRows.value.filter((f) => f.id !== key)
     }
-    if (target) favorites.value.push(key)
-    else favorites.value.splice(favorites.value.indexOf(key), 1)
     return target
   }
 
-  // 市场价格排序：'price-asc' 升序 | 'price-desc' 降序
-  // 价格取该藏品寄售挂单的最低价（price = min(orders)）
+  // 市场价格排序：'price-asc' 升序 | 'price-desc' 降序（后端同口径，这里只对本页 50 条再排一次）
+  // 排序键：有挂单用挂单最低价，无挂单用发售价——与后端 COALESCE(mp.min_price, c.price) 一致，
+  // 不能拿空挂单的 price='' 参与比较（parseFloat 得 NaN，顺序会乱）。
   const marketSort = ref('price-asc')
+  const marketSortKey = (c) =>
+    c.listingCount > 0 ? parseFloat(c.price) : parseFloat(c.issuePrice || 0)
   const sortedMarketCollections = computed(() => {
     const kw = (filters.value.keyword || '').trim().toLowerCase()
     return marketCollections.value
       .filter((c) => !kw || c.name.toLowerCase().includes(kw))
-      .map((c) => ({ ...c, price: Math.min(...c.orders.map(Number)).toFixed(2) }))
       .sort((a, b) => {
-        const pa = parseFloat(a.price)
-        const pb = parseFloat(b.price)
+        const pa = marketSortKey(a)
+        const pb = marketSortKey(b)
         return marketSort.value === 'price-asc' ? pa - pb : pb - pa
       })
   })
+  /**
+   * 「我的关注」列表：关注过的藏品都在，且跟随市场的关键词筛选与价格排序。
+   * 同一个藏品优先用市场行（有挂单最低价、归属市场），市场里查不到（寄售开关关着、
+   * 或不在本页 50 条里）就用 /user/favorites 的精简行兜底 → 卡片显示「暂无寄售」。
+   */
+  const followedCollections = computed(() => {
+    const byId = new Map()
+    favoriteRows.value.forEach((r) => { if (favorites.value.includes(r.id)) byId.set(r.id, r) })
+    marketCollections.value.forEach((c) => { if (favorites.value.includes(c.id)) byId.set(c.id, c) })
+    const kw = (filters.value.keyword || '').trim().toLowerCase()
+    return [...byId.values()]
+      .filter((c) => !kw || c.name.toLowerCase().includes(kw))
+      .sort((a, b) => {
+        const pa = marketSortKey(a)
+        const pb = marketSortKey(b)
+        return marketSort.value === 'price-asc' ? pa - pb : pb - pa
+      })
+  })
+
   function toggleMarketSort() {
     marketSort.value = marketSort.value === 'price-asc' ? 'price-desc' : 'price-asc'
     // 后端已支持 sort 参数，重新拉取
@@ -277,6 +378,10 @@ export const useCollectionStore = defineStore('collection', () => {
     resaleLockedCount,
     marketViewMode,
     marketCollections,
+    marketType,
+    marketRecommend,
+    setMarketType,
+    setMarketRecommend,
     marketSort,
     sortedMarketCollections,
     toggleMarketSort,
@@ -284,8 +389,12 @@ export const useCollectionStore = defineStore('collection', () => {
     artifactCategories,
     fetchCategories,
     favorites,
+    favoriteRows,
+    followedCollections,
     isFavorite,
     toggleFavorite,
+    fetchFavorites,
+    clearFavorites,
     fetchFeatured,
     fetchMarket,
     fetchDetail,

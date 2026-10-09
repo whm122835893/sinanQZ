@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
 import { useLoginGate } from '@/utils/loginGate'
+import { ensureRealname } from '@/utils/purchaseGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppModal from '@/components/AppModal.vue'
 import request from '@/utils/request'
@@ -28,6 +29,12 @@ const tabs = computed(() => {
   list.push({ key: 'history', label: '成交动态' })
   return list
 })
+// 空态文案：藏品没开求购时别引导用户去挂求购
+const onsaleEmptyText = computed(() =>
+  meta.value?.isBuyRequestEnabled
+    ? '当前暂无寄售挂单，可先关注或挂求购'
+    : '当前暂无寄售挂单，可先关注该藏品'
+)
 // 开关关闭时若当前在求购 tab，自动切回寄售
 watch(() => meta.value?.isBuyRequestEnabled, (on) => {
   if (!on && activeTab.value === 'buying') activeTab.value = 'onsale'
@@ -140,18 +147,21 @@ function sortPrice() {
   })
 }
 
-function onQuickBuy() {
+async function onQuickBuy() {
   if (!orders.value.length) return
   if (!requireLogin(route.fullPath)) return
+  // 实名拦在点购买时，不等到输完支付密码才报错
+  if (!(await ensureRealname())) return
   const avail = orders.value.filter((o) => !o.locked)
   if (!avail.length) { showToast('当前挂单正在交易中，请稍后再试'); return }
   const min = avail.reduce((m, o) => (parseFloat(o.price) < parseFloat(m.price) ? o : m), avail[0])
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: min.no } })
 }
 
-function goPay(o) {
+async function goPay(o) {
   if (o.locked) { showToast('该挂单正在交易中，请选择其他编号'); return }
   if (!requireLogin(route.fullPath)) return
+  if (!(await ensureRealname())) return
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: o.no } })
 }
 
@@ -310,11 +320,12 @@ async function submitPostBuy() {
                    (activeTab === 'buying' && !buyRequests.length) ||
                    (activeTab === 'history' && !history.length)"
            class="resale-list__empty">
-        <p>{{ loading ? '加载中...' : '暂无数据' }}</p>
+        <!-- 藏品开了寄售开关就会出现在市场里，但可能还没有藏主挂单，这里要说清楚而不是「暂无数据」 -->
+        <p>{{ loading ? '加载中...' : (activeTab === 'onsale' ? onsaleEmptyText : '暂无数据') }}</p>
       </div>
     </section>
 
-    <div class="resale-float safe-bottom" v-if="activeTab === 'onsale'">
+    <div class="resale-float safe-bottom" v-if="activeTab === 'onsale' && orders.length">
       <button class="resale-float__btn resale-float__btn--gray" v-if="batchAvailable" @click="openBatchBuy">批量购买</button>
       <button class="resale-float__btn" @click="onQuickBuy">快捷购买</button>
     </div>

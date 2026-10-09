@@ -1,19 +1,36 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter, RouterView } from 'vue-router'
 import { useCollectionStore } from '@/stores/collection'
+import { useSiteStore } from '@/stores/site'
 import AppIcon from '@/components/AppIcon.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useCollectionStore()
+const site = useSiteStore()
 
 const tabs = [
   { name: 'market-following', label: '我的关注', to: '/market/following' },
   { name: 'market-activity', label: '活动市场', to: '/market/activity' },
   { name: 'market-free', label: '自由市场', to: '/market/free' }
 ]
+
+// ---- 顶部 tab → 归属市场（2026-10-09：两个市场数据互不相通）----
+// 我的关注是「收藏的市场藏品」，不该被市场归属切开，所以传 all 跨两个市场看
+const MARKET_OF_TAB = {
+  'market-activity': 'activity',
+  'market-free': 'free',
+  'market-following': 'all'
+}
+const currentMarketType = computed(() => MARKET_OF_TAB[route.name] || 'activity')
+
+// 「推荐」胶囊：后台总开关（system_configs.market_recommend_tab_enabled）开启
+// 且当前在活动市场时才出现；关掉即整枚胶囊隐藏
+const showRecommendPill = computed(() =>
+  site.marketRecommendTabEnabled && currentMarketType.value === 'activity'
+)
 
 // 二级分类（真实接口：GET /api/collections/categories?scene=market，
 // 管理端「内容 → 分类管理」维护；失败兜底静态默认）
@@ -40,9 +57,18 @@ function isActive(name) {
 }
 
 // 分类切换：写回 filters.category（code），拉取市场列表（后端按 category_id 过滤）
+// 分类与「推荐」是同一条胶囊栏里的互斥选项，点分类即退出推荐态
 function selectCategory(cat) {
-  if (store.filters.category === cat.code) return
+  if (store.filters.category === cat.code && !store.marketRecommend) return
   store.filters.category = cat.code
+  store.marketRecommend = false
+  store.fetchMarket().catch(() => {})
+}
+
+// 推荐：只看后台「上推荐」的藏品（仍受当前分类/关键词/排序约束）
+function selectRecommend() {
+  if (store.marketRecommend) return
+  store.marketRecommend = true
   store.fetchMarket().catch(() => {})
 }
 
@@ -57,11 +83,36 @@ function onSearch(e) {
   store.fetchMarket().catch(() => {})
 }
 
-onMounted(() => {
-  // 分类动态化 + 首次进入市场页拉取列表（此前无入口触发，列表恒为空）
-  store.fetchCategories('market').catch(() => {})
-  store.fetchMarket().catch(() => {})
+// 顶部 tab 切换：换数据源重新拉取（旧版两个 tab 共用同一份列表，切 tab 不请求）
+watch(() => route.name, (name) => {
+  if (!MARKET_OF_TAB[name]) return
+  store.setMarketType(MARKET_OF_TAB[name]).catch(() => {})
 })
+
+// 站点配置（含「推荐」分类总开关）在 main.js 里是不 await 的异步拉取，
+// 冷启动可能晚于本页挂载。等它到位后再决定默认落点，否则开关明明开着，
+// 首屏却因为时序问题停在「全部」。
+let stopConfigWait = null
+function enterCurrentTab() {
+  store.setMarketType(currentMarketType.value).catch(() => {})
+}
+
+onMounted(() => {
+  // 分类动态化 + 首次进入市场页按当前 tab 所属市场拉取列表
+  store.fetchCategories('market').catch(() => {})
+  if (site.loaded) {
+    enterCurrentTab()
+  } else {
+    stopConfigWait = watch(() => site.loaded, (ok) => {
+      if (!ok) return
+      stopConfigWait?.()
+      stopConfigWait = null
+      enterCurrentTab()
+    })
+  }
+})
+
+onBeforeUnmount(() => stopConfigWait?.())
 </script>
 
 <template>
@@ -83,11 +134,18 @@ onMounted(() => {
     <!-- 二级分类 + 视图切换 -->
     <div class="market-sub">
       <div class="market-sub__cats no-scrollbar">
+        <!-- 推荐：仅活动市场 + 后台开关开启时出现，位于「全部」左侧 -->
+        <span
+          v-if="showRecommendPill"
+          class="market-sub__cat"
+          :class="{ active: store.marketRecommend }"
+          @click="selectRecommend"
+        >推荐</span>
         <span
           v-for="cat in categories"
           :key="cat.code"
           class="market-sub__cat"
-          :class="{ active: store.filters.category === cat.code }"
+          :class="{ active: !store.marketRecommend && store.filters.category === cat.code }"
           @click="selectCategory(cat)"
         >{{ cat.name }}</span>
       </div>

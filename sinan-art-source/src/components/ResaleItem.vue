@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
@@ -10,6 +11,13 @@ const props = defineProps({
 
 const router = useRouter()
 const store = useCollectionStore()
+
+// 与 MarketCard 同口径：无在售挂单就不显示地板价，改为「暂无寄售」
+const hasListing = computed(() =>
+  props.item.listingCount === undefined
+    ? !!props.item.price
+    : Number(props.item.listingCount) > 0
+)
 
 function goResale() {
   router.push('/resale/' + props.item.id)
@@ -41,8 +49,11 @@ async function onFav() {
       <AppIcon :name="store.isFavorite(item.id) ? 'heartFill' : 'heart'" :size="16" />
     </span>
     <div class="resale-item__right">
-      <span class="resale-item__floor">地板价</span>
-      <span class="resale-item__price">¥{{ item.price }}</span>
+      <template v-if="hasListing">
+        <span class="resale-item__floor">地板价</span>
+        <span class="resale-item__price">¥{{ item.price }}</span>
+      </template>
+      <span v-else class="resale-item__none">暂无寄售</span>
     </div>
   </div>
 </template>
@@ -69,6 +80,7 @@ async function onFav() {
   &__right { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 3px; }
   &__floor { font-size: 11px; color: $color-text-tertiary; line-height: 1; }
   &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; }
+  &__none { font-size: 12px; color: $color-text-tertiary; font-weight: 500; line-height: 1; }
   &__fav {
     align-self: center; flex: 1; min-width: 0;
     display: flex; align-items: center; justify-content: center;

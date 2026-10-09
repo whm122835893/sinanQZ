@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
@@ -10,6 +11,14 @@ const props = defineProps({
 
 const router = useRouter()
 const store = useCollectionStore()
+
+// 有无在售寄售挂单：没有就不显示地板价，改为「暂无寄售」。
+// listingCount 缺失时（非市场接口的调用方）退回「有价格即有挂单」判断。
+const hasListing = computed(() =>
+  props.item.listingCount === undefined
+    ? !!props.item.price
+    : Number(props.item.listingCount) > 0
+)
 
 function goResale() {
   router.push('/resale/' + props.item.id)
@@ -39,8 +48,11 @@ async function onFav() {
       <span class="market-card__stat">流通 {{ item.circulationCount }}</span>
     </div>
     <div class="market-card__footer">
-      <span class="market-card__floor">地板价</span>
-      <span class="market-card__price">¥{{ item.price }}</span>
+      <template v-if="hasListing">
+        <span class="market-card__floor">地板价</span>
+        <span class="market-card__price">¥{{ item.price }}</span>
+      </template>
+      <span v-else class="market-card__none">暂无寄售</span>
     </div>
   </div>
 </template>
@@ -95,5 +107,9 @@ async function onFav() {
     margin-top: auto; padding-top: 10px; border-top: 1px solid $color-border;
   }
   &__price { font-size: 18px; font-weight: 700; color: $color-primary; font-family: $font-price; line-height: 1; }
+  &__none {
+    font-size: 12px; color: $color-text-tertiary; font-weight: 500;
+    display: flex; align-items: baseline; line-height: 1;
+  }
 }
 </style>
