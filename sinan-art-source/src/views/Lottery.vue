@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import request from '@/utils/request'
+import { toTs } from '@/utils/datetime'
 import { useLoginGate } from '@/utils/loginGate'
 import { useUserStore } from '@/stores/user'
 import { showToast } from 'vant'
@@ -61,8 +62,9 @@ const spinDuration = ref(4200) // 转盘转动时长（抽多次时缩短）
 
 // 'YYYY-MM-DD HH:mm:ss(.v)' → 'M月D日 HH:mm'
 function fmtTime(s) {
-  const d = new Date(String(s || '').replace(/-/g, '/'))
-  if (isNaN(d.getTime())) return ''
+  const ts = toTs(s)
+  if (!ts) return ''
+  const d = new Date(ts)
   const p = (x) => String(x).padStart(2, '0')
   return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`
 }

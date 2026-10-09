@@ -8,6 +8,7 @@ import { useActivityStore } from '@/stores/activity'
 import { useUserStore } from '@/stores/user'
 import request from '@/utils/request'
 import { useLoginGate } from '@/utils/loginGate'
+import { toTs } from '@/utils/datetime'
 
 const router = useRouter()
 const activityStore = useActivityStore()
@@ -174,8 +175,8 @@ function goSynthesis(id) {
 const now = Date.now()
 function statusOf(a) {
   if (a.type === 'permanent') return { text: '进行中', cls: 'ing' }
-  const s = new Date(String(a.startTime).replace(/-/g, '/')).getTime()
-  const e = new Date(String(a.endTime).replace(/-/g, '/')).getTime()
+  const s = toTs(a.startTime)
+  const e = toTs(a.endTime)
   if (now < s) return { text: '未开始', cls: 'wait' }
   if (now > e) return { text: '已结束', cls: 'end' }
   return { text: '进行中', cls: 'ing' }

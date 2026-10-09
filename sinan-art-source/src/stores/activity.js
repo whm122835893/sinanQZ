@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import request from '@/utils/request'
+import { toTs } from '@/utils/datetime'
 
 // 活动中心：合成活动数据
 export const useActivityStore = defineStore('activity', () => {
@@ -9,7 +10,11 @@ export const useActivityStore = defineStore('activity', () => {
 
   // 活动是否已结束（limit 类型且过结束时间；已结束活动仍展示，仅禁止合成）
   function isEnded(a) {
-    return a.type === 'limit' && a.endTime && new Date(String(a.endTime).replace(/-/g, '/')) < new Date()
+    // 用 toTs 而不是 new Date(字符串)：iOS Safari 解析不了后端那种 "…:00:00.000"，
+    // 原来 Invalid Date < new Date() 恒为 false，限购活动会永远显示"未结束"。
+    if (a.type !== 'limit') return false
+    const end = toTs(a.endTime)
+    return !!end && end < Date.now()
   }
 
   // 合成活动列表

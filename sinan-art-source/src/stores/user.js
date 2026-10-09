@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import request from '@/utils/request'
+import { toTs } from '@/utils/datetime'
 
 // 用户状态：token / userInfo / 登录态
 export const useUserStore = defineStore('user', () => {
@@ -165,7 +166,7 @@ export const useUserStore = defineStore('user', () => {
       nos: g.nos || [],
       lockedNos: g.isConsigned ? (g.nos || []).slice(0, 1) : [],
       type: g.type === 'blindbox' ? 'blindbox' : 'release',
-      boughtAt: g.acquiredAt ? new Date(String(g.acquiredAt).replace(/-/g, '/')).getTime() : 0,
+      boughtAt: toTs(g.acquiredAt),
       userCollectibleIds: g.userCollectibleIds || [],
       // 编号 → 资产实例明细（寄售/开盒按实例操作）
       items: (g.items || []).map((it) => ({

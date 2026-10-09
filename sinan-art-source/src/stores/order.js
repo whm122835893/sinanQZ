@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import request from '@/utils/request'
+import { toTs } from '@/utils/datetime'
 
 // 订单状态：我的订单 / 申购订单
 // 库存锁定/释放、限购校验、流通量更新均由后端事务保证，前端不再本地改库存。
@@ -9,8 +10,7 @@ export const useOrderStore = defineStore('order', () => {
   const purchaseOrders = ref([])  // 转赠记录
   const airdrops = ref([])        // 空投记录
 
-  // 后端时间字符串（YYYY-MM-DD HH:mm:ss[.v]）→ 时间戳
-  const toTs = (s) => (s ? new Date(String(s).replace(/-/g, '/')).getTime() : 0)
+  // 后端时间串 → 时间戳统一走 utils/datetime 的 toTs（iOS Safari 解析不了 "…:00:00.000"）
 
   // 创建订单（确认支付时调用；后端在 create 与 pay 两级校验交易密码，锁库存并生成 5 分钟待支付订单）
   async function createOrder(payload) {

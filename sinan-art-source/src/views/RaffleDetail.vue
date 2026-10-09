@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '@/utils/request'
+import { toTs } from '@/utils/datetime'
 import { useLoginGate } from '@/utils/loginGate'
 import { showToast, showConfirmDialog } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -29,8 +30,8 @@ let tickTimer = null
 const countdownText = computed(() => {
   const end = detail.value?.registrationEnd
   if (!end) return ''
-  const endTs = new Date(String(end).replace(/-/g, '/')).getTime()
-  if (isNaN(endTs)) return ''
+  const endTs = toTs(end)
+  if (!endTs) return ''
   let diff = Math.floor((endTs - nowTs.value) / 1000)
   if (diff <= 0) return ''
   const d = Math.floor(diff / 86400)
