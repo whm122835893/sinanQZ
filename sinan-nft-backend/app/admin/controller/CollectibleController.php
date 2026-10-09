@@ -43,6 +43,11 @@ class CollectibleController extends BaseController
         if ($status !== '' && in_array($status, ['upcoming', 'onsale', 'soldout', 'off'], true)) {
             $query->where('c.status', $status);
         }
+        // 归属市场筛选：activity 活动市场 / free 自由市场（空=全部）
+        $marketType = (string) $this->request->param('marketType', '');
+        if ($marketType !== '' && isset(self::MARKET_TYPES[$marketType])) {
+            $query->where('c.market_type', $marketType);
+        }
         $isBlindBox = $this->request->param('isBlindBox');
         if ($isBlindBox !== null && $isBlindBox !== '') {
             if ((int) $isBlindBox === 1) {
@@ -63,7 +68,9 @@ class CollectibleController extends BaseController
         $rows = $query->field('c.id, c.name, c.subtitle, c.image, c.category_id, cat.name AS category_name,
                                c.price, c.edition, c.circulate, c.sold, c.locked_quantity,
                                c.airdropped_count, c.destroyed_count, c.reserved_count,
-                               c.status, c.is_release, c.featured, c.onsale_at, c.off_sale_at, c.created_at,
+                               c.status, c.is_release, c.featured, c.market_type, c.is_market_recommended,
+                               c.is_home_carousel_recommended,
+                               c.onsale_at, c.off_sale_at, c.created_at,
                                c.is_transferable, c.is_resaleable, c.is_buy_request_enabled,
                                c.resale_price_mode, c.resale_price_min, c.resale_price_max,
                                (bb.id IS NOT NULL) AS is_blind_box')
@@ -1299,6 +1306,119 @@ class CollectibleController extends BaseController
             $msg .= '；已联动下架 ' . $delistedCount . ' 个在售挂单';
         }
         return $this->success(null, $msg);
+    }
+
+    /** 市场归属枚举 */
+    private const MARKET_TYPES = ['activity' => '活动市场', 'free' => '自由市场'];
+
+    /**
+     * POST /admin/collectibles/:id/market-move { market_type }
+     * 在两个市场之间移动藏品（改 nft_collectibles.market_type 一列即可）。
+     *
+     * 口径：
+     * - 只影响 C 端「活动市场 / 自由市场」两个 tab 的可见性，挂单、价格、库存都不动；
+     * - 移到自由市场时清掉推荐标记（推荐分类只有活动市场有）。
+     */
+    public function marketMove()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $target = (string) $this->request->param('market_type', '');
+        if (!isset(self::MARKET_TYPES[$target])) {
+            return $this->fail(4220, 'market_type 仅允许 activity / free');
+        }
+
+        $c = Db::name('collectibles')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$c) {
+            return $this->fail(4040, '藏品不存在');
+        }
+        if ($c['market_type'] === $target) {
+            return $this->success(null, '藏品已在' . self::MARKET_TYPES[$target]);
+        }
+
+        $update = ['market_type' => $target, 'updated_at' => date('Y-m-d H:i:s')];
+        if ($target !== 'activity') {
+            $update['is_market_recommended'] = 0;
+        }
+        Db::name('collectibles')->where('id', $id)->update($update);
+
+        $this->audit('collectible', 'market_move',
+            '藏品「' . $c['name'] . '」从' . (self::MARKET_TYPES[$c['market_type']] ?? '未知市场')
+            . '移动到' . self::MARKET_TYPES[$target], $update, 'collectible', $id);
+        return $this->success(null, '已移动到' . self::MARKET_TYPES[$target]);
+    }
+
+    /**
+     * POST /admin/collectibles/:id/market-recommend { recommended }
+     * 上/下推荐（recommended 1 上推荐 0 取消），藏品显示在活动市场的「推荐」分类下。
+     * 未上推荐的藏品不允许操作（推荐位只服务于活动市场）。
+     */
+    public function marketRecommend()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $recommended = $this->request->param('recommended');
+        if ($recommended === null || !in_array((int) $recommended, [0, 1], true)) {
+            return $this->fail(4220, 'recommended 仅允许 0/1');
+        }
+        $recommended = (int) $recommended;
+
+        $c = Db::name('collectibles')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$c) {
+            return $this->fail(4040, '藏品不存在');
+        }
+        if ($recommended === 1 && $c['market_type'] !== 'activity') {
+            return $this->fail(4220, '仅活动市场藏品可上推荐，请先移回活动市场');
+        }
+
+        Db::name('collectibles')->where('id', $id)->update([
+            'is_market_recommended' => $recommended,
+            'updated_at'            => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->audit('collectible', 'market_recommend',
+            ($recommended ? '上推荐' : '下推荐') . '藏品「' . $c['name'] . '」',
+            ['is_market_recommended' => $recommended], 'collectible', $id);
+        return $this->success(null, $recommended ? '已上推荐' : '已取消推荐');
+    }
+
+    /**
+     * POST /admin/collectibles/:id/home-carousel { on }
+     * 开/关首页轮播推荐位（on 1 上轮播 0 取消）。与市场推荐互相独立，可同时开启。
+     */
+    public function homeCarousel()
+    {
+        $id = $this->positiveInt('id');
+        if ($id === null) {
+            return $this->fail(4220, 'id 参数不正确');
+        }
+        $on = $this->request->param('on');
+        if ($on === null || !in_array((int) $on, [0, 1], true)) {
+            return $this->fail(4220, 'on 仅允许 0/1');
+        }
+        $on = (int) $on;
+
+        $c = Db::name('collectibles')->where('id', $id)->whereNull('deleted_at')->find();
+        if (!$c) {
+            return $this->fail(4040, '藏品不存在');
+        }
+        if ($on === 1 && trim((string) $c['image']) === '') {
+            return $this->fail(4220, '该藏品没有封面图，无法上首页轮播');
+        }
+
+        Db::name('collectibles')->where('id', $id)->update([
+            'is_home_carousel_recommended' => $on,
+            'updated_at'                   => date('Y-m-d H:i:s'),
+        ]);
+
+        $this->audit('collectible', 'home_carousel',
+            ($on ? '上首页轮播' : '下首页轮播') . '藏品「' . $c['name'] . '」',
+            ['is_home_carousel_recommended' => $on], 'collectible', $id);
+        return $this->success(null, $on ? '已上首页轮播' : '已取消首页轮播');
     }
 
     /**

@@ -106,6 +106,10 @@ Route::group('collectibles', function () {
     Route::post(':id/release', 'CollectibleController/release')->middleware(AdminPermission::class, 'collectible:release');
     Route::post(':id/quota', 'CollectibleController/quota')->middleware(AdminPermission::class, 'collectible:quota');
     Route::post(':id/manage', 'CollectibleController/manage')->middleware(AdminPermission::class, 'collectible:manage');
+    // 市场归属移动 + 活动市场「推荐」开关 + 首页轮播「播」开关（沿用 collectible:manage 权限码）
+    Route::post(':id/market-move', 'CollectibleController/marketMove')->middleware(AdminPermission::class, 'collectible:manage');
+    Route::post(':id/market-recommend', 'CollectibleController/marketRecommend')->middleware(AdminPermission::class, 'collectible:manage');
+    Route::post(':id/home-carousel', 'CollectibleController/homeCarousel')->middleware(AdminPermission::class, 'collectible:manage');
     Route::post(':id/destroy', 'CollectibleController/destroy')->middleware(AdminPermission::class, 'collectible:destroy');
     Route::delete(':id', 'CollectibleController/delete')->middleware(AdminPermission::class, 'collectible:delete');
     Route::post('airdrop', 'CollectibleController/airdrop')->middleware(AdminPermission::class, 'collectible:airdrop');

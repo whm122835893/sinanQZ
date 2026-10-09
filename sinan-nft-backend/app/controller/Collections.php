@@ -215,14 +215,29 @@ class Collections extends BaseController
 
     /**
      * GET /api/market/collections
-     * 市场藏品列表（聚合挂单最低价）
+     * 市场藏品列表：后台「寄售开关」（is_resaleable）开着就展示，不看发售状态、
+     * 也不要求当前有人挂单；价格取该藏品在售挂单最低价，无人挂单时 price 为 null
+     * （C 端显示「暂无寄售」）。
+     *
+     * 查询参数：
+     *   category    分类 code（all 不过滤）
+     *   keyword     名称模糊
+     *   sort        price-asc | price-desc | time-desc
+     *   marketType  activity 活动市场（默认）| free 自由市场 | all 不限（我的关注页用）
+     *   recommend   1 = 只看「推荐」藏品（仅活动市场生效）
      */
     public function market()
     {
-        $p        = $this->pagination();
-        $category = $this->strParam('category', 'all');
-        $keyword  = $this->strParam('keyword');
-        $sort     = $this->strParam('sort', 'price-asc');
+        $p          = $this->pagination();
+        $category   = $this->strParam('category', 'all');
+        $keyword    = $this->strParam('keyword');
+        $sort       = $this->strParam('sort', 'price-asc');
+        $marketType = $this->strParam('marketType', 'activity');
+        $recommend  = (int) $this->strParam('recommend', '0') === 1;
+        // 白名单兜底：非法值一律按活动市场处理（避免 ENUM 比较落空导致整页空白）
+        if (!in_array($marketType, ['activity', 'free', 'all'], true)) {
+            $marketType = 'activity';
+        }
 
         // 聚合挂单：每个藏品的最低价 + 挂单数
         $minPriceSql = Db::name('resale_listings')
@@ -233,7 +248,18 @@ class Collections extends BaseController
 
         $query = Db::name('collectibles')->alias('c')
             ->leftJoin([$minPriceSql => 'mp'], 'mp.collectible_id = c.id')
-            ->whereNull('c.deleted_at');
+            ->whereNull('c.deleted_at')
+            // 显式列：藏品字段 + 挂单聚合值（min_price / orders_count）
+            ->field(['c.*', 'mp.min_price', 'mp.orders_count']);
+
+        // 归属市场：活动/自由两个市场数据互不相通（后台「移动到…」即改此列）
+        if ($marketType !== 'all') {
+            $query->where('c.market_type', $marketType);
+        }
+        // 推荐分类只有活动市场有；自由市场/全部场景下 recommend 参数直接忽略
+        if ($recommend && $marketType === 'activity') {
+            $query->where('c.is_market_recommended', 1);
+        }
 
         if ($category && $category !== 'all') {
             // code → id 标量过滤（闭包误用会生成 `category_id = (SELECT ...)` 行比较，
@@ -245,22 +271,24 @@ class Collections extends BaseController
             $query->where('c.name', 'like', "%{$keyword}%");
         }
 
-        // 只展示有在售挂单的藏品
-        $query->where('mp.orders_count', '>', 0);
+        // 展示门槛（2026-10-09 定稿）：只看后台那枚「寄售开关」——开就进市场，
+        // 不看发售状态（未发售/发售中/已售罄/已下架都一样），也不要求当前有人挂单；
+        // 无挂单时 price 返回 null，C 端显示「暂无寄售」。软删除的藏品始终不出现。
+        $query->where('c.is_resaleable', 1);
 
-        // 排序
+        // 排序：有挂单按挂单最低价，无挂单按发售价（COALESCE 保证空挂单藏品也有稳定次序）
+        $priceExpr = 'COALESCE(mp.min_price, c.price)';
         switch ($sort) {
-            case 'price-asc':
-                $query->order('mp.min_price', 'asc');
-                break;
             case 'price-desc':
-                $query->order('mp.min_price', 'desc');
+                $query->orderRaw($priceExpr . ' desc');
                 break;
             case 'time-desc':
                 $query->order('c.created_at', 'desc');
                 break;
+            case 'price-asc':
             default:
-                $query->order('mp.min_price', 'asc');
+                $query->orderRaw($priceExpr . ' asc');
+                break;
         }
 
         $total = (clone $query)->count();
@@ -270,11 +298,15 @@ class Collections extends BaseController
         $favs    = $userId ? Db::name('user_favorites')->where('user_id', $userId)->column('collectible_id') : [];
 
         $items = array_map(function ($c) use ($favs) {
+            // 挂单最低价：null 表示当前无人寄售（前端据此显示「暂无寄售」，不出价格）
+            $minPrice = isset($c['min_price']) && $c['min_price'] !== null ? (float) $c['min_price'] : null;
             return [
                 'id'               => (int) $c['id'],
                 'name'             => $c['name'],
                 'image'            => $c['image'],
-                'price'            => (float) ($c['min_price'] ?? 0),
+                'price'            => $minPrice,
+                // 发售价：无挂单时的价格参照（卡片不直接展示，供前端排序兜底/后续扩展）
+                'issuePrice'       => (float) ($c['price'] ?? 0),
                 'issueCount'       => (int) $c['edition'],
                 'circulationCount' => (int) $c['circulate'],
                 'todayCount'       => (int) $c['vol'],
@@ -283,6 +315,9 @@ class Collections extends BaseController
                 // 寄售限价配置（与详情接口对齐，前端 limitPrice 数据源）
                 'resalePriceMin'   => (float) ($c['resale_price_min'] ?? 0),
                 'resalePriceMax'   => (float) ($c['resale_price_max'] ?? 0),
+                // 归属市场 + 是否上推荐（C 端自由市场据此区分）
+                'marketType'       => $c['market_type'] ?? 'activity',
+                'recommended'      => (int) ($c['is_market_recommended'] ?? 0) === 1,
             ];
         }, $list);
 
@@ -424,7 +459,7 @@ class Collections extends BaseController
 
         $total = (clone $query)->count();
         $list  = $query->limit($p['offset'], $p['pageSize'])->field([
-            'c.id', 'c.name', 'c.image', 'c.price', 'c.edition', 'c.circulate',
+            'c.id', 'c.name', 'c.image', 'c.price', 'c.edition', 'c.circulate', 'c.market_type',
         ])->select()->toArray();
 
         $items = array_map(fn ($c) => [
@@ -434,6 +469,8 @@ class Collections extends BaseController
             'price'            => (float) $c['price'],
             'issueCount'       => (int) $c['edition'],
             'circulationCount' => (int) $c['circulate'],
+            // 归属市场：「我的关注」要能显示两个市场的藏品，标记带给前端做文案/跳转判断
+            'marketType'       => (string) ($c['market_type'] ?? 'activity'),
         ], $list);
 
         return $this->paginate($items, $total, $p['page'], $p['pageSize']);

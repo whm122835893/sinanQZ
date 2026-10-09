@@ -26,7 +26,10 @@ Route::group('/api', function () {
     Route::get('collections/calendar',   'Collections/calendar');
     Route::get('collections/:id',        'Collections/detail')
         ->middleware(\app\middleware\OptionalJwtAuth::class);
-    Route::get('market/collections',     'Collections/market');
+    // 市场列表也要认登录态：卡片上的「关注」心形与「我的关注」都读 isFavorite，
+    // 不挂这个中间件时后端一律按匿名用户返回 isFavorite=false，用户刷新一次关注就"掉了"。
+    Route::get('market/collections',     'Collections/market')
+        ->middleware(\app\middleware\OptionalJwtAuth::class);
 
     // 盲盒
     Route::get('blind-boxes', 'BlindBoxes/index');

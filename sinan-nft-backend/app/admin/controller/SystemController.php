@@ -70,7 +70,8 @@ class SystemController extends BaseController
                 return $this->fail(4220, '参数 ' . $key . ' 取值范围 ' . $min . '~' . $max);
             }
         }
-        if (in_array($key, ['cleanup_sms_required'], true) && !in_array($value, ['0', '1'], true)) {
+        // 布尔开关型参数：仅允许 0/1（market_recommend_tab_enabled = 活动市场「推荐」分类开关）
+        if (in_array($key, ['cleanup_sms_required', 'market_recommend_tab_enabled'], true) && !in_array($value, ['0', '1'], true)) {
             return $this->fail(4220, '参数 ' . $key . ' 仅允许 0/1');
         }
         // 实名审核模式：manual=人工审核 auto=自动通过（提交即认证成功）
