@@ -1,5 +1,6 @@
 <script setup>
-// 全局空状态：与首页发售日历、抽奖活动同风格图标
+// 全局空状态：铜鼎实物图（背景与脚下投影已抠掉，做法见 deploy/RUNBOOK.md 7.5）
+// ?v= 是刻意加的：public/ 下的图路径不变时 nginx 走启发式缓存，换图后老访客会一直看到旧图
 defineProps({
   description: { type: String, default: '暂无数据' },
   image: { type: String, default: 'box' }
@@ -8,7 +9,7 @@ defineProps({
 
 <template>
   <div class="app-empty">
-    <img class="app-empty__img" src="/images/tab/empty-carton.png" alt="" draggable="false" @contextmenu.prevent />
+    <img class="app-empty__img" src="/images/tab/empty-ding.png?v=20261009" alt="" draggable="false" @contextmenu.prevent />
     <p class="app-empty__text">{{ description }}</p>
   </div>
 </template>
