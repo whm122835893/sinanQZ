@@ -1038,6 +1038,9 @@ CREATE TABLE `nft_collectibles` (
   `tag` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '发售方式标签：首发/优先购/资格购/盲盒',
   `is_release` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否首页发售位：1是 0否',
   `featured` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否推荐位：1是 0否',
+  `market_type` enum('activity','free') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'activity' COMMENT '归属市场：activity 活动市场 / free 自由市场（见 migrations/20261009_market_type_and_recommend.sql）',
+  `is_market_recommended` tinyint(1) unsigned NOT NULL DEFAULT '0' COMMENT '活动市场推荐：1 显示在「推荐」分类，0 未推荐；自由市场不生效',
+  `is_home_carousel_recommended` tinyint(1) unsigned NOT NULL DEFAULT '0' COMMENT '首页轮播推荐位：1 上轮播（封面图插到首页轮播最前，带「推荐藏品」角标），0 不上（见 migrations/20261009_home_carousel.sql）',
   `market_tag` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '市场标签（如：寄售）',
   `description` text COLLATE utf8mb4_unicode_ci COMMENT '藏品故事/购买须知（合并存储）',
   `deleted_at` datetime DEFAULT NULL COMMENT '软删除时间，NULL未删除',
@@ -1046,6 +1049,7 @@ CREATE TABLE `nft_collectibles` (
   PRIMARY KEY (`id`),
   KEY `idx_status_release` (`status`,`is_release`),
   KEY `idx_category` (`category_id`),
+  KEY `idx_market_type` (`market_type`,`is_market_recommended`,`status`),
   CONSTRAINT `fk_collectibles_category` FOREIGN KEY (`category_id`) REFERENCES `nft_categories` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `chk_collectibles_price` CHECK ((`price` >= 0)),
   CONSTRAINT `chk_collectibles_stock_v2` CHECK (((((((`sold` + `locked_quantity`) + `reserved_count`) + `airdropped_count`) + `destroyed_count`) <= `edition`) and (`circulate` <= `edition`)))
