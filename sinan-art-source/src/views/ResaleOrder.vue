@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { showToast } from 'vant'
 import { useCollectionStore } from '@/stores/collection'
 import { useLoginGate } from '@/utils/loginGate'
+import { ensureRealname } from '@/utils/purchaseGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 
 const route = useRoute()
@@ -32,9 +33,11 @@ const notices = [
   '平台仅提供信息撮合服务，交易风险由买卖双方自行承担。'
 ]
 
-function onBuy() {
+async function onBuy() {
   if (order.value && order.value.locked) { showToast('该挂单正在交易中，请选择其他编号'); return }
   if (!requireLogin(route.fullPath)) return
+  // 实名拦在点购买时
+  if (!(await ensureRealname())) return
   router.push({ name: 'pay', params: { mode: 'order', id: route.params.id, no: order.value.no } })
 }
 </script>

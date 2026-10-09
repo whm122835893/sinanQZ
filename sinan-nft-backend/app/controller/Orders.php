@@ -30,14 +30,17 @@ class Orders extends BaseController
         $no               = $this->strParam('no');
         $paymentPassword  = $this->request->post('paymentPassword', '');
 
-        // 1. 校验交易密码
-        $hash = Db::name('users')->where('id', $userId)->value('transaction_password');
+        // 1. 实名前置
+        // 顺序与 C 端拦截时机保持一致：实名认证在「点购买」时拦，交易密码在「输密码」时拦。
+        // 放在交易密码之后的话，未实名又改过密码的用户会先收到「交易密码错误」，
+        // 让人以为问题出在密码上（前端缓存过时也会走到这里，报错口径必须同源）。
+        $row = Db::name('users')->where('id', $userId)->field('is_realname,transaction_password')->find();
+        if ((int) ($row['is_realname'] ?? 0) !== 1) return $this->fail(1001, '请先完成实名认证');
+
+        // 2. 校验交易密码
+        $hash = (string) ($row['transaction_password'] ?? '');
         if (!$hash) return $this->fail(2003, '请先设置交易密码');
         if (!verify_password($paymentPassword, $hash)) return $this->fail(2003, '交易密码错误');
-
-        // 2. 实名前置
-        $isRealname = Db::name('users')->where('id', $userId)->value('is_realname');
-        if ((int) $isRealname !== 1) return $this->fail(1001, '请先完成实名认证');
 
         // 限购计数是「锁区间内的普通读」：RR 的读视图在抢 FOR UPDATE 行锁之前就已固定，
         // 于是并发请求各自读到旧快照（实测 8 并发同一用户、per_user_limit=1 放行 5 笔）。

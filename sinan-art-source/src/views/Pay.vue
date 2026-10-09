@@ -5,6 +5,7 @@ import { useCollectionStore } from '@/stores/collection'
 import { useUserStore } from '@/stores/user'
 import { useOrderStore } from '@/stores/order'
 import { useLoginGate } from '@/utils/loginGate'
+import { ensureRealname, ensureTradePassword } from '@/utils/purchaseGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import { useCountdown } from '@/utils/useCountdown'
@@ -54,6 +55,9 @@ onMounted(async () => {
     router.back()
     return
   }
+  // 实名认证：直接进支付页（分享链接、批量购买回跳等）也要拦，
+  // ensureRealname 已经把用户带到实名认证页，这里只需中止后续加载
+  if (!(await ensureRealname())) return
   if (isRelease.value) {
     const d = await store.fetchDetail(id)
     meta.value = {
@@ -189,10 +193,12 @@ async function submit() {
   }
 }
 
-function onConfirmClick() {
+async function onConfirmClick() {
   if (!meta.value) return
   if (expired.value) { showToast('支付超时，请重新下单'); return }
   if (limitReached.value) { showToast(`每个藏品限购 ${MAX} 个`); return }
+  // 交易密码的「未设置」就拦在要输密码的这一步：没设置先带去设置，不弹空键盘
+  if (!(await ensureTradePassword())) return
   openPwd()
 }
 

@@ -6,6 +6,7 @@ import { useUserStore } from '@/stores/user'
 import { useSiteStore } from '@/stores/site'
 import html2canvas from 'html2canvas'
 import { useLoginGate } from '@/utils/loginGate'
+import { ensureRealname, ensureTradePassword } from '@/utils/purchaseGate'
 import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -88,9 +89,11 @@ const intro = computed(() => {
 // 盲盒子藏品列表
 const blindboxItems = computed(() => featuredItem.value?.items || [])
 
-function onBuy() {
+async function onBuy() {
   if (saleStatus.value !== 'selling') return
   if (!requireLogin(route.fullPath)) return
+  // 实名认证在点购买的这一刻就拦，不要等用户输完支付密码才被后端打回
+  if (!(await ensureRealname())) return
   const query = {}
   if (featuredItem.value?.type === 'blindbox') query.type = 'blindbox'
   router.push({ name: 'pay', params: { mode: 'release', id: route.params.id }, query })
@@ -161,8 +164,10 @@ function openConsign() {
 function closeConsign() { showConsign.value = false; pwdStep.value = false; payPwd.value = '' }
 
 // 价格步骤：确认寄售 -> 进入交易密码步骤
-function onConsign() {
+async function onConsign() {
   if (!canSubmit.value) return
+  // 交易密码的「未设置」只在这一步（要输密码了）才拦
+  if (!(await ensureTradePassword())) return
   pwdStep.value = true
   payPwd.value = ''
 }
@@ -206,9 +211,10 @@ const showOpenResult = ref(false)
 const revealItem = ref(null)
 const opening = ref(false)
 
-function onOpenBlindbox() {
+async function onOpenBlindbox() {
   if (opening.value) return
   if (!requireLogin(route.fullPath)) return
+  if (!(await ensureTradePassword())) return
   pwdFlow.value = 'open'
   payPwd.value = ''
   pwdStep.value = true
@@ -264,8 +270,10 @@ function closeTransfer() {
   transferStep.value = 'phone'
   transferPwd.value = ''
 }
-function onTransferNext() {
+async function onTransferNext() {
   if (!canSubmitTransferPhone.value) { showToast('请输入正确的 11 位手机号'); return }
+  // 下一步就是交易密码键盘，未设置操作密码在此拦
+  if (!(await ensureTradePassword())) return
   transferStep.value = 'pwd'
   transferPwd.value = ''
 }

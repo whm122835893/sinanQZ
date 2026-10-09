@@ -53,6 +53,8 @@ async function onSubmit() {
     const res = await request.post('/user/password/trade/reset', { code: code.value, newPassword: opPwd.value })
     // 同登录密码：重置操作密码会注销旧令牌，沿用后端换发的新令牌
     if (res?.token) user.setToken(res.token)
+    // 立刻把「已设置操作密码」写回缓存：返回购买页时 ensureTradePassword 不能再把人拦在门外
+    user.setUserInfo({ hasTransactionPassword: true })
     showToast('操作密码设置成功')
     router.back()
   } catch (e) {
