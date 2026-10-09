@@ -38,7 +38,12 @@ class UploadCleanupService
 
     private const URL_REGEX = '#/uploads/[A-Za-z0-9_./-]+\.(?:jpe?g|png|webp|gif)#i';
 
-    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom'];
+    /**
+     * 参与扫描的业务目录（须与 UploadController::BIZ_DIRS 对齐）
+     * 注意：announcement（富文本插图）刻意不扫——公告正文里的 <img> URL 不在 IMAGE_COLUMNS
+     * 覆盖范围内，一旦纳入扫描会把正在使用的正文图片误判为"零引用"移入回收站。
+     */
+    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom', 'artifact'];
 
     public static function uploadsRoot(): string
     {

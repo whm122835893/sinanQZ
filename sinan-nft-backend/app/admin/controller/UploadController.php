@@ -22,8 +22,12 @@ class UploadController extends BaseController
         'image/gif'  => 'gif',
     ];
 
-    /** 业务子目录白名单（biz 参数） */
-    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom'];
+    /**
+     * 业务子目录白名单（biz 参数）
+     * artifact=文物展馆图 / announcement=富文本插图：后台已在用，必须同步放行，
+     * 否则这两处上传会一律被 4220「biz 仅允许 …」拒绝。
+     */
+    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom', 'artifact', 'announcement'];
 
     private const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
