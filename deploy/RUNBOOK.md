@@ -267,6 +267,8 @@ systemctl is-active crond
   把 `id=1` 打上 `is_market_recommended=1` 后**只发一条** `recommend=1`，高亮落在「推荐」上；
   切「自由市场」→ 高亮「全部」+「未找到相关藏品」（本来就没藏品归自由市场，符合 7.6），切「我的关注」→「全部」，
   切回「活动市场」→ 又停「推荐」。验完已把 `is_market_recommended` 改回 0，其余数据未动。详见 7.6
+- [x] **仓库瘦身**（2026-10-10）：本机日志/临时件清掉约 535MB，`git rm` 两个前端无引用的历史图 65 张，
+  后端两份环境模板合并为唯一 `.env.example`。测试 82+55 例全通过、两个前端各构建一次成功、生产零改动。详见 7.9
 - [ ] 手机真机再过一遍这两道拦截：未实名的号点「立即购买」应直接落到实名认证页，而不是输完密码才报错
 - [ ] 后台设一个"1 分钟后定时上架" → 等 2 分钟看是否自动生效（cron 已确认每分钟跑并落日志，但这一步要先有一条藏品）
 - [ ] 你自己走一遍带图形验证码的登录（本轮验收时我用 SQL 临时把 `captcha.enable` 关掉过，验完已改回 1）
@@ -577,6 +579,41 @@ curl 'http://<IP>/api/user/favorites' -H "Authorization: Bearer <token>"   # 未
 1. `market/collections` 上的 `OptionalJwtAuth` 不能摘——它是关注态能扛刷新的前提；摘掉后接口不报错，只是 `isFavorite` 恒 false，症状和这次一模一样。
 2. `fetchMarket()` 末尾那段同步**只能 push 不能 splice**。市场列表不是全集（只覆盖开了寄售开关的藏品），拿它当全集去删就会复现丢关注。
 3. 线上目前只有 1 件藏品且它开了寄售开关，所以"关注了不在市场里的藏品"这条只在单测里验到；后台再上架一件**不开寄售开关**的藏品后，值得在 H5 里复看一次它的关注态与「我的关注」。
+
+### 7.9 仓库瘦身：一次性清理（2026-10-10，commit `c6966e8` / `5d11a9a` / `472e3b0`）
+
+清掉三件事，都不动业务逻辑：
+
+**A. 本机运行时垃圾（不入库，直接删）**：`runtime/log/202609`（392M）+ `runtime/log/202610`（24M）、
+`runtime/admin/log`（120M）以及 qa/ 下几份扫描输出与临时脚本。仓库从 1017M 掉到 482M。
+**没删的**：`runtime/admin/backup`（26M，29 个 .sql 库备份）、`runtime/backup`、`runtime/admin/htmlpurifier`（富文本缓存）、
+`upload_trash`（回收站）——这些是有用的历史数据，不在清理范围。`qa/sit_t6b_priority_window.php` 按你的要求保留（仍未提交）。
+
+**B. 两个前端 `public/images` 里的无引用历史图 65 张**（`git rm`）。判定用三条口径，任一命中就留：
+① 归属应用自己的代码语料（`src` / `tests` / `index.html` / `vite.config.js`）出现该文件名；
+② 生产库 `nft_*` 里存过这条 `/images/...` 相对路径（后台是 `:src="row.image"` 直接渲染，所以图片必须在**后台自己那个域**有文件）；
+③ `database/dev-only/seed-dev.sql` 演示数据引用（cover-1/2/3、brand-logo、banner-1/2、artifacts/1-3、tab 图标）。
+
+关键认知：**两个前端各有一份 `public/images` 镜像，Vite 只把各自的 `public/` 打进各自的 `dist`**。
+H5 代码写的 `/images/tab/gem-*.png` 走的是 :80 那份副本，跟后台目录下同名文件无关 ——
+所以必须**逐应用判定**，全仓 grep 会把镜像和文档里的提及误算成引用。
+结果：后台 61 张无引用（整包 `gem-`/`ink-`/`lg-`/`modern-`/`shanse-` 底部图标、`exhibit-*`、`hero/slide-1.jpg` 等，1951KB）；
+H5 5 张（`avatar-new.png`、`collections/cover-collection-{4,5,6,bb1}.jpg` —— 这五张后台都有在用副本，删的是 H5 多余的）。
+**保留**：`tab/empty-carton.png`（你说先留着）、`tab/empty-ding.png`、`hero/slide-2.jpg`、`hero/slide-3.jpg`（后两条生产库里正存着）。
+
+**C. 后端环境模板合并成唯一一份 `.env.example`**（删 `.example.env`）。原先两份内容近乎重复且文档指向不一致
+（README/PROJECT_DOC 指 `.example.env`，而 `.gitignore` 的 `!.env.example` 例外、DEPLOY.md、RUNBOOK 指 `.env.example`）。
+文件名保留 `.env.example` 是为了不额外动忽略规则；`.example.env` 独有的三处（「生产部署必读」三条、
+PAY_MOCK/SMS_MOCK 已废弃说明、`[DATABASE] DEBUG = false`）已并入。
+注释统一用 `;`：原来 `#` 注释块里带 `php -r "echo bin2hex(...)"` 的双引号会让 `parse_ini_file` 报
+`syntax error, unexpected '"'`，`.env.example` 现在整份可通过 `parse_ini_file(..., true)`。
+三处源码注释（`AdminAuthService.php:53`、`common.php:77`、`JwtService.php:27`）里的文件名同步改成 `.env.example`；
+README.md:158、PROJECT_DOC.md:714 的 `cp` 命令同理。
+
+验证：H5 vitest 82 例、后台 vitest 55 例全通过；两个前端 `npm run build` 均成功；`php -l` 三个被改的 PHP 文件无错；
+全仓 `*.md` 对被删图片零引用。
+**注意**：线上目录不会自己变小 —— 要等下一次重新构建并部署两个前端，`dist/images` 才会跟着瘦身；
+生产机的 `.env` 本次未动，也不需要动（改的只是模板）。
 
 ## 8. 已知遗留（需你后续决策）
 
