@@ -63,7 +63,7 @@
 | UI 组件 | Element Plus（主题令牌覆盖为司南红） | ^2.14.5 |
 | 图表 | ECharts 6（`EChart.vue` 通用容器） | ^6.1.0 |
 | 日期 | dayjs | ^1.11.11 |
-| 金额 | decimal.js（金额字符串传输） | ^10.4.3 |
+| 金额 | **无专用库**：库里存 `DECIMAL`、后端 `round()` 取值、前端只格式化展示（详见第 12 节「金额口径」） | — |
 | 请求 | axios | ^1.7.2 |
 | 样式 | SCSS（变量 + CSS 变量双层令牌） | ^1.77.4 |
 
@@ -160,20 +160,27 @@ sinanQZ/
 │   ├── route/                 # api.php（C 端路由）
 │   └── composer.json
 │
-└── database/                  # 数据库脚本
-    ├── init.sql               # 基础建库：33 表 / 56 外键 / 16 CHECK（幂等可重复执行）
-    ├── admin_init.sql         # 管理端扩展表：管理员/角色/权限/操作日志/审批/链网络/链合约
-    ├── fusion_upgrade.sql     # 融合升级迁移：三链字段、审批流、社区、资格购白名单等
-    ├── fusion_final_upgrade.sql
-    ├── full_feature_upgrade.sql  # 抽签购/求购/分解等新功能表
-    ├── swap_plan_upgrade.sql     # 统一置换（回收+按比例空投）计划/源配置/名单/明细 4 表
-    ├── swap_c2c_removal.sql     # C 端用户间置换（补差价）体系下线：DROP swap_offers/records
-    ├── marketing_activity_upgrade.sql
-    ├── activity_reward_upgrade.sql
-    ├── announcement_publish_upgrade.sql
-    ├── artifact_status_upgrade.sql
-    └── seed-dev.sql           # 开发联调种子数据（生产环境勿执行）
+├── database/                  # 数据库脚本（顶层 28 个 SQL + deploy.sh，另有 dev-only/ 一份）
+│   ├── README.md              # ✅ 分类、执行顺序、未接入的补丁、三套安装方式怎么选，都在这里
+│   ├── deploy.sh              # 本机一键重建拆分版（[1/4]建库 [2/4]23 个基础 SQL [3/4]19 个 migrations [4/4]2 个数据修补）
+│   ├── full_init.sql          # 合并版基线 80 张表（生产建库用它）
+│   └── dev-only/seed-dev.sql  # 开发联调种子数据（生产环境勿执行）
+│
+├── deploy/                    # 上线资料
+│   ├── RUNBOOK.md             # 生产机从零到可访问（§7 记录各功能改造的口径与验收结论）
+│   ├── env.production.example # 生产 env 模板
+│   ├── nginx/                 # 三份站点配置（backend / h5 / admin）
+│   └── tools/                 # 空状态图抠图脚本
+│
+└── qa/                        # 本机实跑的功能验收脚本（30 个 PHP + 1 份历史验证报告）
+    └── README.md              # ✅ 命名家族、共用护栏（APP_ENV + 环境变量注入凭据）、逐脚本一行用途
 ```
+
+> 目录地图只维护两处：本节给**架构视角**，根目录 `README.md` 给**上手视角**；
+> 子系统内部细节交给各自的 README（`database/README.md`、`qa/README.md`、
+> `sinan-nft-backend/README.md`、`sinan-admin/DEVELOPMENT.md`）。
+> 2026-10-10 之前这份清单在三个文件里各抄了一遍，抄第三遍的那份已经过时（把 `dev-only/seed-dev.sql`
+> 写成 `seed-dev.sql`、漏掉 `deploy.sh`/`qa/`/`deploy/`），现已收敛。
 
 ---
 
@@ -695,9 +702,11 @@ bash database/deploy.sh --verify   # 仅重跑 SQL，不重建库
 > ⚠️ 不带 `--verify` 时脚本会先 `DROP DATABASE IF EXISTS`，且默认连 `127.0.0.1:3399`（另一套沙箱实例）。
 > 执行前务必核对 `DB_HOST / DB_PORT / DB_NAME`——指到有数据的库上会把整库删掉。
 
-完成后的期望自检值为 **80 张表 / 981 个字段 / 75 个外键**（脚本末尾打印实测统计供比对）。
-空库首部署亦可走单文件合并版：`mysql -uroot -p sinan_nft < database/full_init.sql`（80 表，与运行库实测双向零差异）。
-详细执行顺序、踩坑警示与环境变量覆盖见 `README.md` → 快速启动 → 1. 数据库。
+完成后的期望自检值为 **80 张表 / 981 个字段 / 75 个外键**（脚本末尾打印实测统计供比对；
+981 是**拆分版路径**的期望值，合并版当年实测 982、`full_init.sql` 列声明 985，三种口径的对照见 `database/README.md`）。
+空库首部署亦可走单文件合并版：`mysql -uroot -p sinan_nft < database/full_init.sql`（80 表；
+"与运行库双向零差异"是历史实测结论，2026-10-10 想复核时被凭据权限拦下，**至今未重跑**，见 `deploy/RUNBOOK.md` 7.10）。
+详细执行顺序、逐文件用途与踩坑警示见 `database/README.md`（上手视角的简版在根目录 `README.md` → 快速启动 → 1. 数据库）。
 
 > ⚠️ 手工执行极易出错，三个已知陷阱：
 > 1. `mysql < file.sql` 不指定库名时，文件内无 `USE` 会**静默失败**（`fusion_upgrade.sql`、`full_feature_upgrade.sql`、`raffle_admin_upgrade.sql` 等 7 个文件均属此类）。
@@ -756,7 +765,13 @@ npm run build    # 产物 dist/
 - **路由**：Hash 模式，主 Tab 静态 import 同步加载，子页懒加载。
 - **状态**：Pinia store 按领域拆分（collection/user/site/order/activity/notice）。
 - **样式**：颜色一律引用 CSS 变量（`var(--color-*)` / SCSS `$color-*`），禁止硬编码色值。
-- **金额**：统一使用字符串传输 + `decimal.js` 计算，展示用 `fmtMoney`（千分位 + 2 位小数）。
+- **金额口径**（2026-10-10 按代码实测改写，原先这里写的「字符串传输 + `decimal.js` 计算」**是假的**：
+  `decimal.js` 不在两个前端的 `package.json` 里，`src` 下零引用 —— 它只是 Vitest 的 `jsdom`
+  传递依赖（`package-lock.json` 里那个 `^10.6.0` 就是 jsdom 拉的），跟金额无关）。实际做法是：
+  库里 25 处 `DECIMAL` 列声明（`init.sql` + `admin_init.sql` + `migrations/` 合计），后端用 `round()`（71 处）取值、只有 `Orders.php`/`Resale.php`
+  各一处用 `bcadd`/`bcmul`；展示端后台走 `utils/format.js:5` 的 `fmtMoney`（49 处调用，千分位 + 2 位小数），
+  C 端 8 个文件 25 处 `toFixed(2)`。**资金加减没有统一的精度入口**，这是实测事实，
+  要不要收敛成一处（后端一个 Money 工具或全面切 bcmath）留给后续决策，见 `deploy/RUNBOOK.md` 第 8 节。
 - **请求**：axios 实例，请求拦截器注入 token，响应拦截器统一处理 code/401。
 - **C 端适配**：`postcss-px-to-viewport` 将 px 转为 vw，适配移动端。
 - **管理后台**：列表页复用 `AdminTablePage` + `StatusTag`，业务状态先进 `utils/maps.js`。

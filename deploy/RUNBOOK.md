@@ -272,6 +272,9 @@ systemctl is-active crond
 - [x] **仓库冗余审计**（2026-10-10）：以「是否挂路由」为后端生死判据做只读审计，结论是代码层干净（0 孤儿文件、
   依赖 0 未使用），真实冗余只在 `database/` 三套安装方式重叠。零风险两件已改：后端框架样板 README 换成项目说明、
   两份孤儿 repair SQL 接入 `deploy.sh` 第 4 步。SQL 文件一个没删、库表没动。详见 7.10
+- [x] **仓库地图补齐**（2026-10-10）：新增 `database/README.md`（三套安装方式怎么选 + 28 个 SQL 逐个归属与用途 +
+  三个字段数口径对照）与 `qa/README.md`（五个家族 + 30 个脚本共用护栏实测）；`database-design.html` 移入后端 `docs/`；
+  根 README 去掉与 `deploy.sh` 重复的手工命令列表、修正 79→80 张表。顺带纠正了「金额用 decimal.js」这个假声明。详见 7.11
 - [ ] 手机真机再过一遍这两道拦截：未实名的号点「立即购买」应直接落到实名认证页，而不是输完密码才报错
 - [ ] 后台设一个"1 分钟后定时上架" → 等 2 分钟看是否自动生效（cron 已确认每分钟跑并落日志，但这一步要先有一条藏品）
 - [ ] 你自己走一遍带图形验证码的登录（本轮验收时我用 SQL 临时把 `captcha.enable` 关掉过，验完已改回 1）
@@ -651,6 +654,46 @@ RUNBOOK 第 3 节本身也写着拆分版不要单独跑。
 （脚本默认连 `127.0.0.1:3399` 沙箱且不带 `--verify` 会 `DROP DATABASE`）；生产库与 `full_init.sql` 的双向零差异仍是历史实测结论，
 本轮想复核时被凭据读取权限拦下，没有绕过。
 
+### 7.11 「地图补齐」一轮（2026-10-10，commit 见本轮记录）
+
+你问「仓库文件是不是有点乱」。先给结论：**GitHub 上那份不乱** —— 根目录只有 11 项，
+`git` 跟踪的内容合计 **12.3MB**；本地看着扎眼的 473MB 全是 `node_modules/`、`vendor/`、`runtime/`、`dist/`
+这些被 `.gitignore` 挡住的构建产物与日志，仓库里根本不存在它们。
+
+乱的是「**同一件事写在几处、以及某类文件没有说明**」，实测四处：
+
+1. `database/` 28 个 SQL 平铺一层、命名分五族（22 个 `*_upgrade` + `init/full_init` + 孤零零的 `002_add_snapshots`
+   + `_align`/`_removal`/`_repair`），中间还夹着一个 `database-design.html`；三套安装方式重叠（见 7.10）。
+2. 同一份「SQL 清单」在 **三个文件里各抄了一遍**：根 `README.md` 的目录树、`README.md` 里那段
+   `mysql < xxx.sql` 手工列表、`PROJECT_DOC.md` §4。第三遍已经过时（把 `dev-only/seed-dev.sql` 写成
+   `seed-dev.sql`、漏了 `deploy.sh`/`qa/`/`deploy/`），第二遍跟 `deploy.sh` 的 `BASE_FILES` 数组重复。
+3. `qa/` 31 个文件平铺、五种前缀、按当年测试计划的任务号命名，**没有一份 README** 说明家族划分与哪些是历史证据。
+4. 表数量口径散成三个数：`README.md` 架构图写 **79 张表**、`deploy.sh:153` 期望 **981 字段**、
+   RUNBOOK §3 记 **982 字段**、审计解析 `full_init.sql` 得 **985 个列声明** —— 80 张表才是三处一致的数。
+
+这一轮**只补说明、不搬目录**（你选的最小档）：
+
+- 新增 `database/README.md`：三套安装方式怎么选（含「生产只用 `full_init.sql`、`deploy.sh` 会 `DROP DATABASE`、
+  `dev-only/seed-dev.sql` 严禁进生产」三条红线）、23 个 `BASE_FILES` 逐个一行用途 + 动的是什么、
+  2 个 `REPAIR_FILES`、**2 个未接入的老库枚举补丁**（`payment_method_channel_align.sql` /
+  `wallet_refund_trans_type_upgrade.sql`，实测其结果已折进 `init.sql:161,415` 与 `full_init.sql`，
+  所以全新部署不需要跑），以及上面第 4 条的三口径对照表。
+- 新增 `qa/README.md`：五个命名家族、30 个脚本逐个一行用途、**共用护栏实测**
+  （全目录只有 `bootstrap_db.php:43` 建 PDO，且 30 个脚本全部 `require` 它；`APP_ENV` 必须是 sit/test/dev
+  且凭据只能走 `QA_DB_USER`/`QA_DB_PASS` 环境变量）、`QA_BASE` 覆盖方式、
+  以及「本轮没重跑过它们，所以别把它们的绿当现状」「旧口径断言以 7.6–7.8 为准」两条警示。
+- `database/database-design.html` → `git mv` 到 `sinan-nft-backend/docs/`（全仓零引用，扫过才动）。
+- 根 `README.md`：目录树补上 `deploy/`、`qa/`、后端 `docs/`；删掉那段与 `deploy.sh` 重复的手工命令列表
+  （**保留**四条踩坑警示，那是独有知识：无 `USE` 语句会静默失败、`raffle_purchase` 必须早于 `raffle_admin`、
+  mysql 遇错即停吞掉后续语句、跑完必须查 `information_schema`）；「两套脚本并存」改成「三条安装路径怎么选」；
+  架构图 79 → 80 张表；272 行瘦到 217 行。
+- `PROJECT_DOC.md` §4 目录块收敛成指针，§11 的自检值补上口径说明。
+
+**顺带抓到一个假的文档声明**（已改，值得记一笔）：`PROJECT_DOC.md` 的技术栈表和 §12 都写着
+「金额用 `decimal.js` 计算」—— 实测两个前端的 `package.json` 里**都没有这个依赖**、`src` 下**零引用**，
+`package-lock.json` 里那个 `decimal.js@10.6.0` 是 **Vitest 的 `jsdom` 拉进来的传递依赖**。
+真实做法记进 §12，并把它引到下面第 7 条待决策项。
+
 ## 8. 已知遗留（需你后续决策）
 
 1. **带宽 1Mbps**：实测后台主 JS 1.33MB 单下就要 8.6 秒，加 CSS 约 11 秒首屏。建议改「按流量计费 + 峰值 100Mbps」，小站月成本通常几元。
@@ -667,3 +710,10 @@ RUNBOOK 第 3 节本身也写着拆分版不要单独跑。
    就去「内容 → 轮播管理」再上传第 2 张。用户表 2 条：`13900000001`（部署期测试号）与 `17587881293`（U000002），都还没实名。
 6. **浅色外壳不适配深色背景**：`theme-color` 现在跟 `bgColor` 走（见 7.2），但只考虑了浅色背景这一种常态。
    若日后在「站点装修」里把页面背景改成深色，浏览器状态条的文字反相与 `color-scheme` 还没联动处理，需要真机再过一遍。
+7. **资金精度没有统一入口**（2026-10-10 按代码实测，纠正了 `PROJECT_DOC.md` 里「用 `decimal.js` 计算」的假声明，见 7.11）：
+   库里 25 处 `DECIMAL` 列声明，后端 PHP 用 `round()` **71 处**，`bcadd`/`bcmul` 只有 `Orders.php`、`Resale.php` 各一处；
+   展示端后台 `fmtMoney` 49 处、C 端 `toFixed(2)` 25 处（8 个文件）。
+   也就是说金额的舍入散在各处、口径不统一。两条路选一条：
+   ① 收到一个 `Money` 工具或全面改 bcmath，舍入只在一处发生；
+   ② 明确「钱只在库里以 `DECIMAL` 运算，PHP 不做加减」并把散落的 `round()` 清成只做展示格式化。
+   选哪条要你先定，动的是资金链路，我不会顺手改。

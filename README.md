@@ -9,31 +9,21 @@ sinanQZ/
 ├── sinan-art-source/      # C 端 H5（Vue 3 + Vite 5 + Pinia + Vant 4）
 ├── sinan-admin/           # 管理后台（融合版，Vue 3 + Vite 5 + Pinia + Element Plus + ECharts）
 ├── sinan-nft-backend/     # 后端（ThinkPHP 8 多应用：api = C 端 / admin = 管理端）
-└── database/              # 数据库脚本（28 个 SQL + dev-only 1 个：23 个由 deploy.sh 按序执行、full_init.sql 为合并版、其余为手工/数据修补，存活 80 张表）
-    ├── deploy.sh                        # ✅ 一键部署拆分版（含正确执行顺序 + 幂等容错）
-    ├── init.sql                        # 基础建库：33 表 / 56 外键 / 16 CHECK
-    ├── admin_init.sql                   # 管理端扩展：22 表（管理员/角色/权限/操作日志/风控/工单/支付渠道等）
-    ├── fusion_upgrade.sql              # 融合升级：3 表（chain_networks/chain_contracts/approval_requests）+ ALTER 三链字段
-    ├── fusion_final_upgrade.sql         # 融合终版：实名审核 ALTER + 权限种子 + 收件箱表 nft_inbox（原仓库漏建，在此补入）
-    ├── full_feature_upgrade.sql         # 全特性：6 表（raffle/buy_request/decompose 三件套）
-    ├── swap_plan_upgrade.sql            # 统一置换：4 表
-    ├── activity_reward_upgrade.sql      # 活动奖励：5 表（register/priority_sales/lucky_draw_chances/activity_reward_records）
-    ├── rbac_snapshot_upgrade.sql        # 审计快照：2 表（holdings_snapshots/trade_snapshots）
-    ├── raffle_admin_upgrade.sql         # 抽奖运营：1 表（raffle_operation_logs）+ 废弃 raffle_whitelists
-    ├── raffle_purchase_upgrade.sql      # 抽签购限购：ALTER raffle_registrations 加 purchased_quantity
-    ├── marketing_activity_upgrade.sql   # 营销活动：1 表（lucky_draw_activities）
-    ├── raffle_draw_code_system_upgrade.sql # 抽卡密系统：1 表（user_draw_codes）
-    ├── swap_c2c_removal.sql             # 移除 C2C 置换：DROP swap_records/swap_offers
-    ├── 002_add_snapshots.sql             # 快照表补建
-    ├── announcement_publish_upgrade.sql  # 公告发布状态字段
-    ├── artifact_status_upgrade.sql       # 藏品状态字段
-    ├── refund_idempotency_upgrade.sql    # 退款幂等字段（已接入 deploy.sh，按序执行）
-    ├── payment_method_channel_align.sql  # 支付渠道枚举对齐（未接入 deploy.sh；还原旧备份后须手工重放）
-    ├── realname_status_pair_repair_upgrade.sql # 数据修补：is_realname / realname_status 成对归位（deploy.sh 第 4 步）
-    ├── wallet_row_backfill_upgrade.sql    # 数据修补：给无钱包行的存量用户补空钱包（deploy.sh 第 4 步）
-    ├── full_init.sql                    # ✅ 合并版（推荐）：80 表；本文件内声明 985 个列，与运行库的双向零差异为历史实测结论（见 deploy/RUNBOOK.md 第 3 节）
-    └── dev-only/seed-dev.sql            # 开发联调种子数据（生产严禁执行）
+│   └── docs/              # 后端部署说明 DEPLOY.md + 数据库实体模型 database-design.html
+├── database/              # 数据库脚本（28 个 SQL + deploy.sh + 开发种子数据）
+│   ├── README.md          # ✅ 动手前先看：三套安装方式怎么选、每个 SQL 的用途与归属
+│   ├── deploy.sh          # 本机一键重建拆分版（顺序敏感 + 幂等容错；不带 --verify 会 DROP DATABASE）
+│   ├── full_init.sql      # 合并版基线 80 张表（生产建库只用它，见 deploy/RUNBOOK.md 第 3 节）
+│   └── dev-only/seed-dev.sql  # 开发联调演示数据（生产严禁执行）
+├── deploy/                # 上线手册 RUNBOOK.md + Nginx 站点配置 + 生产 env 模板 + 抠图小工具
+│   └── RUNBOOK.md         # 生产机从零到可访问的每一步，含 7.x 各功能改造的口径记录
+└── qa/                    # 本机实跑的功能验收脚本（30 个 PHP，不参与构建与部署）
+    └── README.md          # ✅ 五个命名家族、共用护栏（APP_ENV + 环境变量注入凭据）、每个脚本一行用途
 ```
+
+> 目录里每个子系统的细节写在**它自己那份 README**里（`database/README.md`、`qa/README.md`、
+> `sinan-nft-backend/README.md`、`sinan-admin/DEVELOPMENT.md`）。本文件只留地图和快速启动，
+> 不再逐个 SQL 抄一遍 —— 抄两处就会有第二处过时（2026-10-10 就因为这样修过一轮过时数字）。
 
 ## 系统架构
 
@@ -43,7 +33,7 @@ sinanQZ/
 │ (sinan)     │   JWT-user   │  ├─ app/api    （C 端业务）     │
 └─────────────┘               │  ├─ app/admin （管理端业务）    │      ┌──────────┐
 ┌─────────────┐   /api/admin  │  ├─ 中间件：AdminAuth(JWT)     │ ──▶  │ MySQL 8  │
-│  管理后台    │ ───────────▶ │  │         AdminPermission(RBAC)│      │ 79 张表   │
+│  管理后台    │ ───────────▶ │  │         AdminPermission(RBAC)│      │ 80 张表   │
 │ (sinan-admin)│   JWT-admin  │  └─ Service：ChainService 等     │      └──────────┘
 └─────────────┘               └──────────────────────────────┘
 ```
@@ -69,44 +59,17 @@ bash database/deploy.sh --verify   # 只重跑 SQL，不重建库
 脚本内置正确的执行顺序与幂等容错，环境变量可覆盖：
 `DB_HOST`(127.0.0.1) `DB_PORT`(3399) `DB_USER`(root) `DB_PASS`() `DB_NAME`(sinan_nft) `MYSQL_BIN`(mysql)
 
-部署后共有 **80 张表 / 981 个字段 / 75 个外键**，脚本结尾会打印统计结果自检。
+部署后共有 **80 张表**（字段数 981 是拆分版的自检期望值，与合并版实测 982、
+`full_init.sql` 声明 985 属于三种口径，对照表见 `database/README.md`），脚本结尾会打印统计自检。
 
 <details>
-<summary>手工逐步执行（等价于 deploy.sh，但极易踩坑）</summary>
+<summary>手工逐步执行？—— 不必，顺序和归属看 `database/README.md`</summary>
 
-```bash
-mysql -uroot -p sinan_nft < database/init.sql                        # 基础建库：33 表
-mysql -uroot -p sinan_nft < database/admin_init.sql                   # 管理端扩展：22 表
-mysql -uroot -p sinan_nft < database/fusion_upgrade.sql              # 三链 / 审批：3 表 + ALTER 三链字段
-mysql -uroot -p sinan_nft < database/full_feature_upgrade.sql         # 全特性：raffle / buy_request / decompose
-mysql -uroot -p sinan_nft < database/swap_plan_upgrade.sql            # 统一置换
-mysql -uroot -p sinan_nft < database/rbac_snapshot_upgrade.sql        # 审计快照（holdings/trade）
-mysql -uroot -p sinan_nft < database/marketing_activity_upgrade.sql   # 营销活动
-mysql -uroot -p sinan_nft < database/activity_reward_upgrade.sql      # 活动奖励 / 优先购 / 抽卡密
-mysql -uroot -p sinan_nft < database/raffle_draw_code_system_upgrade.sql # 抽卡密系统
-mysql -uroot -p sinan_nft < database/raffle_purchase_upgrade.sql      # 抽签购限购字段（purchased_quantity，须先于 raffle_admin）
-mysql -uroot -p sinan_nft < database/raffle_admin_upgrade.sql         # 抽奖运营日志 + 报名/抽签码字段（含 DROP raffle_whitelists）
-mysql -uroot -p sinan_nft < database/admin_sms_scene_upgrade.sql      # 短信场景字段
-mysql -uroot -p sinan_nft < database/batch_buy_upgrade.sql            # 批量购买字段
-mysql -uroot -p sinan_nft < database/category_scene_upgrade.sql       # 分类场景字段
-mysql -uroot -p sinan_nft < database/collectible_recover_upgrade.sql  # 藏品回收字段
-mysql -uroot -p sinan_nft < database/fusion_final_upgrade.sql        # 融合终版：实名审核 + 权限种子 + 收件箱表 nft_inbox
-mysql -uroot -p sinan_nft < database/payment_yeepay_upgrade.sql       # 易宝支付字段
-mysql -uroot -p sinan_nft < database/swap_c2c_removal.sql            # 移除 C2C 置换（DROP swap_records/swap_offers）
-mysql -uroot -p sinan_nft < database/dev-only/seed-dev.sql            # 可选：联调种子数据（生产严禁执行）
-```
+原来这里逐条抄过一遍 20+ 个 `mysql < xxx.sql` 命令，跟 `deploy.sh` 里的 `BASE_FILES` 数组是同一份知识，
+两处各写一次就会有一处过时（2026-10-10 就修过一次过时数字）。现在**唯一权威顺序是
+`database/deploy.sh` 的数组**，分类与每个文件做什么见 `database/README.md` 第二节。
 
-以上脚本均幂等，可重复执行。按上述顺序执行后还需补跑 3 个未登记补丁与后端 migrations，
-合计得到完整 **80 张表**（见 `deploy.sh` 中的 `BASE_FILES`）：
-
-```bash
-mysql -uroot -p sinan_nft < database/002_add_snapshots.sql
-mysql -uroot -p sinan_nft < database/announcement_publish_upgrade.sql
-mysql -uroot -p sinan_nft < database/artifact_status_upgrade.sql
-for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"; done
-```
-
-> ⚠️ **踩坑警示（都是实际发生过的）**
+> ⚠️ **踩坑警示（都是实际发生过的，仍然有效）**
 >
 > 1. **必须显式指定数据库名。** `mysql < file.sql` 不带库名时，若 SQL 文件内部没有
 >    `USE` 语句，整份文件会因 `No database selected` **静默失败**——退出码为 0、
@@ -126,31 +89,34 @@ for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"
 
 </details>
 
-空库首部署也可以直接跑合并版：`mysql -uroot -p sinan_nft < database/full_init.sql`（**用这个文件**，
-它建出的 80 张表与运行库实测双向零差异）。历史上还有过一份 `full_schema_all.sql` + `merge_schema.py`
-的旧合并版，因落后 26 个字段且自带重复 ALTER 已删除，勿再引用。
+空库首部署也可以直接跑合并版：`mysql -uroot -p sinan_nft < database/full_init.sql`（**生产建库就用这个文件**，
+80 张表；"与运行库双向零差异"是历史实测结论，2026-10-10 未复核成功、至今是**未验证项**，见 `deploy/RUNBOOK.md` 7.10）。
+历史上还有过一份 `full_schema_all.sql` + `merge_schema.py` 的旧合并版，因落后 26 个字段且自带重复 ALTER 已删除，勿再引用。
 
 > ⚠️ `deploy.sh` 不带 `--verify` 时会先执行 `DROP DATABASE IF EXISTS`，随后重放全部 SQL。
 > 它默认连 `127.0.0.1:3399`（另一套沙箱实例）。若把 `DB_PORT` 指到有数据的库上运行，
 > 该库会被整库删除——执行前务必核对 `DB_HOST/DB_PORT/DB_NAME` 三个变量。
 
-#### 两套脚本并存
+#### 三条安装路径怎么选
 
 | 方案 | 文件 | 适用场景 |
 |------|------|---------|
-| **合并版（当前有效）** | `database/full_init.sql`（208KB，单文件，80 表） | 新环境首部署、CI/CD 自动化 |
-| **拆分版** | `database/*.sql`（`deploy.sh` 的 23 个 BASE_FILES + 2 个 REPAIR_FILES）+ 后端 `migrations/`（19 个） | 开发迭代、增量迁移、追溯字段演进 |
+| **合并版（生产唯一用法）** | `database/full_init.sql`（208KB，单文件，80 表） | 新环境首部署、CI/CD 自动化；步骤见 `deploy/RUNBOOK.md` 第 3 节 |
+| **拆分版** | `database/deploy.sh` 的 23 个 `BASE_FILES` | 本机从零重建一个干净库（顺序敏感，会 `DROP DATABASE`） |
+| **增量迁移** | 后端 `sinan-nft-backend/migrations/`（19 个，按日期编号） | 已有库往前跟；新功能一律走这里，`database/` 不再新增 |
 
 合并版把所有 CREATE / ALTER / DROP 拼成一份，一条 `mysql -uroot -p sinan_nft < database/full_init.sql` 搞定。
 拆分版保留了每个升级脚本的独立语义（哪个功能加了哪些字段一目了然），支持从任意版本增量升级。
+两者的逐文件用途与归属见 **`database/README.md`**。
 
 > ⚠️ 合并版从拆分版提取 ALTER 时，原脚本的动态 SQL 幂等包装被剥去了。
 > 如果目标列已存在（比如后续版本在 CREATE TABLE 里直接加了这个列），裸 ALTER 会报 `Duplicate column`。
 > 合并版仅用于**空库**，已有库增量迁移请用拆分版。
 > 拆分版有字段演进时，`full_init.sql` 需**手工同步**（曾用的一次性生成脚本产出的版本已落后 26 字段并删除，不再提供）。
 
-> ✅ 走 `deploy.sh` 或 `full_init.sql` 完成后的期望自检值为 **80 表 / 981 字段 / 75 外键**
-> （`deploy.sh` 末尾会打印实测统计供比对）。
+> ✅ 表数量三处口径一致：**80 张表**。字段数有三个数字（981 / 982 / 985），因为分别是
+> 拆分版自检期望、合并版当年实测、`full_init.sql` 的列声明数 —— 对照表与"两条路径是否逐列等价
+> 仍未验证"这件事，写在 `database/README.md` 第一节末尾。
 
 ### 2. 后端（sinan-nft-backend）
 
