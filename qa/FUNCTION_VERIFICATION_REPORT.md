@@ -48,6 +48,8 @@
 | 21 | `sit_t76_platform_cleanup` | 平台清库四重确认演练：影响预览→备份→白名单清零→还原基线 | **48 / 0** |
 | 22 | 自建 `gap_verify` | **批量购买 / 忘记密码重置 / 账户注销**（原脚本未闭环覆盖） | **29 / 30**※ |
 
+| 23 | `sit_t6b_priority_window` | **优先购时间窗口专项**（2026-10-09 补）：窗口结束后资格即刻失效且不能提前下单、被拒不产生订单/不锁库存、客户端自报未来时间无效、窗口进行中可提前买(source=priority)、窗口结束后公售照常买(source=release) | **10 / 0** |
+
 合计断言：**约 1,200 项，除 1 项中危缺陷与 1 项记录性外全部通过。**
 
 ※ H1 的 1 项、gap_verify 的 1 项分别见下方「环境局限」与「缺陷」。
@@ -144,6 +146,7 @@ php qa/e2e_cond_airdrop.php
 php qa/sit_baseline_reset.php
 php qa/sit_full_audit.php
 php qa/sit_t6_marketing.php
+php qa/sit_t6b_priority_window.php   # 优先购时间窗口专项（自带夹具与收尾，可单独重跑）
 php qa/sit_t72_rbac.php qa/sit_t73_cms.php ...   # 逐个跑
 php qa/sit_s1_security.php
 php qa/sit_t76_platform_cleanup.php               # 清库演练，自动还原基线
