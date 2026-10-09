@@ -55,3 +55,6 @@ sinan-nft-backend/public/uploads/
 *.bak
 *.broken
 qa/backups/
+
+# 本机开发栈运行时状态（start-all.bat 写入，与代码无关）
+.lastpids
