@@ -82,7 +82,7 @@ function readCache() {
 }
 
 export const useSiteStore = defineStore('site', {
-  state: () => ({ ...DEFAULTS, purchaseLimitPerUser: 5, resaleFeeRate: 1, ...readCache(), loaded: false }),
+  state: () => ({ ...DEFAULTS, purchaseLimitPerUser: 5, resaleFeeRate: 1, marketRecommendTabEnabled: false, ...readCache(), loaded: false }),
 
   getters: {
     /** 品牌头像（优先平台头像，回退 Logo/默认） */
@@ -135,6 +135,9 @@ export const useSiteStore = defineStore('site', {
           const rate = Number(cfg.resaleFeeRate)
           if (!Number.isNaN(rate) && rate >= 0) this.resaleFeeRate = rate
         }
+        // 活动市场「推荐」分类总开关（后端 system_configs.market_recommend_tab_enabled）
+        // 关闭 → 市场页二级分类不出现「推荐」胶囊；未下发时按关闭处理
+        this.marketRecommendTabEnabled = !!cfg?.marketRecommendTabEnabled
         // 图标主题：后台配置的图标风格包（功能图标与底部导航可独立切换）+ 自定义图标
         const iconTheme = useIconThemeStore()
         if (cfg?.site?.featureIconTheme) iconTheme.setFeatureTheme(cfg.site.featureIconTheme)
@@ -227,8 +230,10 @@ export const useSiteStore = defineStore('site', {
 
       // 页面标题与浏览器主题色
       document.title = this.seoTitle || `${this.siteName} · SINAN DIGITAL COLLECTION`
+      // theme-color 只影响 iOS Safari / 安卓浏览器的外壳（状态条、底部工具栏）底色，
+      // 必须跟页面背景色走：用品牌主题色会把外壳涂成大红块，半透明的底部导航也会被映成粉色。
       document.querySelector('meta[name="theme-color"]')
-        ?.setAttribute('content', theme)
+        ?.setAttribute('content', this.bgColor || DEFAULTS.bgColor)
     }
   }
 })

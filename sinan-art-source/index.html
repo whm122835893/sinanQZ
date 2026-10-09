@@ -6,7 +6,12 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#C00000" />
+    <!--
+      theme-color 决定 iOS Safari 顶部状态条与底部工具栏的底色（不是页面内容，是浏览器外壳）。
+      这里必须与页面背景色一致，否则首屏会先出现一条品牌红、等站点配置接口返回后才被 site.js 改回来。
+      运行时由 src/stores/site.js 的 apply() 用「站点装修 → 页面背景色」覆盖，保持与 --color-bg 同源。
+    -->
+    <meta name="theme-color" content="#F7F8FA" />
     <title>司南艺术 · SINAN DIGITAL COLLECTION</title>
   </head>
   <body>
