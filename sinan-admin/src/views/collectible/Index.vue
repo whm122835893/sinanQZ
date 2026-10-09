@@ -8,6 +8,9 @@ import {
   toggleCollectibleStatus,
   toggleCollectibleResale,
   toggleCollectibleTransferable,
+  moveCollectibleMarket,
+  toggleCollectibleMarketRecommend,
+  toggleCollectibleHomeCarousel,
   mintOnChain
 } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
@@ -38,6 +41,15 @@ const filters = [
       { value: '国潮', label: '国潮' },
       { value: '限定', label: '限定' },
       { value: '盲盒', label: '盲盒' }
+    ]
+  },
+  {
+    // 归属市场（后端 market_type）：两个市场数据互不相通，靠「移动市场」互相调仓
+    field: 'marketType',
+    label: '归属市场',
+    options: [
+      { value: 'activity', label: '活动市场' },
+      { value: 'free', label: '自由市场' }
     ]
   }
 ]
@@ -142,6 +154,87 @@ async function onPriceVerified() {
   }
 }
 
+// ---- 市场归属与推荐（2026-10-09：活动市场 / 自由市场数据互不相通）----
+const MARKET_LABEL = { activity: '活动市场', free: '自由市场' }
+
+/** 移动市场：只改 market_type，挂单/价格/库存都不动；移到自由市场时后端会清掉推荐标记 */
+async function onMoveMarket(c) {
+  const target = c.marketType === 'activity' ? 'free' : 'activity'
+  try {
+    await ElMessageBox.confirm(
+      `确认把「${c.name}」从${MARKET_LABEL[c.marketType] || '未知市场'}移动到${MARKET_LABEL[target]}？` +
+      '两个市场的列表数据互不相通，移动后该藏品（连同其寄售挂单）只出现在' + MARKET_LABEL[target] + '列表。' +
+      (target === 'free' ? '推荐标记会一并清除（推荐分类只有活动市场有）。' : ''),
+      '移动市场',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  const res = await moveCollectibleMarket(c.id, target)
+  if (res.code === 0) {
+    c.marketType = target
+    if (target !== 'activity') c.isMarketRecommended = false
+    ElMessage.success(res.message || `已移动到${MARKET_LABEL[target]}`)
+  } else {
+    ElMessage.error(res.message || '移动失败')
+  }
+}
+
+/** 上/下推荐：el-switch 为受控组件（model-value 不变则不翻转），失败无需回滚 */
+async function onRecommend(c, val) {
+  if (val && c.marketType !== 'activity') {
+    return ElMessage.warning('仅活动市场藏品可上推荐，请先移回活动市场')
+  }
+  // C 端市场展示门槛（2026-10-09 定稿）：只看那枚「寄售开关」，不看发售状态。
+  // 开关关着时上推荐是无效的，提前在确认框里说清楚，省得运营以为改坏了。
+  const marketHidden = !c.isResaleable
+  const hiddenTip = marketHidden
+    ? '注意：该藏品当前不会出现在 C 端市场（需先打开「转赠 / 寄售」列的寄售开关），上推荐也看不到。'
+    : ''
+  try {
+    await ElMessageBox.confirm(
+      val
+        ? `确认将「${c.name}」上推荐？C 端活动市场的「推荐」分类下会展示该藏品（需后台「系统 → 全局参数 → 寄售市场 → 活动市场推荐分类」开关处于开启状态）。` + hiddenTip
+        : `确认取消「${c.name}」的推荐？C 端「推荐」分类将不再展示。`,
+      '市场推荐',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  const res = await toggleCollectibleMarketRecommend(c.id, val)
+  if (res.code === 0) {
+    c.isMarketRecommended = !!val
+    ElMessage.success(val ? '已上推荐' : '已取消推荐')
+  } else {
+    ElMessage.error(res.message || '操作失败')
+  }
+}
+
+/** 上/下首页轮播位：与市场推荐独立，可同时开启；轮播图取藏品封面，点击跳到市场里该藏品的寄售页 */
+async function onHomeCarousel(c, val) {
+  try {
+    await ElMessageBox.confirm(
+      val
+        ? `确认将「${c.name}」放上首页轮播？C 端首页轮播会把它排在最前面，用藏品封面图，左上角带「推荐藏品」角标，点击跳到市场里该藏品的寄售页（与市场卡片同一个入口）。` +
+          (c.isResaleable ? '' : '注意：该藏品的寄售开关当前是关的，市场页会是「暂无寄售挂单」的空态。')
+        : `确认取消「${c.name}」的首页轮播位？C 端首页轮播将不再展示该藏品（活动市场的推荐分类不受影响）。`,
+      '首页轮播',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  const res = await toggleCollectibleHomeCarousel(c.id, val)
+  if (res.code === 0) {
+    c.isHomeCarouselRecommended = !!val
+    ElMessage.success(val ? '已上首页轮播' : '已取消首页轮播')
+  } else {
+    ElMessage.error(res.message || '操作失败')
+  }
+}
+
 // ---- 上链铸造（藏品已配置上链链时可用；为全部未上链持仓生成链上凭证，幂等） ----
 const CHAIN_LABELS = { wenchang: '文昌链', consortium: '联盟链', antchain: '蚂蚁链' }
 const mintingId = ref(0)
@@ -238,6 +331,34 @@ async function onMint(c) {
           </template>
         </el-table-column>
 
+        <el-table-column label="市场 / 推荐" width="150" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.marketType === 'free' ? 'success' : 'warning'" effect="plain" size="small">
+              {{ MARKET_LABEL[row.marketType] || '活动市场' }}
+            </el-tag>
+            <!-- 推 = 活动市场「推荐」分类；播 = 首页轮播位。两枚开关互相独立，可同时开 -->
+            <div class="col-switches" style="margin-top: 4px">
+              <el-switch
+                :model-value="!!row.isMarketRecommended"
+                size="small"
+                inline-prompt
+                active-text="推"
+                inactive-text="推"
+                :disabled="row.marketType !== 'activity'"
+                @change="(v) => onRecommend(row, v)"
+              />
+              <el-switch
+                :model-value="!!row.isHomeCarouselRecommended"
+                size="small"
+                inline-prompt
+                active-text="播"
+                inactive-text="播"
+                @change="(v) => onHomeCarousel(row, v)"
+              />
+            </div>
+          </template>
+        </el-table-column>
+
         <el-table-column label="转赠 / 寄售" width="130" align="center">
           <template #default="{ row }">
             <div class="col-switches">
@@ -270,7 +391,7 @@ async function onMint(c) {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="router.push(`/collectible/detail/${row.id}`)">详情</el-button>
             <el-button link type="primary" size="small" @click="router.push(`/collectible/edit/${row.id}`)">编辑</el-button>
@@ -285,6 +406,9 @@ async function onMint(c) {
               link type="warning" size="small"
               @click="onAction(row, 'forceSoldout')"
             >强制售罄</el-button>
+            <el-button link type="info" size="small" @click="onMoveMarket(row)">
+              移至{{ row.marketType === 'activity' ? '自由市场' : '活动市场' }}
+            </el-button>
           </template>
         </el-table-column>
       </template>
@@ -296,7 +420,8 @@ async function onMint(c) {
         <el-form-item label="二级市场">
           <el-switch v-model="priceForm.enabled" :active-value="1" :inactive-value="0" />
           <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">
-            关闭后该藏品所有在售挂单将全部系统下架，用户无法重新上架
+            开启后该藏品就会出现在 C 端市场列表（不看发售状态，也无需等用户挂单）；<br />
+            关闭后该藏品所有在售挂单将全部系统下架，用户无法重新上架，并从市场列表消失
           </div>
         </el-form-item>
         <template v-if="priceForm.enabled">

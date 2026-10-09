@@ -346,7 +346,12 @@ const adaptCollectible = (c) => ({
   resalePriceMax: c.resalePriceMax,
   perUserLimit: n(c.perUserLimit),
   chainType: s(c.chainType),
-  contract: s(c.contract)
+  contract: s(c.contract),
+  // 市场分栏（2026-10-09）：marketType 归属市场 activity/free；isMarketRecommended 活动市场「推荐」
+  // isHomeCarouselRecommended 首页轮播「播」（2026-10-09 追加，与市场推荐独立）
+  marketType: s(c.marketType) || 'activity',
+  isMarketRecommended: n(c.isMarketRecommended) === 1,
+  isHomeCarouselRecommended: n(c.isHomeCarouselRecommended) === 1
 })
 
 export async function getCollectibleList(params) {
@@ -442,7 +447,7 @@ export function saveCollectible(payload) {
   return post('/collectibles', body)
 }
 
-/** 图片上传（file: File；biz: collection/blindbox/marketing/content/misc；返回 {url}） */
+/** 图片上传（file: File；biz: collection/blindbox/marketing/content/misc/custom/artifact/announcement；返回 {url}） */
 export function uploadImage(file, biz = 'collection') {
   const fd = new FormData()
   fd.append('file', file)
@@ -605,6 +610,24 @@ export function toggleCollectibleTransferable(id, enabled) {
 /** 求购开关（藏品级别，控制 C 端是否显示求购 tab） */
 export function toggleCollectibleBuyRequest(id, enabled) {
   return put(`/collectibles/${id}/market-config`, { is_buy_request_enabled: enabled ? 1 : 0 })
+}
+
+/**
+ * 市场归属移动：把藏品在活动市场 / 自由市场之间切换（后端只改 market_type 一列）
+ * marketType: 'activity' | 'free'
+ */
+export function moveCollectibleMarket(id, marketType) {
+  return post(`/collectibles/${id}/market-move`, { market_type: marketType })
+}
+
+/** 活动市场「推荐」开关：recommended true 上推荐 / false 下推荐 */
+export function toggleCollectibleMarketRecommend(id, recommended) {
+  return post(`/collectibles/${id}/market-recommend`, { recommended: recommended ? 1 : 0 })
+}
+
+/** 首页轮播「播」开关：on true 上轮播 / false 下轮播（与市场推荐互不依赖） */
+export function toggleCollectibleHomeCarousel(id, on) {
+  return post(`/collectibles/${id}/home-carousel`, { on: on ? 1 : 0 })
 }
 
 /**
@@ -2200,6 +2223,8 @@ export async function getBanners() {
   const res = await get('/cms/banners', { page: 1, pageSize: 50 })
   if (res.code !== 0) return res
   const d = res.data || {}
+  // 后台 /cms/banners 原样返回 snake_case（sort_order / is_active），
+  // 早前这里取的是 camelCase 字段 → 排序恒为 #0、状态恒显示"已下架"，两种命名都兜住
   return {
     code: 0,
     message: res.message,
@@ -2207,9 +2232,8 @@ export async function getBanners() {
       id: b.id,
       image: s(b.image),
       title: s(b.description),
-      link: '',
-      sort: n(b.sortOrder),
-      status: n(b.isActive)
+      sort: n(b.sort_order ?? b.sortOrder),
+      status: n(b.is_active ?? b.isActive)
     }))
   }
 }
@@ -2226,6 +2250,16 @@ export function saveBanner(payload) {
     return put(`/cms/banners/${payload.id}`, body)
   }
   return post('/cms/banners', body)
+}
+
+/** 启停切换（后端 /cms/banners/:id/toggle，返回 {is_active}） */
+export function toggleBanner(id) {
+  return post(`/cms/banners/${id}/toggle`, {})
+}
+
+/** 删除轮播图（后端软删除，可在「回收站」恢复） */
+export function deleteBanner(id) {
+  return del(`/cms/banners/${id}`)
 }
 
 // ============================================================

@@ -16,7 +16,10 @@ import {
   getCollectibleDetail,
   saveCollectible,
   toggleCollectibleStatus,
-  releaseCollectible
+  releaseCollectible,
+  moveCollectibleMarket,
+  toggleCollectibleMarketRecommend,
+  toggleCollectibleHomeCarousel
 } from '@/api'
 
 /**
@@ -60,6 +63,9 @@ const backendRow = (overrides = {}) => ({
   perUserLimit: 5,
   chainType: 'axiu',
   contract: '0x1',
+  marketType: 'activity',
+  isMarketRecommended: 0,
+  isHomeCarouselRecommended: 0,
   ...overrides
 })
 
@@ -256,5 +262,57 @@ describe('toggleCollectibleStatus / releaseCollectible · 发售动作', () => {
     expect(bodyOf({ id: 9696, releaseQuantity: '' })).toEqual({ status: 'onsale' })
     // 0 是「全部上架」的显式信号，不能与留空混同
     expect(bodyOf({ id: 9696, releaseQuantity: 0 })).toEqual({ status: 'onsale', release_quantity: 0 })
+  })
+})
+
+describe('市场归属与推荐（2026-10-09 市场分栏）', () => {
+  it('marketType / isMarketRecommended 落到前端字段，后端缺列时兜底活动市场', async () => {
+    api.get.mockResolvedValue(ok({
+      list: [backendRow({ marketType: 'free', isMarketRecommended: 1 }), backendRow()],
+      total: 2
+    }))
+    const { data } = await getCollectibleList({ page: 1 })
+    expect(data.list[0]).toMatchObject({ marketType: 'free', isMarketRecommended: true })
+    // 迁移未执行 / 老数据没有这两列时，不能显示成「undefined 市场」
+    expect(data.list[1]).toMatchObject({ marketType: 'activity', isMarketRecommended: false })
+  })
+
+  it('归属市场筛选原样透传（后端按 market_type 白名单过滤）', async () => {
+    api.get.mockResolvedValue(ok({ list: [], total: 0 }))
+    await getCollectibleList({ page: 1, marketType: 'free' })
+    expect(api.get).toHaveBeenCalledWith('/collectibles', { page: 1, marketType: 'free' })
+  })
+
+  it('移动市场打到 market-move，参数用后端的 snake_case', async () => {
+    api.post.mockResolvedValue(ok(null))
+    await moveCollectibleMarket(9696, 'free')
+    expect(api.post).toHaveBeenCalledWith('/collectibles/9696/market-move', { market_type: 'free' })
+  })
+
+  it('上/下推荐布尔转 0/1', async () => {
+    api.post.mockResolvedValue(ok(null))
+    await toggleCollectibleMarketRecommend(9696, true)
+    expect(api.post).toHaveBeenCalledWith('/collectibles/9696/market-recommend', { recommended: 1 })
+    await toggleCollectibleMarketRecommend(9696, false)
+    expect(api.post).toHaveBeenLastCalledWith('/collectibles/9696/market-recommend', { recommended: 0 })
+  })
+
+  it('首页轮播「播」开关落到前端字段，后端缺列时兜底成关', async () => {
+    api.get.mockResolvedValue(ok({
+      list: [backendRow({ isHomeCarouselRecommended: 1 }), backendRow()],
+      total: 2
+    }))
+    const { data } = await getCollectibleList({ page: 1 })
+    expect(data.list[0]).toMatchObject({ isHomeCarouselRecommended: true })
+    // 迁移未执行时开关要显示为关，不能是 undefined
+    expect(data.list[1]).toMatchObject({ isHomeCarouselRecommended: false })
+  })
+
+  it('上/下首页轮播布尔转 0/1，打到 home-carousel', async () => {
+    api.post.mockResolvedValue(ok(null))
+    await toggleCollectibleHomeCarousel(9696, true)
+    expect(api.post).toHaveBeenCalledWith('/collectibles/9696/home-carousel', { on: 1 })
+    await toggleCollectibleHomeCarousel(9696, false)
+    expect(api.post).toHaveBeenLastCalledWith('/collectibles/9696/home-carousel', { on: 0 })
   })
 })

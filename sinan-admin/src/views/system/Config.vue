@@ -17,7 +17,7 @@ const keyword = ref('')
 // 参数分组（按业务域）
 const GROUPS = [
   { key: 'trade', name: '交易参数', icon: 'ShoppingCart', keys: ['purchase_limit_per_user', 'order_pay_timeout_seconds'] },
-  { key: 'resale', name: '寄售市场', icon: 'Sell', keys: ['resale_cooldown_seconds', 'resale_fee_rate', 'resale_price_global_max'] },
+  { key: 'resale', name: '寄售市场', icon: 'Sell', keys: ['resale_cooldown_seconds', 'resale_fee_rate', 'resale_price_global_max', 'market_recommend_tab_enabled'] },
   { key: 'marketing', name: '营销参数', icon: 'Present', keys: ['checkin_rewards'] },
   { key: 'service', name: '客服配置', icon: 'Service', keys: ['service_hotline', 'service_hours', 'service_online_url'] },
   { key: 'risk', name: '风控阈值', icon: 'Warning', keys: ['large_recharge_alert', 'large_refund_approval_threshold'] },
@@ -32,6 +32,7 @@ const META = {
   resale_cooldown_seconds: { label: '寄售冷却时间', unit: '秒', hint: '取消挂单后重新上架的等待时长' },
   resale_fee_rate: { label: '寄售手续费率', unit: '%', hint: '成交时向卖家收取的手续费比例' },
   resale_price_global_max: { label: '寄售全局限价', unit: '元', hint: '不限价模式仍受此上限约束' },
+  market_recommend_tab_enabled: { label: '活动市场「推荐」分类', unit: '', hint: '开启后 C 端活动市场二级分类显示「推荐」胶囊（藏品在「藏品管理 → 市场 / 推荐」里上推荐）；关闭则胶囊不出现', bool: true },
   checkin_rewards: { label: '连续签到奖励', unit: '', hint: 'JSON：天数 → 司南币数量', json: true },
   service_hotline: { label: '客服热线电话', unit: '', hint: 'C 端客服页展示的热线号码' },
   service_hours: { label: '客服在线时间', unit: '', hint: 'C 端客服页展示的在线时段' },
