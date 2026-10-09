@@ -93,13 +93,16 @@ function formatSaleTime(ts) {
 }
 
 // 背景轮播：横向无缝滚动 + 手势拖动（真实接口：GET /api/banners，失败兜底本地图）
+// 条目形状 { image, type?, collectibleId? }：type='collectible' 的是后台开了「播」开关的推荐藏品
 const slides = ref([
-  '/images/hero/slide-1.jpg',
-  '/images/hero/slide-2.jpg',
-  '/images/hero/slide-3.jpg'
+  { image: '/images/hero/slide-1.jpg' },
+  { image: '/images/hero/slide-2.jpg' },
+  { image: '/images/hero/slide-3.jpg' }
 ])
 const n = computed(() => slides.value.length)
-const renderSlides = computed(() => [...slides.value, slides.value[0]]) // 末尾追加首图副本，向左无缝循环
+// 只有一张图时不轮播：不复制首图、不自动播放、不显示指示点、不响应滑动
+const looped = computed(() => n.value > 1)
+const renderSlides = computed(() => looped.value ? [...slides.value, slides.value[0]] : slides.value) // 末尾追加首图副本，向左无缝循环
 const pos = ref(0)              // 连续位移（单位：张），0..n
 const transitionOn = ref(true)  // 是否启用过渡动画
 const activeIndex = computed(() => n.value ? Math.round(pos.value) % n.value : 0)
@@ -112,7 +115,11 @@ const trackStyle = computed(() => ({
 }))
 
 const RESET_MS = 520 // 略大于过渡时长，确保滑到副本后再无感复位
-function startAuto() { stopAuto(); timer = setInterval(autoNext, 3500) }
+function startAuto() {
+  stopAuto()
+  if (!looped.value) return // 单图（或空图）：不启动定时器，画面完全静止
+  timer = setInterval(autoNext, 3500)
+}
 function stopAuto() { if (timer) { clearInterval(timer); timer = null } }
 function autoNext() {
   pos.value = Math.round(pos.value) + 1
@@ -132,9 +139,12 @@ let startX = 0
 let startY = 0
 let startPos = 0
 let lockDir = null
+let tapSuppressed = false // 本次触摸发生过横向拖动 → 忽略拖动结束时浏览器补发的 click
 function vpWidth() { return bgRef.value ? bgRef.value.clientWidth : 375 }
 
 function onTouchStart(e) {
+  tapSuppressed = false
+  if (!looped.value) return // 单图不轮播 → 手势也不接管，保持页面正常上下滚动
   dragging = true
   stopAuto()
   transitionOn.value = false
@@ -152,6 +162,7 @@ function onTouchMove(e) {
     else if (Math.abs(dy) > Math.abs(dx)) { dragging = false; transitionOn.value = true; return }
   }
   if (lockDir !== 'h') return
+  if (Math.abs(dx) > 8) tapSuppressed = true // 真的拖动了才吞掉后续 click，轻点仍有效
   if (e.cancelable) e.preventDefault()
   const w = vpWidth()
   let p = startPos - dx / w // 向左拖(dx<0) → 看下一张 → 向左轮播
@@ -198,19 +209,25 @@ onMounted(() => {
 })
 onUnmounted(() => { stopAuto(); if (saleTimer) clearInterval(saleTimer); if (midnightTimer) clearTimeout(midnightTimer) })
 
-// 首页轮播图（真实接口：GET /api/banners，管理端「内容→轮播管理」维护；失败保留本地兜底图）
+// 首页轮播（真实接口：GET /api/banners）：后台「内容→轮播管理」的图 + 后台开了「播」开关的推荐藏品
+// 后端已把推荐藏品排在数组最前，前端按 type 决定是否加角标、是否可点
 async function fetchBanners() {
   try {
     const res = await request.get('/banners')
     const list = (Array.isArray(res) ? res : res.list || [])
-      .map((b) => b.image)
-      .filter(Boolean)
+      .map((b) => ({
+        image: b.image,
+        type: b.type || 'banner',
+        collectibleId: b.collectibleId ? Number(b.collectibleId) : 0
+      }))
+      .filter((b) => b.image)
     if (list.length) {
       slides.value = list
-      // 图片源切换后无感复位到第一张
+      // 图片源切换后无感复位到第一张，并按新的张数重定轮播节奏（1 张 → 停）
       transitionOn.value = false
       pos.value = 0
       requestAnimationFrame(() => { transitionOn.value = true })
+      startAuto()
     }
   } catch { /* 拉取失败时保留本地兜底图 */ }
 }
@@ -229,6 +246,13 @@ function goCalendar() { router.push('/calendar') }
 function goActivity() { router.push('/activity') }
 function goLottery() { router.push('/lottery') }
 function goDetail(id) { router.push('/collection/' + id) }
+// 轮播点击：只有推荐藏品条目可点，且跳的是**市场里该藏品的寄售页**（与市场卡片同一入口，不是首发详情）；
+// 普通轮播图保持不可点
+function onSlideTap(s) {
+  if (tapSuppressed) return
+  if (!s || s.type !== 'collectible' || !s.collectibleId) return
+  router.push('/resale/' + s.collectibleId)
+}
 function onCardClick(item) { router.push(item.type === 'raffle' ? '/raffle/' + item.id : '/collection/' + item.id) }
 
 // 关注/取消关注藏品
@@ -258,18 +282,25 @@ function onSign() {
           @touchmove="onTouchMove"
           @touchend="onTouchEnd"
         >
-          <img
+          <div
             v-for="(s, i) in renderSlides"
             :key="i"
-            class="home-hero__slide"
-            :src="s"
-            alt=""
-            draggable="false"
-            @contextmenu.prevent
-          />
+            class="home-hero__item"
+            :class="{ 'home-hero__item--link': s.type === 'collectible' }"
+            @click="onSlideTap(s)"
+          >
+            <img
+              class="home-hero__slide"
+              :src="s.image"
+              alt=""
+              draggable="false"
+              @contextmenu.prevent
+            />
+            <span v-if="s.type === 'collectible'" class="home-hero__badge">推荐藏品</span>
+          </div>
         </div>
       </div>
-      <div class="home-hero__dots">
+      <div class="home-hero__dots" v-if="looped">
         <span
           v-for="(s, i) in slides"
           :key="i"
@@ -410,10 +441,25 @@ function onSign() {
     display: flex; height: 100%; width: 100%;
     will-change: transform; touch-action: pan-y;
   }
-  &__slide {
+  &__item {
+    position: relative;
     flex: 0 0 100%; width: 100%; height: 100%;
-    object-fit: cover; display: block;
+    &--link { cursor: pointer; }
+  }
+  &__slide {
+    width: 100%; height: 100%;
+    /* 图片自适应铺满固定尺寸的轮播区：无论后台上传多大/什么比例的原图，
+       都只裁切填充（cover）、居中显示，绝不撑开或改变 .home-hero 的大小 */
+    object-fit: cover; object-position: center; display: block;
     -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none;
+  }
+  /* 推荐藏品角标：与首页发售卡的角标同款渐变红底白字 */
+  &__badge {
+    position: absolute; z-index: 2;
+    left: 16px; top: calc(env(safe-area-inset-top, 0px) + 16px);
+    font-size: 10px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, $color-primary, #8B0000);
+    padding: 2px 6px; border-radius: 4px; pointer-events: none;
   }
   &__dots {
     position: absolute; z-index: 1; left: 50%; bottom: 14px;
