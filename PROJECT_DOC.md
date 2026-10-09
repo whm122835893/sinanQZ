@@ -711,7 +711,7 @@ bash database/deploy.sh --verify   # 仅重跑 SQL，不重建库
 ```bash
 cd sinan-nft-backend
 composer install
-cp .example.env .env          # 修改数据库连接 / JWT 密钥（ADMIN_SECRET 需 ≥32 字节）
+cp .env.example .env          # 修改数据库连接 / JWT 密钥（ADMIN_SECRET 需 ≥32 字节）
 php think run --host 0.0.0.0 --port 8080
 ```
 

@@ -155,7 +155,7 @@ for f in sinan-nft-backend/migrations/*.sql; do mysql -uroot -p sinan_nft < "$f"
 ```bash
 cd sinan-nft-backend
 composer install
-cp .example.env .env          # 修改数据库连接；配置 APP_KEY / jwt.SECRET / jwt.ADMIN_SECRET（均需 ≥32 字节随机串）
+cp .env.example .env          # 修改数据库连接；配置 APP_KEY / jwt.SECRET / jwt.ADMIN_SECRET（均需 ≥32 字节随机串）
 php think run --host 0.0.0.0 --port 8080
 ```
 
