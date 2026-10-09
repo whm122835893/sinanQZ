@@ -36,9 +36,10 @@ STAMP="$(date +%Y%m%d_%H%M%S)"
 FILE="$OUT_DIR/${DB}_${STAMP}.sql.gz"
 
 # --single-transaction：InnoDB 一致性快照，不锁表
+# --no-tablespaces：跳过 INFORMATIONFILES 表空间查询，DML-only 业务账号（sinan_app）也能导出
 # MYSQL_PWD 环境变量传密，避免密码出现在进程列表
 MYSQL_PWD="$PASS" mysqldump -h"$HOST" -P"$PORT" -u"$USER" \
-  --single-transaction --routines --triggers --set-gtid-purged=OFF \
+  --single-transaction --no-tablespaces --routines --triggers --set-gtid-purged=OFF \
   "$DB" | gzip > "$FILE"
 
 # 完整性校验：解压后末行必须是 Dump completed
