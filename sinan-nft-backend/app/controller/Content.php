@@ -72,7 +72,7 @@ class Content extends BaseController
 
     /**
      * GET /api/banners
-     * 首页轮播
+     * 首页轮播：后台「播」开关打开的藏品封面排在最前，其后是普通轮播图
      */
     public function banners()
     {
@@ -83,12 +83,36 @@ class Content extends BaseController
             ->select()
             ->toArray();
 
-        return $this->success(array_map(fn ($b) => [
+        $banners = array_map(fn ($b) => [
             'id'         => (int) $b['id'],
+            'type'       => 'banner',
             'image'      => $b['image'],
             'description'=> $b['description'],
             'sortOrder'  => (int) $b['sort_order'],
-        ], $list));
+        ], $list);
+
+        // 首页轮播推荐位（后台藏品列表的「播」开关）。只看这一枚开关，不看发售状态；
+        // 无 sort_order 列，藏品之间按新上架优先（id DESC）。
+        $recommended = Db::name('collectibles')
+            ->where('is_home_carousel_recommended', 1)
+            ->where('image', '<>', '')
+            ->whereNull('deleted_at')
+            ->order('id', 'desc')
+            ->field(['id', 'name', 'image'])
+            ->select()
+            ->toArray();
+
+        $slots = array_map(fn ($c) => [
+            'id'            => (int) $c['id'],
+            'type'          => 'collectible',
+            'collectibleId' => (int) $c['id'],
+            'image'         => $c['image'],
+            'description'   => $c['name'],
+            'sortOrder'     => 0,
+        ], $recommended);
+
+        // 旧版前端只取 image，因此新增键位不会让它出问题：最多是角标和跳转暂缺。
+        return $this->success(array_merge($slots, $banners));
     }
 
     /**
@@ -120,7 +144,7 @@ class Content extends BaseController
      */
     public function siteConfig()
     {
-        $keys = ['purchase_limit_per_user', 'order_pay_timeout_seconds', 'resale_cooldown_seconds', 'resale_fee_rate', 'service_hotline', 'service_hours', 'service_online_url'];
+        $keys = ['purchase_limit_per_user', 'order_pay_timeout_seconds', 'resale_cooldown_seconds', 'resale_fee_rate', 'market_recommend_tab_enabled', 'service_hotline', 'service_hours', 'service_online_url'];
         $list = Db::name('system_configs')->whereIn('config_key', $keys)->column('config_value', 'config_key');
 
         // 站点装修（B 端配置的全局风格：名称/头像/主题色/图标主题等）
@@ -132,6 +156,8 @@ class Content extends BaseController
             'orderPayTimeoutSeconds'  => (int) ($list['order_pay_timeout_seconds'] ?? 300),
             'resaleCooldownSeconds'   => (int) ($list['resale_cooldown_seconds'] ?? 180),
             'resaleFeeRate'           => (float) ($list['resale_fee_rate'] ?? 1.0),
+            // 活动市场「推荐」分类总开关：0 → C 端二级分类不显示「推荐」胶囊
+            'marketRecommendTabEnabled' => (int) ($list['market_recommend_tab_enabled'] ?? 0) === 1,
             'service' => [
                 'hotline'   => '',
                 'hours'     => $list['service_hours'] ?? '9:00 - 22:00',
