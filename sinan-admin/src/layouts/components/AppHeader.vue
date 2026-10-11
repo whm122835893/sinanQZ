@@ -145,7 +145,18 @@ async function onPwdSubmit() {
     </div>
 
     <!-- 修改登录密码 -->
-    <el-dialog v-model="pwdShow" title="修改登录密码" width="420px" :close-on-click-modal="false">
+    <!--
+      append-to-body 必须保留：.app-header 有 backdrop-filter，它会成为 position:fixed 的
+      「包含块」，弹窗若就地渲染会被困在 56px 高的头部条里 = 点了「修改密码」什么也不显示。
+      同仓库的 PasswordVerify.vue / blindbox·collectible Detail 里的弹窗都因此带 append-to-body。
+    -->
+    <el-dialog
+      v-model="pwdShow"
+      title="修改登录密码"
+      width="420px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
       <el-form label-width="90px" @submit.prevent>
         <el-form-item label="当前密码">
           <el-input v-model="pwdForm.oldPwd" type="password" show-password placeholder="请输入当前密码" />
