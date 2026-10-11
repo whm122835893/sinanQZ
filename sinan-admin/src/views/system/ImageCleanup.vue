@@ -23,11 +23,25 @@ function fmtSize(bytes) {
 const loading = ref(false)
 const items = ref([])
 const total = ref(0)
-const summary = ref({ totalSize: 0, byBiz: {}, scannedAt: '' })
+const summary = ref({ totalSize: 0, byBiz: {}, scannedAt: '', protected: {} })
 const page = ref(1)
 const pageSize = ref(30)
 const bizFilter = ref('')
 const selection = ref([])
+
+/**
+ * 后端受保护文件的口径（宽限期小时数 + 不参与清理的业务目录）
+ * 数字与名单都由接口下发，前端不再抄一份 —— 后端把 24 小时改成 48 小时时，这句话不会变成假话。
+ */
+const protectedInfo = computed(() => {
+  const p = summary.value?.protected || {}
+  return {
+    graceHours: p.graceHours ?? 24,
+    excludedBiz: Array.isArray(p.excludedBiz) ? p.excludedBiz : ['announcement'],
+    count: p.count ?? 0,
+    size: p.size ?? 0,
+  }
+})
 
 async function loadUnreferenced() {
   loading.value = true
@@ -41,6 +55,10 @@ async function loadUnreferenced() {
       items.value = res.data.items || []
       total.value = res.data.total || 0
       summary.value = res.data.summary || summary.value
+    } else {
+      // 这个列表接口是 silent 的：请求层不弹全局错误，失败必须在这里说清楚，
+      // 否则表格空着，运营会以为「真的没有未引用图片」，下一步就该误删了。
+      ElMessage.error(res?.message || '未引用图片列表加载失败')
     }
   } finally {
     loading.value = false
@@ -86,6 +104,9 @@ async function loadTrash() {
     if (res.code === 0 && res.data) {
       trashItems.value = res.data.items || []
       trashTotal.value = res.data.total || 0
+    } else {
+      // 同上：silent 请求不弹全局提示，回收站打不开时必须说清楚是哪种错
+      ElMessage.error(res?.message || '回收站列表加载失败')
     }
   } finally {
     trashLoading.value = false
@@ -148,6 +169,11 @@ onMounted(loadUnreferenced)
         扫描后端 uploads 目录中<strong>未被任何数据引用</strong>的上传图，勾选后移入回收站；
         回收站支持恢复与彻底删除。藏品换图/记录物理删除时旧图也会自动进入回收站。
       </p>
+      <p class="page__tip">
+        两类图<strong>不参与这里的清理</strong>（不是没扫到，是刻意留着）：上传不足 {{ protectedInfo.graceHours }} 小时的
+        ——「先选图、还没点保存」的图此刻确实没被引用，怕误清；{{ protectedInfo.excludedBiz.join('/') || '（无）' }} 目录的
+        ——富文本正文里的插图没法保证真的没人用。宁可留几张孤儿图，也不删错一张在用的。
+      </p>
     </div>
 
     <el-tabs v-model="tab" @tab-change="onTabChange">
@@ -160,6 +186,7 @@ onMounted(loadUnreferenced)
           <el-button :loading="loading" @click="loadUnreferenced">重新扫描</el-button>
           <span class="tip-text">
             共 {{ total }} 张未引用 · 约 {{ fmtSize(summary.totalSize) }}
+            <template v-if="protectedInfo.count"> · 另有 {{ protectedInfo.count }} 张受保护未列出（约 {{ fmtSize(protectedInfo.size) }}）</template>
             <template v-if="summary.scannedAt"> · 扫描于 {{ summary.scannedAt }}</template>
           </span>
           <el-button

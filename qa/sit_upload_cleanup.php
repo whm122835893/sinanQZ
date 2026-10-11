@@ -60,6 +60,10 @@ if (!is_dir($relDir)) mkdir($relDir, 0755, true);
 $absFile = "$relDir/$fname";
 $url = "/uploads/misc/$stamp/$fname";
 file_put_contents($absFile, tinyPng());
+// 2026-10-12 补：清理新增了「上传不足 24 小时不列、不移」的宽限期闸门（RUNBOOK 7.20 S3），
+// 刚生成的夹具文件 mtime 就是「现在」，会被正当保护起来。这条用例测的是「零引用图能不能被清」，
+// 所以把时间拨回 8 天前，让它落在宽限期之外；宽限期本身由 qa/sit_upload_protection.php 覆盖。
+touch($absFile, time() - 8 * 86400);
 $absTrash = "$TRASH/misc/$stamp/$fname";
 
 echo "========== 1. 扫描零引用 ==========\n";

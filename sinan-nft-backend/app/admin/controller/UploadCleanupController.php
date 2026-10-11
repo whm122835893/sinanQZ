@@ -29,7 +29,8 @@ class UploadCleanupController extends BaseController
     {
         [$page, $pageSize] = $this->pageParams(30);
         $biz = $this->enumParam('biz', $this->service->bizDirs(), null);
-        $items = $this->service->scanUnreferenced($biz);
+        $protected = [];
+        $items = $this->service->scanUnreferenced($biz, $protected);
 
         $totalSize = 0;
         $byBiz = [];
@@ -46,6 +47,13 @@ class UploadCleanupController extends BaseController
                 'totalSize' => $totalSize,
                 'byBiz'     => $byBiz,
                 'scannedAt' => date('Y-m-d H:i:s'),
+                // 受保护 = 没列进来、也不用运营去操心的一些文件；不给个数，页面空着时会被误读成「真的没垃圾」
+                'protected' => [
+                    'count'      => count($protected),
+                    'size'       => array_sum(array_column($protected, 'size')),
+                    'graceHours' => $this->service->graceHours(),
+                    'excludedBiz'=> $this->service->excludedBizDirs(),
+                ],
             ],
         ]);
     }
@@ -65,8 +73,8 @@ class UploadCleanupController extends BaseController
         $result = $this->service->trashFiles($urls);
         $this->audit('upload', 'cleanup-trash', '图片清理：移入回收站 ' . count($result['moved']) . ' 张', $result);
         return $this->success($result, sprintf(
-            '已移入回收站 %d 张（跳过：仍被引用 %d、不存在 %d、非法 %d）',
-            count($result['moved']), count($result['referenced']),
+            '已移入回收站 %d 张（跳过：仍被引用 %d、受保护 %d、不存在 %d、非法 %d）',
+            count($result['moved']), count($result['referenced']), count($result['protected']),
             count($result['missing']), count($result['invalid'])
         ));
     }
