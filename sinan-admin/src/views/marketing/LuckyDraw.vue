@@ -214,8 +214,17 @@ function openPool(a) {
   poolShow.value = true
 }
 
+/**
+ * 奖项池概率合计：**必须把「谢谢参与」(type==='none') 也算进去**。
+ * 后端 MarketingController::luckySave 是对全部奖项求和后强制 =1（`:1208`/`:1212`），
+ * 而这里原先过滤掉了 none —— 于是「非空奖凑满 100% + 再加个谢谢参与」这种最自然的配法，
+ * 前端放行、后端必拒（4220「概率合计必须为 1（当前 1.1）」），运营看到的就是"保存不了"。
+ * C 端开奖口径同样按全部奖项求和（app/controller/LuckyDraw.php 累计轮盘），
+ * 而且那边合计不足 1 时，差额会被"最后一项"吃掉（`$available[array_key_last($available)]` 兜底），
+ * 所以「不配满 100%、把留白当谢谢参与」在运行时是不成立的 —— 谢谢参与必须显式配成一个奖项。
+ */
 const poolProbSum = computed(() =>
-  poolDraft.value.filter((p) => p.type !== 'none').reduce((s, p) => s + Number(p.probability || 0), 0)
+  poolDraft.value.reduce((s, p) => s + Number(p.probability || 0), 0)
 )
 
 function openAddPrize() {
@@ -281,7 +290,7 @@ function onConfirmPrize() {
 async function onSavePool() {
   if (!poolDraft.value.length) return ElMessage.warning('至少配置一个奖项')
   if (Math.abs(poolProbSum.value - 1) > 0.0001) {
-    return ElMessage.warning(`非空奖概率合计需为 100%（当前 ${(poolProbSum.value * 100).toFixed(2)}%）`)
+    return ElMessage.warning(`全部奖项概率合计需为 100%，「谢谢参与」也要算进来（当前 ${(poolProbSum.value * 100).toFixed(2)}%）`)
   }
   poolSubmitting.value = true
   const res = await saveLuckyPrizes(poolActivity.value.id, poolDraft.value)
@@ -295,9 +304,12 @@ async function onSavePool() {
   }
 }
 
-// ---- 图片上传 ----
+// ---- 图片上传（口径与「创建藏品」一致：≤5MB；非四格式由 api/index.js 总闸转成 JPEG 再传）----
 async function onUploadPrizeImage({ file }) {
   if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
   uploading.value = true
   const res = await uploadImage(file, 'marketing')
   uploading.value = false
@@ -512,7 +524,7 @@ async function onUploadPrizeImage({ file }) {
     <el-dialog v-model="poolShow" :title="`奖项池配置 · ${poolActivity?.name || ''}`" width="760px" :close-on-click-modal="false">
       <div class="ld__pool-toolbar">
         <div class="t-tertiary" style="font-size: 12px">
-          非空奖概率合计：<b :class="Math.abs(poolProbSum - 1) <= 0.0001 ? 't-ok' : 't-danger'">{{ (poolProbSum * 100).toFixed(2) }}%</b>（需为 100%）
+          全部奖项概率合计（含「谢谢参与」）：<b :class="Math.abs(poolProbSum - 1) <= 0.0001 ? 't-ok' : 't-danger'">{{ (poolProbSum * 100).toFixed(2) }}%</b>（需为 100%）
         </div>
         <el-button type="primary" size="small" :icon="Plus" @click="openAddPrize">添加奖项</el-button>
       </div>
@@ -570,13 +582,13 @@ async function onUploadPrizeImage({ file }) {
             <el-upload
               :show-file-list="false"
               :http-request="onUploadPrizeImage"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/*"
             >
               <el-button plain :loading="uploading">
                 {{ uploading ? '上传中…' : prizeForm.cover ? '重新上传' : '上传奖品图' }}
               </el-button>
             </el-upload>
-            <div class="t-tertiary" style="font-size: 12px">支持 JPG / PNG / WEBP / GIF，不超过 5MB</div>
+            <div class="t-tertiary" style="font-size: 12px">支持 JPG / PNG / WEBP / GIF（HEIC 会自动转成 JPG），大小不超过 5MB</div>
           </div>
         </el-form-item>
         <el-form-item label="奖励配置">

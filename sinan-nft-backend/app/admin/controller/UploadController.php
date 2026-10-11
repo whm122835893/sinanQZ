@@ -4,7 +4,7 @@
 // POST /admin/upload/image  multipart/form-data: file
 // 用途：藏品封面 / 盲盒封面 / 合成结果图 / 活动素材等运营图片
 // 约束：jpg/jpeg/png/webp/gif，≤5MB，按业务目录归档（collection/blindbox/marketing）
-// 安全：仅限登录管理员；按 MIME 与扩展双重校验；随机文件名防覆盖与路径穿越
+// 安全：仅限登录管理员；以服务端嗅探出的真实 MIME 为准（不比客户端文件名）；随机文件名防覆盖与路径穿越
 // ============================================================================
 declare(strict_types=1);
 
@@ -23,11 +23,21 @@ class UploadController extends BaseController
     ];
 
     /**
+     * HEIC/HEIF 家族（iPhone 默认拍照格式）
+     * 它们不在 ALLOWED 里、后端也不打算收，单列出来只为了把拒绝话说得能照着做，
+     * 而不是甩一句「仅支持 JPG / PNG / WEBP / GIF」让人猜自己错在哪。
+     */
+    private const HEIC_MIMES = ['image/heic', 'image/heif', 'image/heics', 'image/heifs', 'image/heic-sequence', 'image/heif-sequence'];
+
+    /**
      * 业务子目录白名单（biz 参数）
      * artifact=文物展馆图 / announcement=富文本插图：后台已在用，必须同步放行，
      * 否则这两处上传会一律被 4220「biz 仅允许 …」拒绝。
+     *
+     * 2026-10-12 从 private 改成 public：清理服务要用这份权威清单算「哪些目录不参与清理」，
+     * 再抄一份字面量就迟早会漂（多一个目录 = 多一批可能被误删的图）。
      */
-    private const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom', 'artifact', 'announcement'];
+    public const BIZ_DIRS = ['collection', 'blindbox', 'marketing', 'content', 'misc', 'custom', 'artifact', 'announcement'];
 
     private const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -62,25 +72,23 @@ class UploadController extends BaseController
             return $this->fail(4220, '图片大小不能超过 5MB（当前 ' . round($file->getSize() / 1048576, 2) . 'MB）');
         }
 
-        // ---- MIME + 扩展双重校验 ----
+        // ---- 真实内容校验：只认服务端嗅探出来的类型 ----
         $mime = strtolower((string) $file->getMime());
-        if (!isset(self::ALLOWED[$mime])) {
-            return $this->fail(4220, '仅支持 JPG / PNG / WEBP / GIF 图片（当前 ' . $mime . '）');
+        // 这里刻意「不再比对客户端文件名后缀」。原先有一句「文件扩展名与实际内容不一致，拒绝上传」，
+        // 但它拦不到任何攻击：落盘文件名一直由服务端按嗅探类型生成（见下方 $filename），
+        // 客户端后缀从头到尾没参与过存储与访问，改它也没有副作用；被它误伤的只有正常运营：
+        // iPhone 相册导出、微信转发、设计稿导出这类「内容是 JPG 却挂着 .heic / .txt / 无后缀」的文件。
+        // 2026-10-11 线上 13 次上传失败里 11 次卡在这两条内容检查上，零文件落盘。
+        if (!self::isSupportedMime($mime)) {
+            return $this->fail(4220, self::unsupportedImageMessage($mime, (int) $file->getSize()));
         }
         $ext = self::ALLOWED[$mime];
-        $origExt = strtolower($file->getOriginalExtension() ?: '');
-        $aliasMap = ['jpg' => 'jpeg', 'jpeg' => 'jpg'];
-        $normExt = $aliasMap[$origExt] ?? $origExt;
-        $normRef = $aliasMap[$ext] ?? $ext;
-        if ($origExt !== '' && $normExt !== $normRef) {
-            return $this->fail(4220, '文件扩展名与实际内容不一致，拒绝上传');
-        }
 
-        // ---- 真实图片内容校验（getimagesize 防 polyglot）----
+        // ---- 真图片内容校验（getimagesize 防 polyglot）----
         $path = $file->getPathname();
         $info = @getimagesize($path);
         if ($info === false) {
-            return $this->fail(4220, '文件内容不是有效图片');
+            return $this->fail(4220, self::unreadableImageMessage($mime, (int) $file->getSize()));
         }
 
         // ---- 归档目录：public/uploads/{biz}/{YYYYMM}/ ----
@@ -109,6 +117,55 @@ class UploadController extends BaseController
         ]);
 
         return $this->success(['url' => $url], '上传成功');
+    }
+
+    /**
+     * 后端认的图片类型（纯函数，便于脱离 HTTP 单测）
+     * 口径与 ALLOWED 一一对应，不在这里多出任何格式：iPhone 的 HEIC 由后台前端
+     * 在浏览器里转成 JPEG 后再发过来（sinan-admin/src/api/index.js 的 uploadImage 总闸），
+     * 后端如果偷偷加格式，C 端的解码链路没人验过。
+     */
+    public static function isSupportedMime(string $mime): bool
+    {
+        return isset(self::ALLOWED[strtolower(trim($mime))]);
+    }
+
+    /** iPhone/新机默认的 HEIC/HEIF 家族：单独认出来，否则只会落进通用「不支持」那句，运营看不出下一步该干什么 */
+    public static function isHeic(string $mime): bool
+    {
+        return in_array(strtolower(trim($mime)), self::HEIC_MIMES, true);
+    }
+
+    /** 类型不在白名单时的拒绝话术：带识别到的真实类型与体积，HEIC 另给一条照着做完就的路 */
+    public static function unsupportedImageMessage(string $mime, int $bytes = 0): string
+    {
+        $detail = '（识别为 ' . ($mime !== '' ? $mime : '未知类型') . self::sizeText($bytes) . '）';
+        if (self::isHeic($mime)) {
+            return '这张图是 iPhone 的 HEIC 格式，平台暂不接收' . $detail
+                . '。最省事：在 iPhone 上截个图、上传那张截图；长期解决：「设置 → 相机 → 格式」改成「兼容性最好」，之后拍的就是 JPG。';
+        }
+        return '仅支持 JPG / PNG / WEBP / GIF 图片' . $detail . '，请换一张这四种格式的图片。';
+    }
+
+    /**
+     * 类型合格却读不出图片信息时的拒绝话术。
+     * 这一档最常见的原因是「文件没传完」或「iCloud 相册里的图还没下载到本机」——
+     * 本地只有一个几 KB 的占位文件，选得上、传得上，内容却是空的，说「不是有效图片」谁也看不懂。
+     */
+    public static function unreadableImageMessage(string $mime, int $bytes = 0): string
+    {
+        return '图片没读出来' . '（识别为 ' . ($mime !== '' ? $mime : '未知类型') . self::sizeText($bytes) . '，内容不完整）'
+            . '。请这样试：① 重新选一次这个文件；② 图在 iPhone 相册里、还没从 iCloud 下载完的（名字后带云朵箭头），'
+            . '先在相册里打开它、等图片加载完再传；③ 还不行就截个图，上传那张截图。';
+    }
+
+    /** 体积口语化：不到 1MB 用 KB，不足 1KB 说「不足1KB」——「0KB」会让人觉得文件是空的 */
+    private static function sizeText(int $bytes): string
+    {
+        if ($bytes <= 0) return '';
+        if ($bytes >= 1048576) return sprintf('，%.1fMB', $bytes / 1048576);
+        if ($bytes < 1024)     return '，不足1KB';
+        return sprintf('，%dKB', (int) round($bytes / 1024));
     }
 
     /** SEC-U1：PHP 上传错误码 → 用户可读信息 */

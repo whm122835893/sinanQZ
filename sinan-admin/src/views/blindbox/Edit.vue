@@ -2,12 +2,14 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getBlindBoxDetail, saveBlindBox, getCategories } from '@/api'
+import { UploadFilled } from '@element-plus/icons-vue'
+import { getBlindBoxDetail, saveBlindBox, getCategories, uploadImage } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
 const id = route.params.id ? Number(route.params.id) : null
 const submitting = ref(false)
+const uploading = ref(false)
 const formRef = ref(null)
 
 const form = ref({
@@ -17,7 +19,9 @@ const form = ref({
   edition: null,
   price: null,
   perUserLimit: 5,
-  cover: '/images/collections/cover-collection-bb1.jpg'
+  // 封面不再从 5 张预设图里挑：盲盒 1:1 绑一条 collectibles，
+  // 这里提交的 cover 就是那条藏品的 image，所以不加列、也不动现有设计
+  cover: ''
 })
 
 // 分类选项（动态：内容管理 → 分类管理，market 场景）
@@ -26,16 +30,9 @@ const categories = ref([])
 const rules = {
   name: [{ required: true, message: '请输入盲盒名称', trigger: 'blur' }],
   price: [{ required: true, message: '请输入发售价格', trigger: 'blur' }],
-  edition: [{ required: true, message: '请输入发行总量', trigger: 'blur' }]
+  edition: [{ required: true, message: '请输入发行总量', trigger: 'blur' }],
+  cover: [{ required: true, message: '请上传盲盒封面图', trigger: 'change' }]
 }
-
-const coverOptions = [
-  '/images/collections/cover-collection-bb1.jpg',
-  '/images/collections/cover-collection-5.jpg',
-  '/images/collections/cover-collection-4.jpg',
-  '/images/collections/cover-collection-6.jpg',
-  '/images/collections/cover-1.jpg'
-]
 
 onMounted(async () => {
   // 加载分类选项（失败不阻塞表单）
@@ -59,6 +56,24 @@ onMounted(async () => {
     }
   }
 })
+
+// ---- 盲盒封面上传（口径对齐「创建藏品」：≤5MB；非四格式由 api/index.js 总闸转成 JPEG 再传）----
+async function onUploadCover({ file }) {
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
+  uploading.value = true
+  const res = await uploadImage(file, 'blindbox')
+  uploading.value = false
+  if (res.code === 0 && res.data?.url) {
+    form.value.cover = res.data.url
+    formRef.value?.clearValidate('cover')
+    ElMessage.success('封面图已上传')
+  } else {
+    ElMessage.error(res.message || '上传失败，请重试')
+  }
+}
 
 async function onSubmit() {
   await formRef.value.validate()
@@ -133,15 +148,32 @@ async function onSubmit() {
           />
         </el-form-item>
 
-        <el-form-item label="封面图">
-          <div class="be__covers">
-            <img
-              v-for="c in coverOptions"
-              :key="c"
-              :src="c"
-              :class="{ 'is-active': form.cover === c }"
-              @click="form.cover = c"
-            />
+        <el-form-item label="封面图" prop="cover">
+          <div class="be__cover-edit">
+            <div class="be__cover-preview">
+              <img v-if="form.cover" :src="form.cover" alt="盲盒封面预览" />
+              <div v-else class="be__cover-empty">
+                <el-icon><UploadFilled /></el-icon>
+                <span>暂无图片</span>
+              </div>
+            </div>
+            <div class="be__cover-ops">
+              <el-upload
+                :show-file-list="false"
+                :http-request="onUploadCover"
+                accept="image/*"
+              >
+                <el-button type="primary" plain :loading="uploading">
+                  {{ uploading ? '上传中…' : form.cover ? '重新上传' : '上传封面图' }}
+                </el-button>
+              </el-upload>
+              <div class="t-tertiary be__cover-tip">
+                支持 JPG / PNG / WEBP / GIF（HEIC 会自动转成 JPG），大小不超过 5MB；点「保存」后生效
+              </div>
+              <div v-if="id" class="t-tertiary be__cover-tip">
+                编辑已有盲盒时上传新图将替换原封面
+              </div>
+            </div>
           </div>
         </el-form-item>
 
@@ -164,29 +196,54 @@ async function onSubmit() {
 </template>
 
 <style scoped lang="scss">
-.be__covers {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  width: 420px;
+// 封面上传区：与「创建藏品」同一套排版（5 张硬编码预设图已下线，
+// 盲盒封面就是它绑定的那条 collectibles.image，C 端卡片与详情页都读它）
+.be__cover-edit {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
 
-  @media (max-width: 768px) {
-    width: 100%;
-    grid-template-columns: repeat(4, 1fr);
-  }
+.be__cover-preview {
+  width: 140px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px dashed $color-border;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: $color-surface;
 
   img {
     width: 100%;
-    aspect-ratio: 1;
+    height: 100%;
     object-fit: cover;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition: border-color 0.15s;
-
-    &:hover { border-color: rgba(192, 0, 0, 0.3); }
-
-    &.is-active { border-color: $color-primary; }
+    display: block;
   }
+}
+
+.be__cover-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: $color-text-tertiary;
+  font-size: 12px;
+
+  .el-icon { font-size: 28px; }
+}
+
+.be__cover-ops { flex: 1; min-width: 220px; }
+
+.be__cover-tip {
+  font-size: 12px;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+  .be__cover-edit { flex-direction: column; }
 }
 </style>

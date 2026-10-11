@@ -116,11 +116,16 @@ onMounted(load)
         <div class="agreements-form-tip">
           内容将直接下发至 C 端登录/注册页的《用户协议》《隐私政策》弹窗，支持富文本排版（标题、加粗、颜色、列表、图片等）。
         </div>
+        <!-- biz 必须是后端白名单里的那几个值之一（UploadController::BIZ_DIRS）。
+             早先这里传的是 'agreement-' + key（如 agreement-agreement_user），白名单里没有，
+             协议正文里插图片会被 4220「biz 仅允许 …」直接拒掉；
+             选 content 而非 announcement：它在改版前后的两版上传接口里都在白名单内，
+             所以这一处不必等后端发版就能恢复。 -->
         <RichTextEditor
           v-model="contentDraft"
           :placeholder="'请输入「' + editing.name + '」的完整内容…'"
           :height="420"
-          :biz="'agreement-' + editing.key"
+          biz="content"
         />
       </div>
 

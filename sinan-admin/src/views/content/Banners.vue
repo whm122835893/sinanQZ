@@ -34,7 +34,7 @@ function openEdit(b) {
   editShow.value = true
 }
 
-// ---- 轮播图上传（JPG/PNG/WEBP/GIF，≤5MB；存 /uploads/content/年月/随机名）----
+// ---- 轮播图上传（≤5MB，存 /uploads/content/年月/随机名；非四格式由 api/index.js 总闸转成 JPEG）----
 async function onUploadImage({ file }) {
   if (!file) return
   if (file.size > 5 * 1024 * 1024) {
@@ -167,7 +167,7 @@ async function onDelete(b) {
                 <el-upload
                   :show-file-list="false"
                   :http-request="onUploadImage"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/*"
                 >
                   <el-button link type="primary" size="small" :loading="uploading">重新上传</el-button>
                 </el-upload>
@@ -180,12 +180,12 @@ async function onDelete(b) {
               drag
               :show-file-list="false"
               :http-request="onUploadImage"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/*"
             >
               <div class="bn__uploader-box">
                 <el-icon :size="26"><Plus /></el-icon>
                 <div class="t-tertiary" style="font-size: 12px">{{ uploading ? '上传中…' : '点击或拖拽图片到此处上传' }}</div>
-                <div class="t-tertiary" style="font-size: 11px; opacity: 0.7">JPG / PNG / WEBP / GIF，≤5MB</div>
+                <div class="t-tertiary" style="font-size: 11px; opacity: 0.7">支持 JPG / PNG / WEBP / GIF（HEIC 会自动转成 JPG），大小不超过 5MB</div>
               </div>
             </el-upload>
             <div class="t-tertiary" style="font-size: 11px; margin-top: 6px">

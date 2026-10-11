@@ -144,7 +144,7 @@ async function onSave() {
                       <el-upload
                         :show-file-list="false"
                         :http-request="(o) => onUpload('site_logo', o)"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        accept="image/*"
                       >
                         <el-button link type="primary" size="small" :loading="uploadingKey === 'site_logo'">重新上传</el-button>
                       </el-upload>
@@ -156,7 +156,7 @@ async function onSave() {
                     class="deco__uploader"
                     :show-file-list="false"
                     :http-request="(o) => onUpload('site_logo', o)"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    accept="image/*"
                   >
                     <div class="deco__uploader-box">
                       <el-icon :size="20"><Plus /></el-icon>
@@ -174,7 +174,7 @@ async function onSave() {
                       <el-upload
                         :show-file-list="false"
                         :http-request="(o) => onUpload('site_avatar', o)"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        accept="image/*"
                       >
                         <el-button link type="primary" size="small" :loading="uploadingKey === 'site_avatar'">重新上传</el-button>
                       </el-upload>
@@ -186,7 +186,7 @@ async function onSave() {
                     class="deco__uploader deco__uploader--round"
                     :show-file-list="false"
                     :http-request="(o) => onUpload('site_avatar', o)"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    accept="image/*"
                   >
                     <div class="deco__uploader-box">
                       <el-icon :size="20"><Plus /></el-icon>
@@ -264,7 +264,7 @@ async function onSave() {
                         <el-upload
                           :show-file-list="false"
                           :http-request="(o) => onUpload(f.key, o, 'custom')"
-                          accept="image/png,image/webp,image/jpeg,image/gif"
+                          accept="image/*"
                         >
                           <el-button link type="primary" size="small" :loading="uploadingKey === f.key">重新上传</el-button>
                         </el-upload>
@@ -276,7 +276,7 @@ async function onSave() {
                       class="deco__uploader deco__uploader--icon"
                       :show-file-list="false"
                       :http-request="(o) => onUpload(f.key, o, 'custom')"
-                      accept="image/png,image/webp,image/jpeg,image/gif"
+                      accept="image/*"
                     >
                       <div class="deco__uploader-box">
                         <el-icon :size="20"><Plus /></el-icon>
@@ -342,7 +342,7 @@ async function onSave() {
                       <el-upload
                         :show-file-list="false"
                         :http-request="(o) => onUpload('splash_image', o)"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        accept="image/*"
                       >
                         <el-button link type="primary" size="small" :loading="uploadingKey === 'splash_image'">重新上传</el-button>
                       </el-upload>
@@ -354,7 +354,7 @@ async function onSave() {
                     class="deco__uploader"
                     :show-file-list="false"
                     :http-request="(o) => onUpload('splash_image', o)"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    accept="image/*"
                   >
                     <div class="deco__uploader-box">
                       <el-icon :size="20"><Plus /></el-icon>

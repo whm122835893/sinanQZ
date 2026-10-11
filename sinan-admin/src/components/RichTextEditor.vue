@@ -75,9 +75,25 @@ function onPaste(e) {
   sync()
 }
 
-/** 文字颜色 */
+/**
+ * 文字颜色
+ *
+ * 必须先开 styleWithCSS，否则浏览器用 `<font color="#xxx">` 上色，
+ * 而后端 CmsController::sanitizeRichText() 的 HTML.Allowed 白名单里没有 font 标签
+ * （只放开了 span[style]/p[style]/div[style] 且 CSS 只允许 text-align/color），
+ * 于是保存时整段颜色被净化掉 —— 这就是「后台改了颜色、C 端不生效」的根因。
+ * 实测（生产同款配置跑 HTMLPurifier）：
+ *   输入 <p><font color="#d00000">红色字</font>普通字</p> → 输出 <p>红色字普通字</p>（色没了）
+ *   输入 <p><span style="color:#d00000">红色字</span></p> → 原样保留
+ *
+ * 用完立刻把开关关掉：它是 document 级且会粘住的标志，
+ * 不恢复的话后续 formatBlock/对齐等命令的产出形态也会跟着变，没必要扩大改动面。
+ * 不去放宽净化白名单（font 是老标签、且那是安全边界，动它不如动这一行）。
+ */
 function onColor(c) {
+  try { document.execCommand('styleWithCSS', false, true) } catch (_) { /* 老浏览器不支持就按原样上色 */ }
   exec('foreColor', c)
+  try { document.execCommand('styleWithCSS', false, false) } catch (_) { /* 忽略 */ }
   colorShow.value = false
 }
 
@@ -104,7 +120,7 @@ async function onFileChange(e) {
   const file = e.target.files?.[0]
   e.target.value = ''
   if (!file) return
-  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('图片不能超过 5MB')
+  if (file.size > 5 * 1024 * 1024) return ElMessage.warning('图片大小不能超过 5MB')
   uploading.value = true
   try {
     const res = await uploadImage(file, props.biz)
@@ -184,7 +200,7 @@ function isEmpty() {
     />
     <div v-if="isEmpty()" class="rte__placeholder">{{ placeholder }}</div>
 
-    <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden @change="onFileChange" />
+    <input ref="fileInput" type="file" accept="image/*" hidden @change="onFileChange" />
   </div>
 </template>
 

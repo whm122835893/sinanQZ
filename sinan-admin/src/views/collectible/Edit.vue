@@ -96,7 +96,7 @@ function chainReady(c) {
   return !!c.hasKey
 }
 
-// ---- 藏品图上传（JPG/PNG/WEBP/GIF，≤5MB）----
+// ---- 藏品图上传（≤5MB；选择器放开成 image/*，HEIC 等非四格式由 api/index.js 总闸转成 JPEG）----
 async function onUploadCover({ file }) {
   if (!file) return
   if (file.size > 5 * 1024 * 1024) {
@@ -278,14 +278,14 @@ async function onSubmit() {
               <el-upload
                 :show-file-list="false"
                 :http-request="onUploadCover"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept="image/*"
               >
                 <el-button type="primary" plain :loading="uploading">
                   {{ uploading ? '上传中…' : form.cover ? '重新上传' : '上传藏品图' }}
                 </el-button>
               </el-upload>
               <div class="t-tertiary ce__cover-tip">
-                支持 JPG / PNG / WEBP / GIF，大小不超过 5MB；上传后立即保存生效
+                支持 JPG / PNG / WEBP / GIF（HEIC 会自动转成 JPG），大小不超过 5MB；上传后立即保存生效
               </div>
               <div v-if="id" class="t-tertiary ce__cover-tip">
                 编辑已有藏品时上传新图将替换原图

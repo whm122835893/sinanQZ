@@ -447,12 +447,105 @@ export function saveCollectible(payload) {
   return post('/collectibles', body)
 }
 
-/** 图片上传（file: File；biz: collection/blindbox/marketing/content/misc/custom/artifact/announcement；返回 {url}） */
-export function uploadImage(file, biz = 'collection') {
+/** 图片上传（file: File；biz: collection/blindbox/marketing/content/misc/custom/artifact/announcement；返回 {url}）
+ *
+ *  这里是全站唯一的上传出口，管两件事：
+ *
+ *  1) 体积总闸。口径取自创建藏品那套（5MB，与后端 UploadController::MAX_SIZE 一致）：
+ *     各页面原本就各自有一句 client 校验，但 2026-10-11 实测发现抽奖奖品图漏了，
+ *     所以在这里补一道兜底 —— 以后新增上传入口即使忘了写校验，也不会出现「前端选完图、后端回 4220」的割裂表现。
+ *
+ *  2) 格式兜底：非四格式统一转成 JPEG 再传。后端只认 JPG/PNG/WEBP/GIF，2026-10-11 线上 13 次上传
+ *     失败基本都卡在内容检查上（iPhone 相册的 HEIC、微信转发的文件），零文件落盘。
+ *     在浏览器里画一遍再编码，HEIC/BMP/TIFF/AVIF 这类「能显示但后端不收」的图就都能用了；
+ *     四格式本身原样透传，免得 PNG 的透明通道和 GIF 的动画被顺手抹掉。
+ *
+ *  返回值沿用视图层约定（code!==0 + message），调用方原有的 else 分支直接就能提示到位。 */
+const MAX_UPLOAD_IMAGE_BYTES = 5 * 1024 * 1024
+/** 与后端 UploadController::ALLOWED 一一对应，别在这里多认一种少认一种 */
+const UPLOAD_NATIVE_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+const UPLOAD_NATIVE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+/** 0.92：运营图够清晰，又留足体积余量（转完仍超 5MB 会再拦一次，不会偷偷变大图传上去） */
+const UPLOAD_JPEG_QUALITY = 0.92
+/**
+ * 上传单独放宽到 120 秒（其余请求仍是全局 20 秒）
+ * 出口带宽只有 1Mbps ≈ 128KB/s，全局 20s 大约只够推 2.5MB，而生产在用的藏品图就有 2.4MB；
+ * 一张 4MB 的图会「不知原因地失败」——报的是超时，不是「图太大」（RUNBOOK 7.20 S2）。
+ * 120s 这个数与后端侧的 proxy_read_timeout / fastcgi_read_timeout 对齐，不是随手拍的。
+ * 注意这只放宽「等多久」，5MB 上限一个字没动。
+ */
+const UPLOAD_TIMEOUT_MS = 120 * 1000
+
+/** 后缀优先、类型兜底：两端都读不出来时返回 ''，交给后端按嗅探结果判断 */
+function uploadExtOf(file) {
+  const name = String(file?.name || '')
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+}
+
+/** 要不要转 JPEG：只有「明确不是四格式」才转，读不出来一律原样上传，行为不比今天差 */
+function needsJpegTranscode(file) {
+  const type = String(file?.type || '').toLowerCase()
+  if (type) return !UPLOAD_NATIVE_MIMES.includes(type)
+  const ext = uploadExtOf(file)
+  return ext !== '' && !UPLOAD_NATIVE_EXTS.includes(ext)
+}
+
+/** 浏览器里转 JPEG。解不开（比如这个浏览器根本不支持 HEIC）就返回 null，由调用方给出可照着做的提示 */
+async function toJpegFile(file) {
+  if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null
+  let bitmap = null
+  try {
+    // imageOrientation:'from-image' 让 EXIF 方向在画布上就摆正，免得 iPhone 竖拍转完躺倒
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !bitmap.width || !bitmap.height) return null
+    // JPEG 没有透明通道，先把底打白，PNG 透过去的黑底不会出现在成品图上
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(bitmap, 0, 0)
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', UPLOAD_JPEG_QUALITY))
+    if (!blob || !blob.size) return null
+    const base = String(file?.name || '').replace(/\.[^.]*$/, '') || 'image'
+    return new File([blob], `${base}.jpg`, { type: 'image/jpeg' })
+  } catch {
+    return null
+  } finally {
+    bitmap?.close?.()
+  }
+}
+
+export async function uploadImage(file, biz = 'collection') {
+  if (file?.size > MAX_UPLOAD_IMAGE_BYTES) {
+    return { code: -1, message: '图片大小不能超过 5MB', data: null }
+  }
+
+  let payload = file
+  if (needsJpegTranscode(file)) {
+    payload = await toJpegFile(file)
+    if (!payload) {
+      return {
+        code: -1,
+        message: '这张图浏览器也读不出来（多半是 iPhone 的 HEIC，当前浏览器解不了这个格式）。'
+          + '请这样试：① 在 iPhone 上截个图、上传那张截图；② 在电脑上用「画图」或「预览」打开后另存为 JPG 再传；'
+          + '③ 想一劳永逸：iPhone「设置 → 相机 → 格式」改成「兼容性最好」，之后拍的就是 JPG。',
+        data: null
+      }
+    }
+    // 转完再核一次体积：闸门口径不变，仍然是同一句话、同一个 5MB
+    if (payload.size > MAX_UPLOAD_IMAGE_BYTES) {
+      return { code: -1, message: '图片大小不能超过 5MB', data: null }
+    }
+  }
+
   const fd = new FormData()
-  fd.append('file', file)
+  fd.append('file', payload)
   fd.append('biz', biz)
-  return post('/upload/image', fd, { silent: true })
+  // silent：上传失败由调用方提示，别和全局 toast 说两遍；timeout：见 UPLOAD_TIMEOUT_MS 注释
+  return post('/upload/image', fd, { silent: true, timeout: UPLOAD_TIMEOUT_MS })
 }
 
 // ============================================================

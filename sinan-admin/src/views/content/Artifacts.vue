@@ -67,7 +67,7 @@ function openEdit(a) {
   editShow.value = true
 }
 
-// ---- 文物图上传（JPG/PNG/WEBP/GIF，≤5MB）----
+// ---- 文物图上传（≤5MB；选择器放开成 image/*，HEIC 等非四格式由 api/index.js 总闸转成 JPEG）----
 async function onUploadImage({ file }) {
   if (!file) return
   if (file.size > 5 * 1024 * 1024) {
@@ -162,7 +162,7 @@ async function onSave() {
                 <el-upload
                   :show-file-list="false"
                   :http-request="onUploadImage"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/*"
                 >
                   <el-button link type="primary" size="small" :loading="uploading">重新上传</el-button>
                 </el-upload>
@@ -175,12 +175,12 @@ async function onSave() {
               drag
               :show-file-list="false"
               :http-request="onUploadImage"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept="image/*"
             >
               <div class="af__uploader-box">
                 <el-icon :size="26"><Plus /></el-icon>
                 <div class="t-tertiary" style="font-size: 12px">{{ uploading ? '上传中…' : '上传文物图片' }}</div>
-                <div class="t-tertiary" style="font-size: 11px; opacity: 0.7">JPG / PNG / WEBP / GIF，≤5MB</div>
+                <div class="t-tertiary" style="font-size: 11px; opacity: 0.7">支持 JPG / PNG / WEBP / GIF（HEIC 会自动转成 JPG），大小不超过 5MB</div>
               </div>
             </el-upload>
           </div>
