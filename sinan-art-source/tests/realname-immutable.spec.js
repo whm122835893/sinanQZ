@@ -13,6 +13,8 @@ vi.mock('vue-router', () => ({
 vi.mock('@/utils/request', () => ({ default: { get: shared.get, post: shared.post, put: shared.put } }))
 
 import Realname from '@/views/user/Realname.vue'
+// vant 已被上面的工厂 mock 掉，这里拿到的就是那个 vi.fn()
+import { showToast } from 'vant'
 
 const apiProfile = (overrides = {}) => ({
   nickname: '司南-0955',
@@ -114,5 +116,75 @@ describe('未提交 / 已驳回：仍可填写提交', () => {
 
     expect(wrapper.text()).toContain('驳回原因：证件照片模糊')
     expect(wrapper.findAll('button').map((b) => b.text())).toEqual(['提交认证'])
+  })
+})
+
+/**
+ * 身份证本地校验必须与后端同口径（sinan-nft-backend/app/controller/User.php）
+ *
+ * 后端不只校验「18 位」，还要求地区码首位非 0、出生年 19xx/20xx、月 01-12、日 01-31。
+ * 前端原先用 /^\d{17}[\dXx]$/，乱填 18 位数字能过本地校验、提交才被后端弹回，报错晚一步。
+ * 后台「实名审核模式=auto」是现状默认：格式校验成了唯一防线，两端更不能再各判一次。
+ */
+describe('身份证格式：前端与后端同口径', () => {
+  const NAME = '张三'
+
+  it.each([
+    ['地区码首位为 0', '010101199003077578'],
+    ['月份 13', '110101199013077578'],
+    ['日期 34', '123456789012345678'],
+    ['全 1 乱填', '111111111111111111'],
+    ['末尾位不是数字或 X', '11010119900307757A'],
+  ])('%s 应在本地就被拦住（不必等后端弹回）', async (_label, badId) => {
+    const wrapper = await mountPage(0)
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue(NAME)
+    await inputs[1].setValue(badId)
+
+    expect(wrapper.get('button').classes()).toContain('is-disabled')
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('请输入 18 位有效身份证号')
+    expect(shared.post).not.toHaveBeenCalled()
+  })
+
+  it('合法身份证号（18 位、含小写 x）解除禁用并成功提交', async () => {
+    const wrapper = await mountPage(0)
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue(NAME)
+    await inputs[1].setValue('11010119900307757x')
+
+    expect(wrapper.get('button').classes()).not.toContain('is-disabled')
+    await wrapper.get('button').trigger('click')
+    expect(shared.post).toHaveBeenCalledWith('/user/realname', { realName: NAME, idCard: '11010119900307757X' })
+  })
+})
+
+/**
+ * auto 模式下后端直接返回 status=approved，页面提示不能再是「等待审核」
+ * （manual 模式返回 pending，两条文案都得对着各自的返回值走）
+ */
+describe('提交结果文案跟随审核模式', () => {
+  const fillValid = async () => {
+    const wrapper = await mountPage(0)
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('张三')
+    await inputs[1].setValue('110101199003077578')
+    return wrapper
+  }
+
+  it('返回 approved 时提示已通过', async () => {
+    shared.post.mockResolvedValue({ status: 'approved' })
+    const wrapper = await fillValid()
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(showToast).toHaveBeenCalledWith('实名认证已通过')
+  })
+
+  it('返回 pending 时提示等待审核', async () => {
+    shared.post.mockResolvedValue({ status: 'pending' })
+    const wrapper = await fillValid()
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(showToast).toHaveBeenCalledWith('已提交，等待审核')
   })
 })

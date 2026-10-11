@@ -5,6 +5,7 @@ namespace app\controller;
 use app\BaseController;
 
 use app\service\RealnameService;
+use app\service\IdCardBoundException;
 use app\service\CaptchaService;
 use app\service\SmsDispatchService;
 use app\service\JwtService;
@@ -125,18 +126,35 @@ class User extends BaseController
         if (!preg_match('/^[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/', $idCard)) {
             return $this->fail(1001, '身份证号格式错误');
         }
+        // ↑ 除 18 位外形外还校验地区码首位非 0、出生年 19xx/20xx、月 01-12、日 01-31。
+        //   C 端 sinan-art-source/src/views/user/Realname.vue 已对齐同一条正则（改这里必须同时改那边），
+        //   未做校验位（GB 11643 MOD 11-2）验证——auto 模式下这是唯一防线，要加固见 RUNBOOK §8。
 
-        // 审核模式开关（后台「全局参数」realname_audit_mode，实时生效）：
+        // 审核模式开关（后台「系统配置 → 全局参数」realname_audit_mode，实时生效、不用发版）：
         // manual=人工审核（进入待审核队列） auto=自动通过（与管理端审核通过同口径）
+        // 库里的种子值自 2026-10-10 起为 auto（migrations/20261010_realname_audit_mode_auto.sql）；
+        // 这里的兜底值刻意保持 manual——行被误删时宁可退回人工审核，不做 fail-open。
         $auditMode = (string) (Db::name('system_configs')->where('config_key', 'realname_audit_mode')->value('config_value') ?: 'manual');
+
+        // 一证一号（2026-10-10）：友好预检 —— 这张证号若已被别的**已认证**账号占用，直接人话拒绝，
+        // 既不进待审队列也不自动通过。占坑口径只认「认证通过」，待审核/已驳回都不占（见 RealnameService）。
+        // 权威判定在 RealnameService::approve() 里（管理端人工通过是同一条路），这里不重复写状态。
+        if (RealnameService::occupiedBy($idCard, $userId)) {
+            return $this->fail(1001, RealnameService::OCCUPIED_MSG_PUBLIC);
+        }
 
         if ($auditMode === 'auto') {
             // 提交即通过：提交数据合并进同一条 update，状态/奖励口径由 RealnameService 统一
-            RealnameService::approve($userId, [
-                'real_name'             => aes_encrypt($realName),
-                'id_card'               => aes_encrypt($idCard),
-                'realname_submitted_at' => date('Y-m-d H:i:s'),
-            ]);
+            try {
+                RealnameService::approve($userId, [
+                    'real_name'             => aes_encrypt($realName),
+                    'id_card'               => aes_encrypt($idCard),
+                    'realname_submitted_at' => date('Y-m-d H:i:s'),
+                ]);
+            } catch (IdCardBoundException $e) {
+                // 并发下同证号可能刚被别人占走：预检漏过、这里兜住（不透出对方 UID）
+                return $this->fail(1001, RealnameService::OCCUPIED_MSG_PUBLIC);
+            }
             return $this->success(['status' => 'approved'], '实名认证已自动通过');
         }
 

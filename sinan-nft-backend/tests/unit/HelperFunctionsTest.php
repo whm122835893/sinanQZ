@@ -148,6 +148,37 @@ class HelperFunctionsTest extends TestCase
         $this->assertSame('sinan-nft-secret-key-2026', app_key());
     }
 
+    /**
+     * 身份证指纹（一证一号，2026-10-10）
+     *
+     * id_card 是随机 IV 的密文，同一证号两次密文不同 → 密文列上加唯一索引拦不住重复，
+     * 唯一性全靠这列确定性指纹（详见 deploy/RUNBOOK.md 7.13）。
+     */
+    public function testIdCardFingerprintIsNormalizedAndDeterministic(): void
+    {
+        $upper = id_card_fingerprint('11010119900307757X');
+        $this->assertSame(64, strlen($upper), '指纹是 sha256 十六进制，定长 64');
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $upper);
+
+        // 末位 x 的大小写、前后空白都算同一张证号：后端存原文不改写，只在比对时归一
+        $this->assertSame($upper, id_card_fingerprint('11010119900307757x'), '末位 x 大小写必须同指纹');
+        $this->assertSame($upper, id_card_fingerprint(" 11010119900307757x\t"), '前后空白必须归一');
+
+        // 反向对照：同一明文两次密文不同（这就是不能加唯一索引的原因），但指纹必须一致
+        $this->assertNotSame(aes_encrypt('11010119900307757X'), aes_encrypt('11010119900307757X'));
+        $this->assertSame(id_card_fingerprint('11010119900307757X'), id_card_fingerprint('11010119900307757X'));
+
+        // 差一位就不是同一张证号，不能误伤
+        $this->assertNotSame($upper, id_card_fingerprint('110101199003077578'));
+    }
+
+    public function testIdCardNormalizeOnlyTouchesCaseAndWhitespace(): void
+    {
+        $this->assertSame('11010119900307757X', id_card_normalize(' 11010119900307757x '));
+        // 非证号输入不做"猜想修正"：格式校验在前，这里只归一大小写与空白
+        $this->assertSame('张三', id_card_normalize('张三'));
+    }
+
     // ============================================================
     // 昵称合规
     // ============================================================

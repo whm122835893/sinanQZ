@@ -108,6 +108,39 @@ function aes_decrypt(string $encoded): ?string
 }
 
 /**
+ * 身份证去重用的比对键：去空格 + 末位 x 归一为大写。
+ * 身份证列是随机 IV 的密文，同一证号每次存的都不一样，只能靠这个归一后的明文做比对；
+ * 比对口径改了必须同步改 realname:id-hash 的回填（否则存量指纹全判不命中）。
+ */
+function id_card_normalize(string $idCard): string
+{
+    return strtoupper(str_replace([' ', "\t", "\n"], '', trim($idCard)));
+}
+
+/**
+ * 身份证指纹（HMAC-SHA256，64 位十六进制）——「一证一号」的比对与索引列
+ *
+ * 为什么不直接加密列上加唯一索引：aes_encrypt 用随机 IV，同一明文两次密文不同，
+ * 密文列上的唯一索引拦不住重复证号（这是当初记录在 RUNBOOK §8 的缺陷，2026-10-10 修）。
+ * 为什么用 HMAC 而不是裸 SHA256：证号只有 18 位、可枚举空间不大，裸摘要能被拖库后暴力撞库反推，
+ * 带 APP_KEY 的 HMAC 让攻击者拿不到密钥就无法反查。
+ *
+ * 指纹跟着 APP_KEY 走：换密钥（rekey:encrypted）时会在重加密证号的同时按新密钥改写指纹，
+ * 换完再跑一次 `php think realname:id-hash` 只读核对。手工改 .env 而不跑 rekey 的话，
+ * 存量指纹会全部对不上、查重静默失效 —— 必须补跑 `php think realname:id-hash --backfill`。
+ */
+function id_card_fingerprint(string $idCard): string
+{
+    return id_card_fingerprint_with_key($idCard, app_key());
+}
+
+/** 指定密钥版本：只有 rekey:encrypted 在「.env 还没改成新密钥」的窗口期需要 */
+function id_card_fingerprint_with_key(string $idCard, string $key): string
+{
+    return hash_hmac('sha256', 'sinan-idcard|' . id_card_normalize($idCard), $key);
+}
+
+/**
  * camelCase 转换（snake_case → camelCase）
  */
 function camelize(string $str): string
@@ -149,6 +182,10 @@ function gen_draw_code(): string
 
 /**
  * 藏品编号占位串（20字符内，保证并发插入不撞唯一索引 uk_collectible_serial）
+ *
+ * 2026-10-11 起已退役：编号改由 app\service\SerialService 从「1..发行量」号池里随机取，
+ * 插入时即为最终值，不再需要"先占位取自增ID、再回写编号"。
+ * 保留函数是为了兼容存量 TMP- 行与既有单测；新代码请勿再调用。
  */
 function gen_serial_placeholder(): string
 {

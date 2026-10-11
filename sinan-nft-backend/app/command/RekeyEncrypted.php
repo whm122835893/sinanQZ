@@ -94,7 +94,13 @@ class RekeyEncrypted extends Command
 
                     $total++;
                     if (!$dryRun) {
-                        Db::name($table)->where('id', (int) $row['id'])->update([$col => $this->encrypt($pt, $newKey)]);
+                        $update = [$col => $this->encrypt($pt, $newKey)];
+                        // 身份证指纹是 HMAC(证号, APP_KEY)：换密钥后旧指纹全部对不上、一证一号会静默失效。
+                        // 重加密证号的同时，按**新密钥**把指纹一起改写，省掉二次全表解密。
+                        if ($table === 'users' && $col === 'id_card') {
+                            $update['id_card_hash'] = id_card_fingerprint_with_key($pt, $newKey);
+                        }
+                        Db::name($table)->where('id', (int) $row['id'])->update($update);
                     }
                 }
             }

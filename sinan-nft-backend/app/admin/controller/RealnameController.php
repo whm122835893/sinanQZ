@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use app\service\RealnameService;
+use app\service\IdCardBoundException;
 use think\facade\Db;
 
 /**
@@ -12,6 +13,10 @@ use think\facade\Db;
  * 审核工作流：用户 C 端提交（realname_status=1 待审核）
  *   → 管理员审核通过（=2，is_realname=1，解锁购买/寄售/转赠）
  *   → 管理员驳回（=3，记录原因，用户可重新提交）
+ *
+ * 一证一号（2026-10-10）：同一张身份证只允许一个账号认证通过。判定收敛在
+ * RealnameService::approve()（C 端自动通过同一条路），本控制器只做异常→提示的翻译，
+ * 给人工审核用的是带对方 UID 的完整消息（C 端不透出）。
  *
  * 数据安全：
  * - 列表默认返回完整姓名/证件号（前端默认脱敏展示）
@@ -169,8 +174,16 @@ class RealnameController extends BaseController
 
         $now = date('Y-m-d H:i:s');
         if ($action === 'approve') {
-            // 通过口径（状态更新 + 注册/邀请活动结算）与 C 端自动通过统一收敛在 RealnameService
-            $settled = RealnameService::approve($userId);
+            // 通过口径（一证一号校验 + 状态更新 + 注册/邀请活动结算）与 C 端自动通过统一收敛在 RealnameService
+            try {
+                $settled = RealnameService::approve($userId);
+            } catch (IdCardBoundException $e) {
+                // 撞证号：不改状态，账号留在待审队列里由人工决定（一般是驳回，让对方走客服解绑）
+                // 单独记一条 audit_conflict，运营能在操作日志里看到「谁撞了谁的证号」
+                $this->audit('realname', 'audit_conflict', '实名审核被一证一号拦截：' . $e->getMessage(),
+                    ['user_id' => $userId, 'occupied_by' => $e->otherUid], 'user', $userId);
+                return $this->fail(4220, $e->getMessage());
+            }
             $this->audit('realname', 'audit_approve',
                 '实名审核通过（UID ' . $user['uid'] . '）', ['user_id' => $userId], 'user', $userId);
 

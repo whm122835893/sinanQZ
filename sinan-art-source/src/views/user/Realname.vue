@@ -28,7 +28,10 @@ onMounted(async () => {
 })
 
 const nameValid = computed(() => /^[\u4e00-\u9fa5·a-zA-Z]{2,15}$/.test(realName.value.trim()))
-const idValid = computed(() => /^\d{17}[\dXx]$/.test(idCard.value.trim()))
+// 与后端 sinan-nft-backend/app/controller/User.php 的身份证校验同口径：
+// 不只是「18 位」，还要地区码首位非 0、出生年 19xx/20xx、月 01-12、日 01-31。
+// 原先前端只校验 /^\d{17}[\dXx]$/，乱填 18 位数字能过前端、提交才被后端弹回，报错晚一步。
+const idValid = computed(() => /^[1-9]\d{5}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/.test(idCard.value.trim()))
 const canSubmit = computed(() => nameValid.value && idValid.value && !submitting.value)
 
 function nameError() {
@@ -41,7 +44,9 @@ function idError() {
   return idValid.value ? '' : '请输入 18 位有效身份证号'
 }
 
-// 提交实名认证（真实接口：POST /api/user/realname，提交后进入待审核，管理端审核通过后 is_realname=1）
+// 提交实名认证（真实接口：POST /api/user/realname）。
+// 结果由后台「全局参数 → 实名审核模式」决定：auto=提交即通过（现状默认），manual=进待审核队列等人工点通过。
+// 两种模式最终都收敛到 RealnameService::approve（realname_status=2 + is_realname=1），口径一致。
 async function onSubmit() {
   if (!canSubmit.value) {
     if (!nameValid.value) showToast(nameError())
