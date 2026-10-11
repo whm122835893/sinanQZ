@@ -133,7 +133,11 @@ class Collections extends BaseController
         if (!$c) return $this->fail(1002, '藏品不存在');
 
         $category = Db::name('categories')->where('id', $c['category_id'])->find();
-        $isBlindBox = (bool) Db::name('blind_boxes')->where('collectible_id', $id)->count();
+        // 盲盒：取整行而不是只 count，后端要把后台「可开启」开关一起下发，
+        // 否则 C 端无法区分「这是盲盒但管理员关了开启入口」和「这不是盲盒」
+        $blindBox = Db::name('blind_boxes')->where('collectible_id', $id)->find();
+        $isBlindBox       = (bool) $blindBox;
+        $blindBoxOpenable = $isBlindBox && (int) $blindBox['is_openable'] === 1;
 
         // 我的已持有数量
         $myOwned = 0;
@@ -192,6 +196,13 @@ class Collections extends BaseController
                 'code' => $category['code'] ?? '',
             ],
             'isBlindBox' => $isBlindBox,
+            // 后台「可开启」开关（关闭时 C 端隐藏开盒入口，只当普通藏品展示）
+            'isBlindBoxOpenable' => $blindBoxOpenable,
+            // 开盒资格三合一：是盲盒 + 开关开着 + 手里还有未开启的（opened 后该行变 consumed，不再计入 myOwned）
+            'canOpenBlindBox'    => $blindBoxOpenable && $myOwned > 0,
+            // 奖池明细（C 端「盲盒内容」那一块）：早先模板写好了却没接数据，这里补上下发。
+            // 取数与稀有度/概率口径统一走 BlindBoxes::poolOf，本文件不自己查奖池表。
+            'items'              => $isBlindBox ? BlindBoxes::poolOf($id) : [],
             'saleLimit'  => $saleLimit,
             'myOwned'    => $myOwned,
             // 联动点 10.1：寄售/转赠开关与限价配置（控制「转赠/寄售」入口显隐，文档 5.3）
@@ -358,10 +369,20 @@ class Collections extends BaseController
             ->toArray();
 
         // 按 collectible_id 聚合
+        // 盲盒身份以「该藏品在 blind_boxes 表里有行」为准（后台「可开启」开关取 is_openable）。
+        // 旧写法把「获得渠道 source」当「藏品类型 type」下发，语义正好反了：
+        // 买来的盲盒藏品 type 变成 purchase，C 端 isBlindbox 恒假 → 开盒按钮和「未开启」角标都不显示。
+        $blindBoxes = $list
+            ? Db::name('blind_boxes')
+                ->whereIn('collectible_id', array_column($list, 'collectible_id'))
+                ->column('is_openable', 'collectible_id')
+            : [];
+
         $grouped = [];
         foreach ($list as $row) {
             $cid = $row['collectible_id'];
             if (!isset($grouped[$cid])) {
+                $isBlindbox = isset($blindBoxes[$cid]);
                 $grouped[$cid] = [
                     'id'             => (int) $cid,
                     'userCollectibleIds' => [],
@@ -370,7 +391,14 @@ class Collections extends BaseController
                     'price'          => (float) $row['acquired_price'],
                     'qty'            => 0,
                     'nos'            => [],
-                    'type'           => $row['source'],
+                    'type'           => $isBlindbox ? 'blindbox' : 'release',
+                    // 获得渠道单独下发，不再冒充类型（purchase/airdrop/blindbox/transfer…）
+                    'source'         => $row['source'],
+                    'isBlindbox'     => $isBlindbox,
+                    'openable'       => $isBlindbox && (int) $blindBoxes[$cid] === 1,
+                    // 开盒会把这一行置为 consumed 并从本接口（status<>consumed）消失，
+                    // 因此这里出现的盲盒一定是「未开启」，字段保留给前端角标链路。
+                    'opened'         => false,
                     'isConsigned'    => false,
                     'acquiredAt'     => null,
                 ];
@@ -386,9 +414,9 @@ class Collections extends BaseController
                 'blockNumber'       => $row['block_number'] !== null ? (int) $row['block_number'] : null,
                 'isConsigned'       => (int) $row['is_consigned'] === 1,
             ];
-            if (count($grouped[$cid]['nos']) < 5) {
-                $grouped[$cid]['nos'][] = $row['serial'];
-            }
+            // 全量下发：曾经在这里截断到 5 个，导致「持有 9 件只显示 5 个编号」
+            // （items[] 已经是全量明细，nos 没必要再砍一刀）
+            $grouped[$cid]['nos'][] = $row['serial'];
             if ((int) $row['is_consigned'] === 1) {
                 $grouped[$cid]['isConsigned'] = true;
             }

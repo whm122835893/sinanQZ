@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 use app\BaseController;
+use app\service\InboxService;
 
 use think\facade\Db;
 
@@ -41,6 +42,73 @@ class BlindBoxes extends BaseController
         }
 
         return $this->success(['list' => $items]);
+    }
+
+    /**
+     * 盲盒奖池的「展示口径」取数（C 端详情页「盲盒内容」用）
+     *
+     * 为什么单独成方法、且只此一份实现：
+     * 概率在库里存的是 (0,1] 的小数（后台校验见 admin BlindBoxController::create），
+     * 稀有度根本没有列、只能由概率推。这两件事只要有第二个地方各写一遍，
+     * 同一件奖品就会在两个页面显示成两个标签。故 C 端一律走这里。
+     * 注意与 open() 里的取数区分：那边要行锁、要看剩余限量，是「抽奖」而不是「展示」。
+     */
+    public static function poolOf(int $collectibleId): array
+    {
+        if ($collectibleId <= 0) {
+            return [];
+        }
+        $boxId = (int) Db::name('blind_boxes')->where('collectible_id', $collectibleId)->value('id');
+        if ($boxId <= 0) {
+            return [];
+        }
+        // 奖品藏品被软删或已不存在时 prize_name 为空：整行跳过，不给 C 端留一行空壳
+        // （deleted_at 条件挂在 join 后的 WHERE 上：软删的行 c2.deleted_at 非空会被剔掉，
+        //   奖品记录彻底不存在的行 c2.* 全 NULL，落到下面的空名判断）
+        $rows = Db::name('blind_box_items')->alias('bbi')
+            ->field('bbi.prize_collectible_id, bbi.probability, c2.name AS prize_name, c2.image AS prize_image')
+            ->join('collectibles c2', 'c2.id = bbi.prize_collectible_id', 'LEFT')
+            ->where('bbi.blind_box_id', $boxId)
+            ->whereNull('bbi.deleted_at')
+            ->whereNull('c2.deleted_at')
+            ->order('bbi.probability', 'desc')
+            ->select()->toArray();
+
+        $out = [];
+        foreach ($rows as $r) {
+            if (($r['prize_name'] ?? '') === '') {
+                continue;
+            }
+            $prob = (float) $r['probability'];
+            $out[] = [
+                'prizeCollectibleId' => (int) $r['prize_collectible_id'],
+                'name'               => (string) $r['prize_name'],
+                'coverImage'         => (string) ($r['prize_image'] ?? ''),
+                'probability'        => self::percentText($prob),
+                'rarity'             => self::rarityOf($prob),
+            ];
+        }
+        return $out;
+    }
+
+    /** 概率小数 → 百分数文案：1 → "100%"、0.1 → "10%"、0.0375 → "3.75%"（整数不带多余小数点） */
+    public static function percentText(float $probability): string
+    {
+        $s = number_format($probability * 100, 2, '.', '');
+        $s = rtrim(rtrim($s, '0'), '.');
+        return ($s === '' ? '0' : $s) . '%';
+    }
+
+    /**
+     * 稀有度按概率推导（库里没这一列，奖池配置也不含）：
+     * 越难开出来越稀有。阈值与前端已有的四色角标（普通/稀有/史诗/传说）一一对应。
+     */
+    public static function rarityOf(float $probability): string
+    {
+        if ($probability >= 0.5)  return '普通';
+        if ($probability >= 0.2)  return '稀有';
+        if ($probability >= 0.05) return '史诗';
+        return '传说';
     }
 
     /**
@@ -155,13 +223,15 @@ class BlindBoxes extends BaseController
             }
             $winner = $itemById[$pickedId];
 
-            // 生成奖品资产：先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
+            // 生成奖品资产：编号走全项目唯一取号入口（1..发行量随机、不越界、不重号）
+            // 旧写法用资产表自增行 id 当编号尾段，会让奖品的编号跑到自己发行量之外
             $prizeCollectibleId = (int) $winner['prize_collectible_id'];
+            $serial = \app\service\SerialService::next($prizeCollectibleId);
             Db::name('user_collectibles')->insert([
                 'user_id'           => $userId,
                 'collectible_id'   => $prizeCollectibleId,
                 'blind_box_item_id' => $winner['id'],
-                'serial'           => gen_serial_placeholder(),
+                'serial'           => $serial,
                 'source'           => 'blindbox',
                 'acquired_price'   => 0,
                 'acquired_at'      => $now,
@@ -170,11 +240,6 @@ class BlindBoxes extends BaseController
                 'updated_at'       => $now,
             ]);
             $newUcId = (int) Db::name('user_collectibles')->getLastInsID();
-            $serial  = 'SN-' . $prizeCollectibleId . '-' . str_pad((string) $newUcId, 4, '0', STR_PAD_LEFT);
-            Db::name('user_collectibles')->where('id', $newUcId)->update([
-                'serial'     => $serial,
-                'updated_at' => $now,
-            ]);
 
             // 奖品藏品流通量 +1（与发售/空投路径保持一致，保证 circulate = 资产行总数）
             Db::name('collectibles')->where('id', $prizeCollectibleId)->update([
@@ -182,9 +247,17 @@ class BlindBoxes extends BaseController
                 'updated_at' => $now,
             ]);
 
+            // 到账通知：开盒结果本页已经弹给看过，所以把 inboxId 一并回传，
+            // 前端拿到就标记已读 —— 记录留档、后台可查，但不会再弹第二次（见 InboxPopup.vue）
+            $prizeCollectible = Db::name('collectibles')->where('id', $prizeCollectibleId)->find();
+            $inboxId = InboxService::pushCollectible($userId, 'blindbox', $prizeCollectible ?: [], [
+                'quantity' => 1,
+                'serial'   => $serial,
+                'reason'   => '开盲盒',
+            ], (int) $winner['id']);
+
             Db::commit();
 
-            $prizeCollectible = Db::name('collectibles')->where('id', $prizeCollectibleId)->find();
             return $this->success([
                 'prize' => [
                     'collectibleId' => $prizeCollectibleId,
@@ -194,6 +267,7 @@ class BlindBoxes extends BaseController
                     'rarity'        => '抽奖奖品',
                     'probability'   => (float) $winner['probability'],
                 ],
+                'inboxId' => $inboxId,
             ]);
         } catch (\Throwable $e) {
             Db::rollback();

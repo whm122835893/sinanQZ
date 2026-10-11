@@ -7,6 +7,7 @@ import { useSiteStore } from '@/stores/site'
 import html2canvas from 'html2canvas'
 import { useLoginGate } from '@/utils/loginGate'
 import { ensureRealname, ensureTradePassword } from '@/utils/purchaseGate'
+import { formatNo } from '@/utils/serial'
 import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
@@ -20,8 +21,22 @@ const detail = ref(null)
 const serialNo = computed(() => route.query.no)
 // 仓库进入：隐藏购买/价格，底部改为「立即寄售」
 const isWarehouse = computed(() => route.query.from === 'warehouse')
+// 详情接口原生字段（fetchDetail 把后端返回整体挂在 raw 上，映射层没逐个搬）
+const rawField = (key) => detail.value?.raw?.[key]
+
 // 盲盒进入：底部显示「开启盲盒」+「立即寄售(灰色)」
-const isBlindbox = computed(() => route.query.type === 'blindbox')
+// 以接口下发的真字段为准（isBlindBox 来自后端 blind_boxes 反查），路由 query.type 只当兜底：
+// 从首页轮播/推荐位/搜索结果进同一个盲盒时根本没有 type 参数，
+// 早先只认 query 就会出现「明明是可开的盲盒，底部却没有开启按钮」。
+const isBlindbox = computed(() => !!rawField('isBlindBox') || route.query.type === 'blindbox')
+// 能否开盒：后端三合一判断（是盲盒 + 后台「可开启」开关开着 + 手里还有未开启的这件）
+const canOpenBlindbox = computed(() => !!rawField('canOpenBlindBox'))
+const blindBoxOpenable = computed(() => !!rawField('isBlindBoxOpenable'))
+// 开关被后台关掉时给出原因，不给用户留一颗点不动的哑按钮
+const blindboxDisabledText = computed(() => {
+  if (!blindBoxOpenable.value) return '开启入口已关闭'
+  return '暂无可开启的盲盒'
+})
 
 const loading = ref(true)
 
@@ -86,8 +101,12 @@ const intro = computed(() => {
   return '《' + detail.value.title + '》为平台精选数字藏品，已完成链上确权，支持自由寄售与流转，该藏品具体信息以下方为准。'
 })
 
-// 盲盒子藏品列表
-const blindboxItems = computed(() => featuredItem.value?.items || [])
+// 盲盒内容（奖池）：以详情接口下发为准。
+// 早先这里读的是 featuredItem?.items —— 而首页发售区的映射层根本没有 items 这个字段，
+// 后端 featured 接口也从没下发奖池，所以「盲盒内容」那块模板一直是死代码、从来没显示过。
+// 现在后端在详情接口里带 items（口径见 BlindBoxes::poolOf），这里改成同一个数据源，
+// 顺带解决「深链直接进详情页时 featured 还没加载」的另一种不显示。
+const blindboxItems = computed(() => rawField('items') || [])
 
 async function onBuy() {
   if (saleStatus.value !== 'selling') return
@@ -230,6 +249,10 @@ async function doOpenBlindbox() {
     )
     const prize = res?.prize || {}
     revealItem.value = { name: prize.name, coverImage: prize.image, no: prize.no }
+    // 开盒会把这一件置为 consumed：不重拉库存和详情，底部那颗「开启盲盒」
+    // 会一直亮着，再点一次才收到后端「藏品不可开启或已开启」的报错。
+    userStore.fetchInventory().catch(() => {})
+    store.fetchDetail(route.params.id).then((d) => { detail.value = d }).catch(() => {})
     showConsign.value = false
     showOpenResult.value = true
   } catch (e) {
@@ -431,7 +454,7 @@ async function drawPosterFallback() {
       <div class="detail-meta">
         <div class="detail-meta__row" v-if="serialNo">
           <span class="detail-meta__label">藏品编号</span>
-          <span class="detail-meta__value">#{{ serialNo }}</span>
+          <span class="detail-meta__value">{{ formatNo(serialNo) }}</span>
         </div>
         <!-- 链上凭证（该编号上链铸造后展示交易哈希与 Token ID；未上链为空不占位） -->
         <div class="detail-meta__row" v-if="chainProof">
@@ -471,10 +494,11 @@ async function drawPosterFallback() {
       </div>
       <button class="detail-buy__btn" :class="{ 'is-soldout': saleStatus === 'soldout' }" :disabled="saleStatus !== 'selling'" @click="onBuy">{{ buyButtonText }}</button>
     </div>
-    <!-- 仓库：盲盒 → 立即寄售(灰色) + 开启盲盒 -->
+    <!-- 仓库：盲盒 → 立即寄售(灰色) + 开启盲盒（后台关了开关或手里没有未开启的，按钮置灰并写明原因） -->
     <div class="detail-buy safe-bottom" v-else-if="isBlindbox">
       <button class="detail-buy__btn detail-buy__btn--disabled" disabled>立即寄售</button>
-      <button class="detail-buy__btn" @click="onOpenBlindbox">{{ opening ? '开启中…' : '开启盲盒' }}</button>
+      <button v-if="canOpenBlindbox" class="detail-buy__btn" @click="onOpenBlindbox">{{ opening ? '开启中…' : '开启盲盒' }}</button>
+      <button v-else class="detail-buy__btn detail-buy__btn--disabled" disabled>{{ blindboxDisabledText }}</button>
     </div>
     <!-- 仓库：普通藏品 → 已锁定(寄售中) / 冷却中 / 立即寄售 + 转赠 -->
     <div class="detail-buy safe-bottom" v-else>
@@ -503,7 +527,7 @@ async function drawPosterFallback() {
             <img class="consign__cover" :src="detail.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <div class="consign__info">
               <p class="consign__name">{{ detail.title }}</p>
-              <p class="consign__no" v-if="serialNo">编号：{{ serialNo }}</p>
+              <p class="consign__no" v-if="serialNo">编号：{{ formatNo(serialNo) }}</p>
             </div>
           </div>
 
@@ -573,7 +597,7 @@ async function drawPosterFallback() {
             <img class="consign__cover" :src="detail.coverImage" alt="" draggable="false" @contextmenu.prevent @click.prevent />
             <div class="consign__info">
               <p class="consign__name">{{ detail.title }}</p>
-              <p class="consign__no" v-if="serialNo">编号：{{ serialNo }}</p>
+              <p class="consign__no" v-if="serialNo">编号：{{ formatNo(serialNo) }}</p>
             </div>
           </div>
 
