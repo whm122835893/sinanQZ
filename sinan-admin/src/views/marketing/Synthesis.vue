@@ -54,6 +54,10 @@ const collectibles = ref([])
 const editShow = ref(false)
 const editing = ref(null)
 const submitting = ref(false)
+// enabled 默认 true：与建表默认值（nft_synthesis_activities.status DEFAULT '1'）和后端缺省一致。
+// 早先这里写死 false，等于"新建即停用"，而 C 端只列 status=1（app/controller/Synthesis.php:34）——
+// 后台列表又不按状态过滤，于是运营看到的就是"活动创建了但 C 端死活不显示"。
+// 需要"先配着、回头再上线"时，把这一栏的开关手动关掉即可，弹窗里也写明了停用不上 C 端。
 const form = ref({
   title: '',
   type: 'permanent',
@@ -67,7 +71,7 @@ const form = ref({
   endTime: '',
   eligibility: { type: 'all', config: {} },
   grantMode: 'realtime',
-  enabled: false
+  enabled: true
 })
 
 onMounted(async () => {
@@ -131,7 +135,8 @@ function openCreate() {
     endTime: '',
     eligibility: { type: 'all', config: {} },
     grantMode: 'realtime',
-    enabled: false
+    // 与顶部 form 初值保持一致：新建默认启用（原因见 form 定义处的注释）
+    enabled: true
   }
   editShow.value = true
 }
@@ -270,7 +275,12 @@ async function onSave() {
   })
   submitting.value = false
   if (res.code === 0) {
-    ElMessage.success(editing.value ? '合成活动已更新' : '合成活动已创建')
+    // 把「C 端能不能看到」当场说清楚，别让运营自己去猜：
+    // 活动自身停用、或合成模块总开关关闭，任意一个都会让 C 端不展示。
+    let suffix = '，C 端已可见'
+    if (!f.enabled) suffix = '（该活动当前停用，启用后才会在 C 端展示）'
+    else if (!synthesisEnabled.value) suffix = '（但合成模块总开关是关闭的，C 端仍是空状态）'
+    ElMessage.success((editing.value ? '合成活动已更新' : '合成活动已创建') + suffix)
     editShow.value = false
     load()
   } else if (res.message) {

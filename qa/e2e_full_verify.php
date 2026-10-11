@@ -183,6 +183,11 @@ $userToken = $login2['data']['token'] ?? '';
 T('C端密码登录（图形码前置）', ($login2['code'] ?? -1) === 0 && $userToken, $login2['message'] ?? '');
 
 // ---- 2.3 实名 → 后台审核 ----
+// 本脚本走「C 端提交 → 后台人工点通过」两步。库里 realname_audit_mode 的默认值自 2026-10-10 起
+// 改为 auto（提交即通过），不显式钉住 manual 的话：后台审核会拿到 4220「该用户当前不在待审核状态」，
+// 且奖励在提交时就已结算，后续增量断言会算成 0。
+$pinMode = http('PUT', '/admin/system/configs/realname_audit_mode', ['config_value' => 'manual'], $adminToken);
+T('审核模式钉住 manual（本脚本需要两步流）', ($pinMode['code'] ?? -1) === 200, $pinMode['message'] ?? '');
 $rn = http('POST', '/api/user/realname', ['realName' => '测试用户', 'idCard' => '110101199003077770'], $userToken);
 T('C端提交实名认证', ($rn['code'] ?? -1) === 0, $rn['message'] ?? '');
 $uinfo = http('GET', '/api/user/profile', null, $userToken);

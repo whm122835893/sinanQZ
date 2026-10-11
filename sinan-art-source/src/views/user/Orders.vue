@@ -7,6 +7,7 @@ import { showToast, showConfirmDialog } from 'vant'
 import { useUserStore } from '@/stores/user'
 import { useOrderStore } from '@/stores/order'
 import { useLoginGate } from '@/utils/loginGate'
+import { formatNo } from '@/utils/serial'
 
 const route = useRoute()
 const router = useRouter()
@@ -143,7 +144,17 @@ async function onCancel(o) {
     <div class="mine-orders__list" v-if="!isEmpty">
       <div v-for="o in list" :key="o.id" class="order-card" :class="{ 'airdrop-card': o.isAirdrop }">
         <div class="order-card__head">
-          <span class="order-card__no">{{ o.isAirdrop ? '空投单号 #' : '订单号 ' }}{{ o.id }}</span>
+          <!--
+            空投卡片头部显示**藏品编号**（SN-藏品ID-资产ID，与「我的藏品」里那一件对得上）。
+            早先这里显示的是 nft_airdrop_records 的自增 ID（"空投单号 #10"），
+            那是后台发放台账的行号，对用户没有任何检索意义，也不可能在别处看到同一个数。
+            编号由 GET /api/airdrops/mine 的 serial 字段下发；只有发放成功才有值，
+            pending / failed 的记录没有资产行，退回显示记录 ID，避免头部空着。
+          -->
+          <span class="order-card__no">
+            <template v-if="o.isAirdrop">{{ o.no ? '藏品编号 ' + formatNo(o.no) : '空投单号 #' + o.id }}</template>
+            <template v-else>订单号 {{ o.id }}</template>
+          </span>
           <span class="order-card__status" :class="statusMeta[o.status]?.cls || ''">
             <template v-if="o.isAirdrop">
               {{ statusMeta[o.status]?.text || o.status }}
@@ -158,7 +169,7 @@ async function onCancel(o) {
           <div class="order-card__info">
             <p class="order-card__name">{{ o.name }}</p>
             <p class="order-card__sub">
-              {{ o.kindText }}{{ o.isAirdrop ? '' : (o.no ? ' · 编号 #' + o.no : '') }} · ×{{ o.qty }}
+              {{ o.kindText }}{{ o.isAirdrop ? '' : (o.no ? ' · 编号 ' + formatNo(o.no) : '') }} · ×{{ o.qty }}
             </p>
             <p class="order-card__time">{{ o.isAirdrop ? '发放于 ' : '' }}{{ fmtTime(o.createdAt) }}</p>
           </div>

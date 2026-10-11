@@ -6,6 +6,7 @@ import { useCollectionStore } from '@/stores/collection'
 import { useLoginGate } from '@/utils/loginGate'
 import { ensureRealname } from '@/utils/purchaseGate'
 import AppNavBar from '@/components/AppNavBar.vue'
+import { formatNo } from '@/utils/serial'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,7 +74,7 @@ async function onBuy() {
       <div class="detail-meta">
         <div class="detail-meta__row">
           <span class="detail-meta__label">藏品编号</span>
-          <span class="detail-meta__value">#{{ order.no }}</span>
+          <span class="detail-meta__value">{{ formatNo(order.no) }}</span>
         </div>
         <div class="detail-meta__row">
           <span class="detail-meta__label">发行方</span>

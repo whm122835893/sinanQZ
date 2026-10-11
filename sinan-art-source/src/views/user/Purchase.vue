@@ -5,6 +5,7 @@ import AppEmpty from '@/components/AppEmpty.vue'
 import { useOrderStore } from '@/stores/order'
 import { useLoginGate } from '@/utils/loginGate'
 import { showToast, showConfirmDialog } from 'vant'
+import { formatNo } from '@/utils/serial'
 
 const orderStore = useOrderStore()
 const { requireLogin } = useLoginGate()
@@ -115,7 +116,7 @@ async function reject(o) {
           <img class="transfer-card__cover" :src="o.cover" alt="" draggable="false" />
           <div class="transfer-card__info">
             <p class="transfer-card__name">{{ o.name }}</p>
-            <p class="transfer-card__sub">{{ o.no ? '编号 #' + o.no : '' }}</p>
+            <p class="transfer-card__sub">{{ o.no ? '编号 ' + formatNo(o.no) : '' }}</p>
             <p class="transfer-card__time">{{ fmtTime(o.createdAt) }}</p>
           </div>
         </div>

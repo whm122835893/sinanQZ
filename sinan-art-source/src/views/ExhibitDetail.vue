@@ -12,12 +12,17 @@ const store = useCollectionStore()
 
 const exhibit = computed(() => store.fetchExhibit(route.params.id))
 
-function back() { router.back() }
+/** 同 NoticeDetail：无历史时退回展览区列表，别让用户以为按钮坏了 */
+function back() {
+  if (router.options.history.state.back) router.back()
+  else router.push('/mall')
+}
 </script>
 
 <template>
   <div class="exhibit-detail page">
-    <AppNavBar title="文物详情" />
+    <!-- @click-left 必须绑：AppNavBar 只 emit 事件、自己不跳转（与 NoticeDetail 同一处漏绑） -->
+    <AppNavBar title="文物详情" @click-left="back" />
 
     <template v-if="exhibit">
       <!-- 主图 -->

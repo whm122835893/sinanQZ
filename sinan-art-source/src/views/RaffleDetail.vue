@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '@/utils/request'
 import { toTs } from '@/utils/datetime'
@@ -58,6 +58,50 @@ const phase = computed(() => detail.value?.phase || '')
 const canRegister = computed(() => phase.value === 'registering')
 const canPurchase = computed(() => myReg.value?.purchasable === true)
 
+// ---- 中签后的购买闸门（口径：中签时刻 + 5 分钟后才出现购买按钮，未中签一律不显示）----
+// 判定全在后端 RaffleService::purchaseGate，这里只把它的结论摊开成显隐条件
+const isWinner = computed(() => myReg.value?.drawStatus === 1)
+const isLoser = computed(() => myReg.value?.drawStatus === 2)
+// 还在等待期时的剩余秒数：按接口下发的开放购买时刻和本地秒级时钟推算；
+// 接口没给时刻（异常/老数据）时退回后端算好的 purchaseWaitSec。
+const purchaseWaitRemain = computed(() => {
+  const openTs = toTs(myReg.value?.purchaseOpenAt || '')
+  if (openTs) return Math.max(0, Math.floor((openTs - nowTs.value) / 1000))
+  return Math.max(0, Number(myReg.value?.purchaseWaitSec || 0))
+})
+const purchaseWaitText = computed(() => {
+  const s = purchaseWaitRemain.value
+  if (s <= 0) return ''
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return (m > 0 ? m + ' 分 ' : '') + sec + ' 秒'
+})
+// 购买按钮是否该出现：中签 + 后端说现在能买（未中签一律不显示，这是用户定的口径）
+const showPurchaseBtn = computed(() => isWinner.value && canPurchase.value)
+// 等待期只给文案不给按钮：「中签 N 分钟后开放购买」，时间一到按钮自己冒出来
+const purchaseWaitTip = computed(() => {
+  if (!isWinner.value || purchaseWaitRemain.value <= 0) return ''
+  const mins = Math.round((Number(myReg.value?.purchaseDelaySec) || 300) / 60)
+  return `已中签，${mins} 分钟后开放购买（剩余 ${purchaseWaitText.value}）`
+})
+// 中签之后的终态：给一颗说得出原因的禁用按钮，不留哑文案
+const purchaseLockedText = computed(() => {
+  if (!isWinner.value || canPurchase.value || purchaseWaitRemain.value > 0) return ''
+  if (myReg.value?.purchaseSoldOut) return '已购满'
+  if (myReg.value?.purchaseExpired) return '购买已截止'
+  return ''
+})
+// 其余情形（未中签 / 还没开奖 / 没参加）的左侧状态
+const idleText = computed(() => {
+  if (isLoser.value) return '未中签'
+  const p = phase.value
+  if (p === 'upcoming') return '抽签尚未开始'
+  if (p === 'drawing') return '开签中'
+  if (p === 'drawn') return myReg.value ? '等待开奖结果' : '您未参与本场抽签'
+  if (p === 'finished') return '活动已结束'
+  return '暂不可操作'
+})
+
 // 我的总可购额度 = 中签次数 × 每签限购（未中签为 0）
 const myQuota = computed(() => myReg.value?.purchaseQuota || 0)
 
@@ -83,8 +127,9 @@ const timeline = computed(() => {
     { label: '抽签截止', value: d.registrationEnd },
     { label: '开奖时间', value: d.drawTime }
   ]
-  if (d.purchaseStart) items.push({ label: '购买开始', value: d.purchaseStart })
-  if (d.purchaseEnd) items.push({ label: '购买结束', value: d.purchaseEnd })
+  // 「开放购买」不是后台那个可能留空的 purchase_start，而是后端算好的「中签时刻 + 5 分钟」
+  if (d.purchaseOpenAt) items.push({ label: '开放购买', value: d.purchaseOpenAt })
+  if (d.purchaseEnd) items.push({ label: '购买截止', value: d.purchaseEnd })
   return items
 })
 
@@ -186,6 +231,12 @@ onMounted(() => {
   tickTimer = setInterval(() => { nowTs.value = Date.now() }, 1000)
 })
 onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
+
+// 等待期倒计时归零：主动再取一次详情，让「能不能买」始终由后端结论说了算，
+// 用户不用手动刷新页面，购买按钮也会在 5 分钟到点时自己出现。
+watch(purchaseWaitRemain, (val, old) => {
+  if (val === 0 && old > 0 && isWinner.value && !canPurchase.value) fetchDetail()
+})
 </script>
 
 <template>
@@ -338,11 +389,19 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
         <div class="detail-card"><p class="detail-block__body">{{ detail.description }}</p></div>
       </section>
 
-      <!-- 底部操作条：抽签 → 开奖后按中签结果展示（已中签/未中签/立即购买） -->
+      <!-- 底部操作条：左边状态/价格，右边按钮各自独立。
+           原先整条是 v-if / v-else-if 互斥链，永远只能渲染出一颗按钮：
+           中签的人在等待期看到的是「已中签」禁用按钮，5 分钟到点也不会自己变，
+           而且链一旦走到某个分支，右边的「立即购买」根本没机会出现。 -->
       <div class="detail-buy safe-bottom">
-        <div class="detail-buy__price" v-if="canPurchase">
+        <!-- 左侧 -->
+        <div class="detail-buy__price" v-if="showPurchaseBtn">
           <b>¥{{ detail.salePrice }}</b>
         </div>
+        <p class="detail-buy__tip" v-else-if="purchaseWaitTip">{{ purchaseWaitTip }}</p>
+        <p class="detail-buy__tip" v-else-if="!isWinner">{{ idleText }}</p>
+
+        <!-- 右侧：抽签按钮 -->
         <button
           v-if="canRegister"
           class="detail-buy__btn"
@@ -350,31 +409,20 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
           :disabled="submitting || !!myReg"
           @click="onRegister"
         >{{ myReg ? '已参与抽签' : '立即抽签' }}</button>
-        <!-- 中签且到购买时间：立即购买 -->
+
+        <!-- 右侧：购买按钮（中签且已过「中签时刻 + 5 分钟」才出现；未中签一律不显示） -->
         <button
-          v-else-if="canPurchase"
+          v-if="showPurchaseBtn"
           class="detail-buy__btn"
           :disabled="submitting"
           @click="onPurchase"
         >立即购买</button>
-        <!-- 中签未到购买时间 / 已购满 -->
+        <!-- 中签后的终态：购满 / 截止，按钮留着但写清原因 -->
         <button
-          v-else-if="phase === 'drawn' && myReg && myReg.drawStatus === 1"
+          v-else-if="purchaseLockedText"
           class="detail-buy__btn detail-buy__btn--win"
           disabled
-        >{{ myReg.purchasedQuantity >= myQuota ? '已购满' : '已中签' }}</button>
-        <!-- 未中签 -->
-        <button
-          v-else-if="phase === 'drawn' && myReg && myReg.drawStatus === 2"
-          class="detail-buy__btn detail-buy__btn--lose"
-          disabled
-        >未中签</button>
-        <p v-else class="detail-buy__tip">
-          {{ phase === 'upcoming' ? '抽签尚未开始' :
-             phase === 'drawn' ? (myReg ? '等待开奖结果' : '您未参与本场抽签') :
-             phase === 'drawing' ? '开签中' :
-             phase === 'finished' ? '活动已结束' : '暂不可操作' }}
-        </p>
+        >{{ purchaseLockedText }}</button>
       </div>
     </template>
   </div>

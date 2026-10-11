@@ -8,6 +8,7 @@ import { ensureRealname } from '@/utils/purchaseGate'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppModal from '@/components/AppModal.vue'
 import request from '@/utils/request'
+import { formatNo } from '@/utils/serial'
 
 const route = useRoute()
 const router = useRouter()
@@ -268,7 +269,7 @@ async function submitPostBuy() {
               <span class="resale-list__lock" v-if="o.locked"><van-icon name="lock" /> 锁定中</span>
               <span class="resale-list__pay">{{ o.payment }}</span>
             </div>
-            <p class="resale-list__no">#{{ o.no }}</p>
+            <p class="resale-list__no">{{ formatNo(o.no) }}</p>
           </div>
           <div class="resale-list__right">
             <span class="resale-list__price">¥{{ o.price }}</span>

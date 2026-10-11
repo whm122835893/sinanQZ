@@ -290,6 +290,10 @@ T('TC-IV05b 档位重复被拒', ($r['code']??0)===4220, "code={$r['code']} msg=
 $r=http('POST','/admin/marketing/invite',['name'=>'SIT邀请活动3','status'=>'enabled','tiers'=>[['inviteCount'=>99,'rewards'=>[['type'=>'points','amount'=>1]]]]],$atok);
 T('TC-IV05c 档位人数超限被拒', ($r['code']??0)===4220, "code={$r['code']}");
 // inv1 实名 → 双方结算
+// 本脚本靠「提交 → 后台人工审核」两步拿结算时点。库里 realname_audit_mode 默认值自 2026-10-10 起
+// 是 auto（提交即通过、奖励当场结算），不钉住 manual 会让下面的审核返回 4220 且积分增量算成 0。
+$r=http('PUT','/admin/system/configs/realname_audit_mode',['config_value'=>'manual'],$atok);
+T('TC-前置 审核模式钉住 manual', ($r['code']??0)===200, "code={$r['code']} msg={$r['message']}");
 $r=http('POST','/api/user/realname',['realName'=>'司南测试甲','idCard'=>'110101199001011234'],$inv1Tok);
 T('TC-IV06a0 被邀请人提交实名', ($r['code']??0)===0, "code={$r['code']} msg={$r['message']}");
 $p1Before=(float)v("SELECT points FROM nft_wallets WHERE user_id=1");

@@ -9,6 +9,7 @@ import { useUserStore } from '@/stores/user'
 import request from '@/utils/request'
 import { useLoginGate } from '@/utils/loginGate'
 import { toTs } from '@/utils/datetime'
+import { formatNo } from '@/utils/serial'
 
 const router = useRouter()
 const activityStore = useActivityStore()
@@ -286,7 +287,7 @@ function statusOf(a) {
               <span class="dc-rec__rule">{{ rec.ruleName || '分解' }}</span>
               <span class="dc-rec__time">{{ rec.createdAt }}</span>
             </div>
-            <p class="dc-rec__src">消耗：{{ rec.sourceName }} #{{ rec.sourceSerial }}</p>
+            <p class="dc-rec__src">消耗：{{ rec.sourceName }} {{ formatNo(rec.sourceSerial) }}</p>
             <p class="dc-rec__outs">
               产出：<span v-for="(it, idx) in rec.results" :key="idx">{{ it.name }}<em v-if="it.quantityPer > 1">×{{ it.quantityPer }}</em>{{ idx < rec.results.length - 1 ? '、' : '' }}</span>
             </p>
@@ -305,7 +306,7 @@ function statusOf(a) {
         <p class="dc-confirm__tip">分解操作不可撤销，确认后立即执行</p>
         <div class="dc-confirm__row">
           <span class="dc-confirm__k">分解藏品</span>
-          <span class="dc-confirm__v">{{ pendingRule.source.name }} #{{ pendingRule.assetSerial }}</span>
+          <span class="dc-confirm__v">{{ pendingRule.source.name }} {{ formatNo(pendingRule.assetSerial) }}</span>
         </div>
         <div class="dc-confirm__row">
           <span class="dc-confirm__k">获得产物</span>
@@ -327,10 +328,10 @@ function statusOf(a) {
     <!-- 分解结果弹窗 -->
     <AppModal v-model:show="showResultModal" title="分解成功">
       <div v-if="lastResult" class="dc-result">
-        <p class="dc-result__tip">已消耗 #{{ lastResult.consumedSerial }}，获得以下藏品</p>
+        <p class="dc-result__tip">已消耗 {{ formatNo(lastResult.consumedSerial) }}，获得以下藏品</p>
         <div v-for="(r, idx) in lastResult.results" :key="idx" class="dc-result__item">
           <span class="dc-result__name">{{ r.name }}</span>
-          <span class="dc-result__serial">#{{ r.serial }}</span>
+          <span class="dc-result__serial">{{ formatNo(r.serial) }}</span>
         </div>
         <button class="dc-result__ok" @click="showResultModal = false">好的</button>
       </div>

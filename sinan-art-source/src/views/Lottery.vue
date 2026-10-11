@@ -5,12 +5,14 @@ import request from '@/utils/request'
 import { toTs } from '@/utils/datetime'
 import { useLoginGate } from '@/utils/loginGate'
 import { useUserStore } from '@/stores/user'
+import { useInboxStore } from '@/stores/inbox'
 import { showToast } from 'vant'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 
 const route = useRoute()
 const user = useUserStore()
+const inbox = useInboxStore()
 const { requireLogin } = useLoginGate()
 
 // 非藏品奖占位图：points 司南币 / none 谢谢参与
@@ -108,6 +110,10 @@ async function drawTimes(n) {
 
     const index = prizes.value.findIndex((p) => p.prizeId === res.prize?.prizeId)
     if (index < 0) { spinning.value = false; showToast('抽奖异常，请稍后再试'); return }
+
+    // 中奖藏品后端已写收件箱记录（留档 + 后台可查）。转盘结果本页马上就要弹给看过，
+    // 所以这里立即标记已读，避免 15s 轮询后全局弹窗再弹一次同样的内容。
+    if (res.inboxId) inbox.markRead(res.inboxId)
 
     const sectorCenter = index * SECTOR.value + SECTOR.value / 2 // 该扇形中心角（顺时针，自顶部起）
     const desired = (360 - sectorCenter) % 360                    // 让该中心转到顶部指针处所需的轮转角

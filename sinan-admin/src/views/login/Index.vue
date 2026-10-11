@@ -52,6 +52,12 @@ async function detectCaptcha() {
     const res = await getCaptchaEnabled()
     const data = res?.code === 0 ? res.data : null
     captchaEnabled.value = !!data?.enabled
+    if (res?.code !== 0) {
+      // 这一行不能省：读不到配置时页面会**默认关掉验证码**（fail-open），
+      // 不提示的话运营只会觉得「怎么不问我验证码」，而真实原因可能是后端没起来。
+      // 提交时后端仍会按它自己的配置校验，安全上没有放松，只是要把话说清楚。
+      ElMessage.warning(res?.message || '验证码配置读取失败，本次可能不要求验证码')
+    }
     captchaProvider.value = data?.provider === 'aliyun' ? 'aliyun' : 'local'
     captchaMode.value = data?.mode === 'slider' ? 'slider' : 'graphic'
     aliyunCfg.value = data?.aliyun || null
@@ -76,9 +82,15 @@ async function openLocalDialog() {
       localImg.value = res.data?.image || ''
       localCode.value = ''
       localError.value = ''
+    } else {
+      // 请求层现在对 silent 请求不再弹全局提示（2026-10-11 第二批 B6：登录页本来就是自己处理文案的，
+      // 之前是双弹窗）。所以这里必须自己显示，否则验证码框是空白的，用户完全不知道发生了什么。
+      localError.value = res?.message || '验证码加载失败'
+      ElMessage.error(localError.value)
     }
   } catch (e) {
-    ElMessage.error('验证码加载失败')
+    localError.value = '验证码加载失败'
+    ElMessage.error(localError.value)
   }
   localDialogVisible.value = true
   return new Promise((resolve) => {
@@ -112,6 +124,9 @@ async function submitLocalCode() {
         localId.value = imgRes.data?.captcha_id || ''
         localImg.value = imgRes.data?.image || ''
         localCode.value = ''
+      } else {
+        // 刷新这张图也是 silent 请求：失败了得说清楚，否则用户对着同一张旧图反复输错
+        localError.value = imgRes?.message || '验证码图片刷新失败，请稍后再试'
       }
       return
     }

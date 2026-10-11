@@ -96,7 +96,9 @@ export const useOrderStore = defineStore('order', () => {
       itemId: String(a.collectibleId),
       cover: a.image,
       name: a.name,
-      no: '',
+      // no = 藏品编号（后端 serial）。列表页卡片头部显示它；
+      // 发放失败/待发放的记录后端给 null，这里退成空串，卡片头部会退回显示记录 ID
+      no: a.serial || '',
       price: 0,
       qty: a.quantity,
       status: a.status === 'issued' ? 'issued' : a.status === 'failed' ? 'failed' : 'pending',

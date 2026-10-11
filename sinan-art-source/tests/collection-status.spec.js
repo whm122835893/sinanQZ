@@ -6,6 +6,7 @@ vi.mock('@/stores/site', () => ({ useSiteStore: () => ({ purchaseLimitPerUser: 5
 
 import request from '@/utils/request'
 import { useCollectionStore } from '@/stores/collection'
+import { useUserStore } from '@/stores/user'
 
 /**
  * 首页发售区的状态判定（stores/collection.js）
@@ -91,6 +92,114 @@ describe('collection store · 发售状态', () => {
     expect(store.featured[0].type).toBe('release')
     expect(store.featured[1].tag).toBe('首发')
     expect(store.featured[1].type).toBe('blindbox')
+  })
+})
+
+/**
+ * 「寄售了一件，其余的看起来也全被锁」（2026-10-11 第一批修复）
+ *
+ * 口径：被锁定的是「具体某一件」资产实例（nft_user_collectibles 的一行），不是整个系列。
+ * GET /api/user/collections 按藏品聚合，组级 isConsigned 只表示「这一系列里至少有一件在寄售」，
+ * 逐件真相在 items[].isConsigned 上。早先前端拿组级标志 + nos 整组判定，才造成「锁一件、看着锁一排」；
+ * 库里其实只锁了那一件（后端 UPDATE 的 WHERE 只有主键 id），所以这是显示误判，不是资产事故。
+ */
+describe('user store · 寄售锁定按资产实例判定', () => {
+  let user
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    request.get = vi.fn()
+    request.post = vi.fn()
+    user = useUserStore()
+    user.setToken('test-token')
+  })
+
+  /** 组行载荷：3 件里只有 SN-3 挂单中 */
+  const inventoryGroup = (over = {}) => ({
+    id: 7, name: '洛神赋图', image: '/luoshen.png', price: '128', qty: 3,
+    nos: ['SN-1', 'SN-2', 'SN-3'],
+    isConsigned: true,
+    userCollectibleIds: [101, 102, 103],
+    items: [
+      { userCollectibleId: 101, serial: 'SN-1', tokenId: '', txHash: '', isConsigned: false },
+      { userCollectibleId: 102, serial: 'SN-2', tokenId: '', txHash: '', isConsigned: false },
+      { userCollectibleId: 103, serial: 'SN-3', tokenId: '', txHash: '', isConsigned: true }
+    ],
+    acquiredAt: '2026-10-01 10:00:00', type: 'release', ...over
+  })
+
+  async function loadInventory(over = {}) {
+    request.get = vi.fn().mockResolvedValue([inventoryGroup(over)])
+    await user.fetchInventory()
+  }
+
+  it('同系列三件中只有真正挂单的那件被判为锁定', async () => {
+    await loadInventory()
+
+    expect(user.isNoLocked(7, 'SN-3')).toBe(true)
+    // 修复前这两条都是 true（组级 isConsigned 一刀切）
+    expect(user.isNoLocked(7, 'SN-1')).toBe(false)
+    expect(user.isNoLocked(7, 'SN-2')).toBe(false)
+  })
+
+  it('lockedNos 取自逐件明细，和 nos 列表内容无关', async () => {
+    const serials = Array.from({ length: 8 }, (_, i) => `SN-${i + 1}`)
+    await loadInventory({
+      qty: 8,
+      nos: serials.slice(0, 5),
+      items: serials.map((s, i) => ({
+        userCollectibleId: 200 + i, serial: s, isConsigned: s === 'SN-7'
+      }))
+    })
+
+    expect(user.inventory[0].lockedNos).toEqual(['SN-7'])
+    expect(user.isNoLocked(7, 'SN-7')).toBe(true)
+    expect(user.isNoLocked(7, 'SN-1')).toBe(false)
+  })
+
+  it('缺逐件明细（旧缓存）时退回 lockedNos，不把组级标志当整组锁', async () => {
+    await loadInventory({ items: undefined })
+
+    expect(user.inventory[0].isConsigned).toBe(true)
+    expect(user.inventory[0].lockedNos).toEqual([])
+    expect(user.isNoLocked(7, 'SN-1')).toBe(false)
+  })
+
+  it('id 传数字或字符串都要能匹配（库存里存的是字符串）', async () => {
+    await loadInventory()
+
+    expect(user.inventory[0].id).toBe('7')
+    expect(user.isNoLocked(7, 'SN-3')).toBe(true)
+    expect(user.isNoLocked('7', 'SN-3')).toBe(true)
+  })
+
+  it('未知藏品与空编号一律不锁，不抛异常', async () => {
+    await loadInventory()
+
+    expect(user.isNoLocked(999, 'SN-3')).toBe(false)
+    expect(user.isNoLocked(7, '')).toBe(false)
+    expect(user.isNoLocked(7, undefined)).toBe(false)
+  })
+
+  it('取消寄售成功后重新拉库存，该件随之解锁', async () => {
+    await loadInventory()
+    expect(user.isNoLocked(7, 'SN-3')).toBe(true)
+
+    request.post = vi.fn().mockResolvedValue({})
+    request.get = vi.fn().mockResolvedValue([inventoryGroup({
+      isConsigned: false,
+      items: [
+        { userCollectibleId: 101, serial: 'SN-1', isConsigned: false },
+        { userCollectibleId: 102, serial: 'SN-2', isConsigned: false },
+        { userCollectibleId: 103, serial: 'SN-3', isConsigned: false }
+      ]
+    })])
+    await user.cancelConsign(55)
+
+    expect(request.post).toHaveBeenCalledWith('/resale/listings/55/cancel')
+    expect(user.isNoLocked(7, 'SN-3')).toBe(false)
+    expect(user.inventory[0].lockedNos).toEqual([])
   })
 })
 

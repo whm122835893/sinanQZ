@@ -23,12 +23,21 @@ onMounted(async () => {
   }
 })
 
-function back() { router.back() }
+/**
+ * 返回：有上一页就正常后退；没有历史（比如直接打开/刷新这条深链）时退回公告列表。
+ * 只写 router.back() 的话，无历史时浏览器会原地不动（用户感知就是"返回键点了没用"的另一种）。
+ */
+function back() {
+  if (router.options.history.state.back) router.back()
+  else router.push('/notice')
+}
 </script>
 
 <template>
   <div class="notice-detail page">
-    <AppNavBar title="公告详情" />
+    <!-- @click-left 必须绑：AppNavBar 自己不做任何跳转，只 emit('click-left')，
+         早先这里漏绑导致左上角返回箭头点了没反应（正文底部那颗「返回公告列表」是另一条路径） -->
+    <AppNavBar title="公告详情" @click-left="back" />
 
     <template v-if="notice">
       <!-- 标题区：保留，无渐变 -->

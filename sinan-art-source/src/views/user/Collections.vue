@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 import { useUserStore } from '@/stores/user'
+import { formatNo } from '@/utils/serial'
 import { showConfirmDialog, showToast } from 'vant'
 
 const router = useRouter()
@@ -109,7 +110,7 @@ function onCancelConsign(c) {
         <img class="consign-list__thumb" :src="c.coverImage" alt="" draggable="false" @contextmenu.prevent @pointerdown.prevent @click.prevent />
         <div class="consign-list__info">
           <p class="consign-list__name">{{ c.name }}</p>
-          <p class="consign-list__no">编号 #{{ c.no }}</p>
+          <p class="consign-list__no">编号 {{ formatNo(c.no) }}</p>
           <p class="consign-list__price">寄售价 ¥{{ Number(c.price).toFixed(2) }} · 到账 ¥{{ Number(c.actual).toFixed(2) }}</p>
         </div>
         <button class="consign-list__cancel" :disabled="canceling" @click="onCancelConsign(c)">取消寄售</button>
@@ -135,7 +136,7 @@ function onCancelConsign(c) {
             :key="s"
             @click="goDetail(current, s)"
           >
-            {{ s }}<em v-if="isLocked(s)">寄售中</em>
+            {{ formatNo(s) }}<em v-if="isLocked(s)">寄售中</em>
           </div>
         </div>
       </div>

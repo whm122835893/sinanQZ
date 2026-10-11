@@ -164,8 +164,17 @@ export const useUserStore = defineStore('user', () => {
       price: Number(g.price).toFixed(2),
       qty: g.qty,
       nos: g.nos || [],
-      lockedNos: g.isConsigned ? (g.nos || []).slice(0, 1) : [],
+      // 被寄售锁定的是「具体某一件」（user_collectibles 行），不是整个系列。
+      // 后端组级 isConsigned 只表示"这一系列里至少有一件在寄售"（Collections.php 聚合而来），
+      // 早先用它 + slice(0,1) 会把锁错对象甚至漏掉真被锁的那件，所以逐件取 items[].isConsigned。
+      lockedNos: (g.items || []).filter((it) => it.isConsigned).map((it) => it.serial),
       type: g.type === 'blindbox' ? 'blindbox' : 'release',
+      // 盲盒真字段（后端 2026-10-11 起按 blind_boxes 反查下发，不再拿获得渠道冒充类型）
+      // isBlindbox 优先认新字段，同时兼容旧载荷里的 type，避免接口回滚时角标整片消失
+      isBlindbox: g.isBlindbox === true || g.type === 'blindbox',
+      // 开盒入口的最终判断在详情页（接口 canOpenBlindBox），这里只作列表侧的提示位
+      openable: !!g.openable,
+      opened: !!g.opened,
       boughtAt: toTs(g.acquiredAt),
       userCollectibleIds: g.userCollectibleIds || [],
       // 编号 → 资产实例明细（寄售/开盒按实例操作）
@@ -236,10 +245,16 @@ export const useUserStore = defineStore('user', () => {
     return true
   }
 
-  // 编号是否处于寄售锁定中（后端 isConsigned 状态）
+  // 编号是否处于寄售锁定中：必须按「这一件」的实例状态判。
+  // 组级 isConsigned 只代表"该系列至少有一件在寄售"，早先拿它 + nos 整组判定，
+  // 造成「寄售了一件、其余的看起来也全被锁」（其实库里只锁了那一件）。
   function isNoLocked(id, no) {
-    const item = inventory.value.find((i) => String(i.id) === String(id))
-    return !!(item && item.isConsigned && no && item.nos?.includes(no))
+    const group = inventory.value.find((i) => String(i.id) === String(id))
+    if (!group || !no) return false
+    const instance = (group.items || []).find((it) => it.serial === no)
+    // 兜底：拿不到逐件明细（旧接口/旧缓存）时退回 lockedNos，仍然不用组级标志
+    if (!instance) return (group.lockedNos || []).includes(no)
+    return !!instance.isConsigned
   }
 
   // 冷却期由后端校验（resale_cooldown_seconds），前端仅提示
@@ -254,7 +269,14 @@ export const useUserStore = defineStore('user', () => {
       paymentPassword: String(paymentPassword || '')
     })
     await fetchInventory()
-    return res // { prize: { id, name, image, price } } 结构以实际返回为准
+    // 后端会为这次到账写一条收件箱记录（留档 + 后台可查），并把 inboxId 回传。
+    // 开盒结果本页已经弹给看过，所以这里立刻标记已读，避免 15s 后全局弹窗再弹一次同样的内容。
+    // 用动态 import：inbox store 顶层依赖本 store，写成静态 import 会构成循环引用。
+    if (res?.inboxId) {
+      const { useInboxStore } = await import('./inbox')
+      useInboxStore().markRead(res.inboxId)
+    }
+    return res // { prize: { id, name, image, price }, inboxId } 结构以实际返回为准
   }
 
   // ---- 发起转赠（真实接口：POST /api/transfers，需交易密码）----
