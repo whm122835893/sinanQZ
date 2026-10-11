@@ -56,6 +56,9 @@ php think run -p 8080   # 后端
 - [ ] `APP_KEY` / `JWT.SECRET` / `JWT.ADMIN_SECRET` 均为独立随机串（`openssl rand -hex 32`）
 - [ ] 数据库使用 `sinan_app` 独立账号，非 root；`.env` 权限 600
 - [ ] 生产已有存量数据且需更换 `APP_KEY` 时，先执行 `php think rekey:encrypted <旧> <新> --dry-run` 预览再执行
+- [ ] 上线「一证一号」这批代码时，同一批里要包含迁移 `20261010_realname_id_card_unique.sql`（加 `id_card_hash` 列 + 普通索引）
+      与 `php think realname:id-hash` → `--backfill`；只上代码不加列会直接写不存在的列，只加列不上代码则指纹恒 NULL、功能不生效
+- [ ] 若绕过 `rekey:encrypted` 手工改了 `.env` 的 `APP_KEY`，必须补跑 `php think realname:id-hash --backfill` 重算证号指纹
 
 **账号安全**
 - [ ] 修改管理端默认账号 admin 的密码（或 `php think AdminResetPassword` 重置）
@@ -86,6 +89,10 @@ php think AdminResetPassword
 
 # AES 密钥轮换（换 APP_KEY 前必做）
 php think rekey:encrypted <旧密钥> <新密钥> --dry-run
+
+# 一证一号的证号指纹：只读统计（不写库），加 --backfill 才回填
+php think realname:id-hash
+php think realname:id-hash --backfill
 
 # 手动触发一次定时任务（验证 cron 配置）
 php think ScheduleDispatch

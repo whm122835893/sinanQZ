@@ -5,8 +5,14 @@
 
 ## 一、共用护栏（这一点是全目录最关键的约定）
 
-目录里的 30 个 PHP 脚本**全部 `require bootstrap_db.php`**（其中 29 个已跟踪，
-`sit_t6b_priority_window.php` 目前仍未提交，见第四节），全目录只有 `bootstrap_db.php:43` 这一处创建 PDO。
+目录里有 30 个测试脚本 + 1 个基座（`ls *.php` 数出来 31 个文件），这 30 个测试脚本**全部 `require bootstrap_db.php`**。
+全目录只有 `bootstrap_db.php:43` 这一处创建 PDO；`git ls-files '*.php'` 数出来**已跟踪 29 个**，
+没提交的是 `sit_t6b_priority_window.php`（按你要求保留未跟踪，见第四节）与 `realname_audit_modes_verify.php`
+（2026-10-10 新写，等提交批准，见 `deploy/RUNBOOK.md` 7.12/7.13）。
+> 顺带纠正本节原来的一句话：原文写的是「已跟踪的 PHP 文件 30 个（含基座），唯一没提交的是 t6b」，
+> 按 `git ls-files` 实测少算了未跟踪那份，30 与 29 之间差的正是它。
+`realname_audit_modes_verify.php` 是 2026-10-10 为「实名审核模式」新写的一份，同日又按「一证一号」扩到 **78 项、全过、连跑两轮都全绿**
+—— 它是全目录这轮唯一跑过的脚本，其余的「现在还是不是绿的」仍然未知（见第三节）。
 它有两道拒绝执行的闸门：
 
 - `APP_ENV` 必须是 `sit` / `test` / `dev`，否则打印「拒绝执行…防止误操作生产数据」并 `exit(1)`；
@@ -22,14 +28,14 @@
 APP_ENV=sit QA_DB_USER=<沙箱账号> QA_DB_PASS=<沙箱口令> php qa/sit_baseline_reset.php
 ```
 
-需要打别处的后端时用 `QA_BASE` 覆盖基址（34 处引用都走它）；
+需要打别处的后端时用 `QA_BASE` 覆盖基址（36 处引用都走它）；
 `QA_BASE` 在 Windows 上的 `php -S` 是单线程的，并发类脚本（`sit_h*`）要配 round-robin 多端口，
 这条坑记在 `deploy/RUNBOOK.md`。
 
 `bootstrap_db.php` 还提供 `qa_seed_wallet_ledger()`：给「直接用 SQL 写余额」的夹具补一条 `recharge`
 开账流水，否则 `sit_z_identity.php` 的资金恒等式（∑balance = ∑充值 − ∑消费 − ∑提现）会被夹具自己打穿。
 
-## 二、按家族分类（30 个 PHP + 1 份历史报告 + 1 份忽略规则）
+## 二、按家族分类（31 个 PHP + 1 份历史报告 + 1 份忽略规则）
 
 | 家族 | 脚本 | 是什么 |
 |---|---|---|
@@ -48,6 +54,7 @@ APP_ENV=sit QA_DB_USER=<沙箱账号> QA_DB_PASS=<沙箱口令> php qa/sit_basel
 | | `sit_batch_buy.php` | 批量购买：地板价扫描与锁定集合一致、取消批量单全部恢复 `selling`、并发双批量无交集 |
 | | `sit_market_locked.php` | 挂单锁定态：下单未付 → `locked=true` 且重复下单拒 3005；取消 → 恢复 `selling` |
 | | `sit_t6_marketing.php` | 营销活动专项（含 QF-D1 `qualification_whitelists` 缺 `status` 列的回归） |
+| | `realname_audit_modes_verify.php` | 实名专项（审核模式 + 一证一号），**78 项**：两份迁移幂等（各连跑两遍是 no-op）→ auto 提交即通过且写入证号指纹 → auto 下三条防线仍在 → **同一张证号的第二个账号被拒、末位 `x/X` 算同一张、四个接口都不透出 `id_card_hash`** → manual 两步流零破坏 + 待审不占坑 + 管理员点重复被拦（`4220` + 对方 UID + `audit_conflict` 留痕）→ 只读统计命令跑通。**它自己多加了一道护栏**：`QA_BASE` 指向非本机地址时直接 `exit(1)`（除非 `QA_ALLOW_REMOTE=1`），因为脚本会改配置值、注册测试账号、执行迁移 —— 生产侧只需要「只读查一次 + 后台点一下 + 只读统计」，见 `../deploy/RUNBOOK.md` 7.12 与 7.13 |
 | | `sit_t6b_priority_window.php` | 优先购时间窗口回归（对应运营口径）。**目前仍是未跟踪状态，按你要求保留不提交** |
 | | `sit_t7_refund.php` | 退款全链路：发起→复核→执行、大额走审批中心、不能自审、资金/资产/库存三合一原子回滚 |
 | | `sit_f4f5_remaining_fixes.php` | 零散缺陷回归：D1 下架重挂 / K02 转赠 / K03 求购 / K06 软删 / K07 关寄售联动 / DC03 分解入口 / RF11 中签人数 / BB35 空投盲盒 |
@@ -67,8 +74,13 @@ APP_ENV=sit QA_DB_USER=<沙箱账号> QA_DB_PASS=<沙箱口令> php qa/sit_basel
 
 ## 三、读这些脚本时要知道的三件事
 
-1. **本轮（2026-10-10）没有重跑过它们**，所以「现在是不是还全绿」未知、不要当结论用。
-   唯一跑过的是后端 phpunit 单测（`php vendor/bin/phpunit --testsuite unit`，35 例）。
+1. **绝大多数脚本本轮没重跑过**，所以「现在是不是还全绿」未知、不要当结论用。
+   2026-10-10 这一天跑过的只有两处：新写的 `realname_audit_modes_verify.php`（49 项 → 加完一证一号 **78 项，连跑两轮都全绿**，见第二节），
+   以及后端 phpunit（全量 **70 例 751 断言全过**；`--testsuite unit` 37 例 332 断言）。
+   `e2e_full_verify.php` 与 `sit_t6_marketing.php` 因为「实名默认值改成 auto」被各加了一行钉 `manual` 的前置，
+   **只做了 `php -l`、没整跑**（前者还依赖 `sit_baseline_reset.php` 先把冒烟用户 id=1~3 建回来）。
+   跑实名那份脚本会**每次新注册 5 个 `139********` 账号并留下实名数据**（沙箱库攒多了不影响结论，
+   要清就按手机号删；`php think realname:id-hash` 的统计口径只算 `is_realname=1` 且未软删的行）。
 2. **口径以代码和 `deploy/RUNBOOK.md` §7.6–7.8 为准**，不以脚本头注为准。已确认与旧口径不符的地方：
    市场可见性现在**只看「寄售开关」**（不看发售状态、不看有无挂单）；关注态只认
    `/user/favorites`。脚本里凡是按「已发售才进市场」「有挂单才算在架」写的断言，都是旧口径。
@@ -77,11 +89,18 @@ APP_ENV=sit QA_DB_USER=<沙箱账号> QA_DB_PASS=<沙箱口令> php qa/sit_basel
 
 ## 四、待清理项（2026-10-10 记录，未动）
 
-- 6 个文件的头注/注释里留着**口令形态的字符串**（值故意不抄在这份文档里 —— 一份讲「仓库禁止明文口令」
-  的说明自己把口令复制一遍就自相矛盾了）。具体位置逐个打开即可复核：
-  `sit_full_audit.php:3`、`sit_upload_cleanup.php:5`、`sit_t72_rbac.php:38`、`sit_t73_cms.php:23`、
-  `e2e_full_verify.php:68`、`FUNCTION_VERIFICATION_REPORT.md:16`。
-  这些都是**本机沙箱/仓库内置的演示账号**（`full_init.sql` 自带 `admin`，报告里也写了要立刻改），
-  不是生产凭据，但和 `bootstrap_db.php` 立的「仓库禁止明文口令」约定不一致，建议下一轮换成占位符。
+- **18 个文件**（17 个 `.php` + `FUNCTION_VERIFICATION_REPORT.md`）留着**口令形态的字符串**（值故意不抄在这份文档里 ——
+  一份讲「仓库禁止明文口令」的说明自己把口令复制一遍就自相矛盾了）。原来这里写的是「7 个文件」，
+  那是只数了我当时点名的几处；按 `grep -rl admin123 qa/ | wc -l` 实测是 18 个，就此更正。分三类看：
+  ① **内置演示超管** `admin/admin123` —— 绝大多数就是它，出现在登录行与注释里（`full_init.sql` 自带 `admin`，
+  报告里也写了要立刻改），不是生产凭据；
+  ② **沙箱库账号/口令**一处（`qa/sit_full_audit.php:3` 的头注，形如 `MySQL sinan_nft（<账号>/<口令>）`）——
+  这一条最该先换掉，它是库口令而不是演示账号密码，虽然只是本机沙箱库，但和 `bootstrap_db.php` 立的
+  「凭据只能走环境变量注入」直接冲突；
+  ③ **脚本自定的测试口令**（C 端注册用的一个固定密码、四角色重建用的另一个），
+  新写的 `realname_audit_modes_verify.php` 属于这类：头注 `:19` 提演示超管、`:86` 是 C 端注册口令、
+  `:145` 与 `:147` 是后台登录行。
+  三类都建议下一轮换成占位符或环境变量注入；本轮**没有**动它们（改动会连带影响 17 个脚本的可跑性，
+  而你要求过「删/改之前先给证据」，这里只把清单和实测数字摆出来）。
 - `sit_z_abort.php` / `sit_z_boxchi.php` 这类只做静态检查或概率检验的，跟业务回归混在一层，
   子目录归档（`active/` + `archive/`）是 2026-10-10 那轮**明确暂缓**的事，理由见 `deploy/RUNBOOK.md` 7.10。

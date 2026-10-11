@@ -9,7 +9,7 @@
 |---|---|---|
 | **生产机建库**（唯一正确做法） | 合并版 `full_init.sql` | 见 `deploy/RUNBOOK.md` 第 3 节：`mysql sinan_nft < full_init.sql`，验收 80 张表 |
 | **本机从零重建一个干净库**（开发/联调/SIT） | 拆分版 `deploy.sh`，按脚本内 `BASE_FILES` 顺序跑 | `bash database/deploy.sh` |
-| **已有库跟上字段演进** | 后端 `sinan-nft-backend/migrations/`（19 个，按日期编号） | 逐个 `mysql` 导入，或用后端自己的迁移流程 |
+| **已有库跟上字段演进** | 后端 `sinan-nft-backend/migrations/`（23 个，按日期编号） | 逐个 `mysql` 导入，或用后端自己的迁移流程 |
 
 > **数字口径对照**（这三个数不一样是正常的，别当成笔误，但也别当成"两条路等价"的证明）：
 >
@@ -29,7 +29,7 @@
 
 重叠是历史造成的：`full_init.sql`（2026-09-21 生成的 v3.0 快照）已经把拆分版和当时全部增量
 **合并进了一份文件**。2026-10-10 的一次只读审计按 CREATE TABLE 块逐列比对过，结论是
-其余 27 个 SQL 与 19 个 migrations 的建表列，**全部已包含在 `full_init.sql` 里**（RUNBOOK §3 也明确写着
+其余 27 个 SQL 与当时 19 个 migrations 的建表列，**全部已包含在 `full_init.sql` 里**（RUNBOOK §3 也明确写着
 生产不要按拆分版手动跑）。所以拆分版的价值不在"全新部署更快"，而在**能追溯每个字段是哪次改动来的**。
 
 ## 二、文件分类清单
@@ -106,18 +106,38 @@
 
 ## 三、后端 migrations 与这里的分工
 
-`sinan-nft-backend/migrations/`（19 个，文件名形如 `20261009_market_type_and_recommend.sql`）
+`sinan-nft-backend/migrations/`（23 个，文件名形如 `20261009_market_type_and_recommend.sql`）
 是**随功能迭代追加的增量**，按日期编号、面向"已有库往前跟"。
 上面拆分版那 23 个是**建库期的历史沉淀**，此后不再新增文件 —— 新功能一律走 migrations。
 （2026-10-10 审计时两者仍是重叠的：migrations 的建表列也全在 `full_init.sql` 覆盖范围内 ——
  说明生产导入 `full_init.sql` 后不需要重跑 migrations，但**新增的迁移必须单独执行**，
  判断方法是比对库里有没有那一列。）
+> 第 20 份 `20261010_realname_audit_mode_auto.sql` 是个例外：**没有 DDL，只归位一行配置**
+> （`realname_audit_mode` 由 manual 改为 auto）。这类"改数据不改结构"的迁移，判断方法要换成
+> 比对库里的值，而不是比对列 —— 详见 `deploy/RUNBOOK.md` 7.12。
+> 第 21 份 `20261010_realname_id_card_unique.sql` 是**有 DDL** 的那一类（`nft_users` 加 `id_card_hash CHAR(64) NULL`
+> 列 + 普通索引 `idx_id_card_hash`），两段都用 `information_schema` 判断包成幂等，重复执行只打 `skip`。
+> 它配套的**结构之外**还有一步数据动作，SQL 文件本身做不了（指纹要带 `APP_KEY` 才能算，MySQL 里没有这个密钥）：
+> `php think realname:id-hash` 先只读统计存量重复，确认口径后再加 `--backfill` 回填。见 `deploy/RUNBOOK.md` 7.13。
+> 第 22 份 `20261011_module_switch_seed_rows.sql` 同属"改数据不改结构"，而且是第 20 份那种**补行**的继续：
+> 给 `nft_system_configs` 补 `lucky_enabled` / `synthesis_enabled` 两行（值 `'1'`）。
+> 这里有个值得记的坑：同一个开关在两端对"行不存在"的解释**是相反的** ——
+> C 端 `(int)…->value('config_value') === 1` 把缺行当成**关闭**，后台 `$rows[$key] ?? 1` 把缺行当成**开启**，
+> 于是老库上"后台看着开着、C 端却是空状态"。用 `ON DUPLICATE KEY UPDATE config_key = config_key` 写成幂等，
+> **绝不覆盖运营已经选过的值**（沙箱实测：先置 `0` 再跑仍是 `0`；整行删掉再跑才补回 `1`）。详见 `deploy/RUNBOOK.md` 7.14。
+> 第 23 份 `20261011_inbox_arrival_types.sql` 回到**有 DDL** 那一类，但只有一句 `ALTER … MODIFY COLUMN`：
+> 把 `nft_inbox.type` 的枚举从 2 值（`airdrop`/`transfer`）扩到 5 值（再加 `blindbox`/`reward`/`lottery`），
+> 用来承接签到、开盒、抽奖中奖的到账通知。枚举**只加值、不改已有取值**，所以库里历史行一行都不会被动（沙箱实测 3 条旧行原样）。
+> ⚠ 这一份有个**顺序硬约束**：DDL 必须**先于**后端代码上线。生产 MySQL 是严格模式，
+> 代码先上、枚举还是 2 值时，写入新类型会撞 `1265 Data truncated for column 'type'`；
+> `InboxService` 的 try/catch 会把业务保住（藏品照发），代价是**通知静默丢失**，只在日志里留一条 error。
+> 自查：`SHOW COLUMNS FROM nft_inbox LIKE 'type';` 看到 5 个取值即为已生效。详见 `deploy/RUNBOOK.md` 7.15。
 
 ## 四、其他文件
 
 | 文件 | 说明 |
 |---|---|
-| `deploy.sh` | 本机一键重建：`[1/4]` 建库 → `[2/4]` 23 个基础 SQL → `[3/4]` 19 个 migrations → `[4/4]` 2 个数据修补，末尾打印表数量统计。`--verify` 只重跑 SQL 不重建库 |
+| `deploy.sh` | 本机一键重建：`[1/4]` 建库 → `[2/4]` 23 个基础 SQL → `[3/4]` 23 个 migrations（脚本按 `migrations/*.sql` 通配 glob，新增文件自动进队列）→ `[4/4]` 2 个数据修补，末尾打印表数量统计。`--verify` 只重跑 SQL 不重建库 |
 | `dev-only/seed-dev.sql` | 开发联调演示数据，**禁止进生产** |
 | `database-design.html` | 实体模型设计 v2.0（715 行，浏览器打开看关系图）。已于 2026-10-10 移到 `../sinan-nft-backend/docs/`，不再和 SQL 混在一层 |
 

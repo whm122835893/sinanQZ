@@ -17,7 +17,7 @@
 | `app/service/`、`app/admin/service/` | 业务逻辑（钱包、库存、实名、抽奖、短信、链、快照、上传清理等） |
 | `app/middleware/` | `JwtAuth`（必须登录）、`OptionalJwtAuth`（带令牌就认人、不带照常匿名）、`Cors` |
 | `app/admin/middleware/` | `AdminAuth`（令牌 + 实时状态）、`AdminPermission`（权限码精确校验） |
-| `app/command/` | 4 个 `think` 命令，见下 |
+| `app/command/` | 5 个 `think` 命令，见下 |
 | `migrations/` | 增量 SQL，按文件名日期排序，也被 `../database/deploy.sh` 应用 |
 | `tests/` | PHPUnit 用例 |
 | `docs/DEPLOY.md` | 简版部署指南；生产实际步骤以 `../deploy/RUNBOOK.md` 为准 |
@@ -45,13 +45,14 @@ php think rekey:encrypted <旧密钥> <新密钥> --dry-run   # 先看影响面
 php think rekey:encrypted <旧密钥> <新密钥>             # 再执行
 ```
 
-## 四个 think 命令
+## 五个 think 命令
 
 | 命令 | 用途 |
 |---|---|
 | `think ScheduleDispatch` | 定时上架 / 定时开盒等到期任务，生产由 cron 每分钟拉起（缺了会静默故障） |
 | `think admin:reset-password <账号>` | 重置后台管理员密码；省略第二个参数会随机生成一个强密码并只打印一次 |
-| `think rekey:encrypted` | APP_KEY 轮换，见上 |
+| `think rekey:encrypted` | APP_KEY 轮换，见上。**它会连带用新密钥重算 `id_card_hash`**，一证一号才不会静默失效 |
+| `think realname:id-hash` | 一证一号的证号指纹：**默认只读统计**（已认证数 / 指纹已正确 / 待写 / 算不出指纹 / 重复证号组，只打 UID 不打明文），加 `--backfill` 才写库。存量重复清理完，输出里会直接给出把索引升级成 UNIQUE 的那条 SQL |
 | `think ApiDoc` | 扫描控制器里的 `@openapi` 注释，产出 `runtime/openapi.json` 与 `public/api-docs.html` |
 
 ## 测试

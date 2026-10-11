@@ -162,7 +162,7 @@ sinanQZ/
 │
 ├── database/                  # 数据库脚本（顶层 28 个 SQL + deploy.sh，另有 dev-only/ 一份）
 │   ├── README.md              # ✅ 分类、执行顺序、未接入的补丁、三套安装方式怎么选，都在这里
-│   ├── deploy.sh              # 本机一键重建拆分版（[1/4]建库 [2/4]23 个基础 SQL [3/4]19 个 migrations [4/4]2 个数据修补）
+│   ├── deploy.sh              # 本机一键重建拆分版（[1/4]建库 [2/4]23 个基础 SQL [3/4]23 个 migrations [4/4]2 个数据修补）
 │   ├── full_init.sql          # 合并版基线 80 张表（生产建库用它）
 │   └── dev-only/seed-dev.sql  # 开发联调种子数据（生产环境勿执行）
 │
@@ -204,7 +204,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 |------|------|------|
 | `/user/profile` | Profile.vue | 个人信息编辑（头像/昵称） |
 | `/user/security` | Security.vue | 账户安全（修改登录密码/交易密码） |
-| `/user/realname` | Realname.vue | 实名认证（姓名+身份证，AES 加密存储） |
+| `/user/realname` | Realname.vue | 实名认证（姓名+身份证，AES 加密存储；姓名与证件号校验与后端同一条正则，见 7.12。一证一号拦的是后端：同一张证号被别的账号认证通过时，后端那句提示原样 toast 给用户，前端零改动，见 7.13）|
 | `/user/collections` | Collections.vue | 我的藏品（持仓列表，含链上状态） |
 | `/user/wallet` | Wallet.vue | 我的钱包（余额/冻结/流水/充值） |
 | `/user/orders` | Orders.vue | 我的订单（全部/待支付/已完成） |
@@ -284,7 +284,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 | 页面 | 路由 | 功能 |
 |------|------|------|
 | 用户管理 | `/user` | 用户列表/搜索/详情、冻结/解冻、重置交易密码、强制下线、拉黑、恢复 |
-| 实名审核 | `/user/realname` | 待审列表（脱敏）、通过/驳回（驳回必填原因）、完整查看（密码验证+审计） |
+| 实名审核 | `/user/realname` | 待审列表（脱敏）、通过/驳回（驳回必填原因）、完整查看（管理员密码验证 + `realname:full` 权限 + 写审计）。库里 `realname_audit_mode=auto` 时待审队列恒空，本页只读。一证一号：管理员点「通过」若该证号已被别的账号认证通过 → `4220` 并写明对方 UID，同时落一条 `audit_conflict` 审计，**被拦的账号仍留在待审队列**（不是被判死，驳回后用自己的证号照样能走通），见 7.13 |
 
 ### 6.3 藏品管理
 
@@ -438,7 +438,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 |------|------|------|
 | GET | `/api/user/profile` | 个人信息 |
 | PUT | `/api/user/profile` | 更新个人信息 |
-| POST | `/api/user/realname` | 实名认证 |
+| POST | `/api/user/realname` | 实名认证（姓名+身份证；auto 模式提交即通过。一证一号：这张证号已被别的账号认证通过时 `1001`，提示语不含对方 UID） |
 | POST | `/api/user/password/trade` | 设置交易密码 |
 | POST | `/api/user/verify-trade-password` | 校验交易密码 |
 | GET | `/api/user/collections` | 我的藏品 |
@@ -517,7 +517,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 
 | 表名 | 说明 |
 |------|------|
-| `nft_users` | 用户主表（手机号/实名信息加密/交易密码哈希/邀请码） |
+| `nft_users` | 用户主表（手机号/实名姓名与证件号加密/交易密码哈希/邀请码；`id_card_hash` 是证号 HMAC 指纹，一证一号比对列，仅认证通过时写入） |
 | `nft_wallets` | 钱包（1:1 用户，balance/available/frozen） |
 | `nft_wallet_transactions` | 钱包流水（收支类型，balance_after 快照） |
 | `nft_verification_codes` | 验证码（code 哈希存储） |
@@ -633,7 +633,9 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 
 - **双 JWT 隔离**：C 端与管理端使用独立密钥，互不通用。
 - **密码加密**：用户登录密码、交易密码、管理员密码均使用 `password_hash`（BCRYPT）哈希存储，禁止明文。
-- **实名信息加密**：真实姓名、身份证号使用 AES-256/SM4 加密存储。
+- **实名信息加密**：真实姓名、身份证号使用 AES-256/SM4 加密存储（带随机 IV，同一明文两次密文不同）。
+  因密文不可比对，一证一号另存 `id_card_hash = HMAC-SHA256(归一化证号, APP_KEY)` 作比对列：
+  只写指纹、不落明文，任何接口都不透出这一列；换 `APP_KEY` 后必须重算（`rekey:encrypted` 已内联处理）。见 `deploy/RUNBOOK.md` 7.13。
 - **验证码哈希**：短信验证码哈希存储，不存明文。
 - **管理端实时状态**：管理端 JWT 校验时额外查询账号状态，锁定/停用即时生效。
 - **登录失败锁定**：连续失败达到阈值自动锁定账号。
@@ -695,7 +697,7 @@ C 端采用 **5 个底部主 Tab + 业务子页** 的结构，Hash 路由模式�
 **推荐入口：**
 
 ```bash
-bash database/deploy.sh            # 重建并全量部署：基础库表 23 个 + 后端 migrations 19 个 + 数据修补 2 个
+bash database/deploy.sh            # 重建并全量部署：基础库表 23 个 + 后端 migrations 23 个 + 数据修补 2 个
 bash database/deploy.sh --verify   # 仅重跑 SQL，不重建库
 ```
 
