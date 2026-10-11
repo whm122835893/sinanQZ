@@ -33,7 +33,8 @@ const form = ref({
   registrationStart: '',
   registrationEnd: '',
   drawTime: '',
-  purchaseStart: '',
+  // 购买窗口不再有 purchaseStart：口径固定为「中签时刻 + 5 分钟」，
+  // 由后端 RaffleService::purchaseGate 统一判定，这里只保留选填的截止时间
   purchaseEnd: '',
 })
 
@@ -41,6 +42,18 @@ const form = ref({
 const userCodeTotal = computed(() =>
   1 + (form.value.inviteEnabled ? form.value.inviteCodeLimit : 0) + (form.value.drawCodeEnabled ? form.value.buyCodeLimit : 0)
 )
+
+// 开放购买时刻预览：中签（开奖）时刻 + 5 分钟。
+// 300 秒与后端 RaffleService::PURCHASE_DELAY_SECONDS 同口径，仅用于给运营看，
+// 真正判定在后端 gate；这里不写库、也不作为参数提交。
+const PURCHASE_DELAY_SECONDS = 300
+const purchaseOpenPreview = computed(() => {
+  const d = form.value.drawTime
+  if (!d) return ''
+  const ts = new Date(String(d).replace(' ', 'T')).getTime()
+  if (Number.isNaN(ts)) return ''
+  return formatDT(new Date(ts + PURCHASE_DELAY_SECONDS * 1000))
+})
 
 onMounted(async () => {
   // 加载藏品下拉
@@ -69,8 +82,8 @@ onMounted(async () => {
       registrationStart: res.registrationStart?.substring(0, 16),
       registrationEnd: res.registrationEnd?.substring(0, 16),
       drawTime: res.drawTime?.substring(0, 16),
-      purchaseStart: res.purchaseStart?.substring(0, 16),
-      purchaseEnd: res.purchaseEnd?.substring(0, 16),
+      // 「开放购买」没有可配字段：口径是「中签时刻 + 5 分钟」，由后端 RaffleService::purchaseGate 统一算
+      purchaseEnd: res.purchaseEnd ? res.purchaseEnd.substring(0, 16) : '',
     })
   } else {
     // 默认时间区间
@@ -80,9 +93,10 @@ onMounted(async () => {
     form.value.registrationStart = formatDT(now)
     form.value.registrationEnd = formatDT(regEnd)
     form.value.drawTime = formatDT(draw)
-    form.value.purchaseStart = formatDT(draw)
-    const purEnd = new Date(draw.getTime() + 24 * 3600 * 1000)
-    form.value.purchaseEnd = formatDT(purEnd)
+    // 购买截止默认留空 = 不限。
+    // 旧实现在这里硬编码「抽签时间 + 24 小时」，那是按"计划抽签时间"算的死线：
+    // 一旦抽签延后或补开，24 小时窗口会在中签者还没看到按钮时就过期。
+    form.value.purchaseEnd = ''
   }
 })
 
@@ -207,13 +221,21 @@ async function save() {
         <el-date-picker v-model="form.drawTime" type="datetime" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm" />
         <span style="margin-left:10px;color:#999;font-size:12px">到点自动执行（需 crontab 运行 ScheduleDispatch）</span>
       </el-form-item>
-      <el-form-item label="中签有效期">
+      <el-form-item label="开放购买">
         <div style="display:flex;gap:10px;align-items:center">
-          <el-date-picker v-model="form.purchaseStart" type="datetime" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm" placeholder="中签购买开始" />
-          <span>至</span>
-          <el-date-picker v-model="form.purchaseEnd" type="datetime" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm" placeholder="中签购买截止" />
+          <el-tag type="info" effect="plain">{{ purchaseOpenPreview || '中签后 5 分钟' }}</el-tag>
+          <span style="color:#999;font-size:12px">固定口径，不可配置</span>
         </div>
-        <div style="color:#999;font-size:12px;margin-top:4px">过期未买视为自动放弃</div>
+        <div style="color:#999;font-size:12px;margin-top:4px">
+          中签时刻（实际开奖时间）+ 5 分钟后才出现「购买」按钮，未中签的人不显示按钮。
+          上面按抽签计划时间预估，实际以开奖那一刻为准；C 端显隐与下单校验走后端同一道闸门（RaffleService::purchaseGate），这里改不了。
+        </div>
+      </el-form-item>
+      <el-form-item label="购买截止">
+        <el-date-picker v-model="form.purchaseEnd" type="datetime" format="YYYY-MM-DD HH:mm" value-format="YYYY-MM-DD HH:mm" placeholder="留空 = 不限" clearable />
+        <div style="color:#999;font-size:12px;margin-top:4px">
+          选填。过期未买视为自动放弃；填在「开放购买」时刻之前或同一点的无效（按不限处理），别把窗口配成死的
+        </div>
       </el-form-item>
       <el-form-item label="活动规则">
         <el-input v-model="form.description" type="textarea" :rows="4" placeholder="描述抽签规则、中签后操作指引" />

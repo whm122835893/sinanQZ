@@ -1630,12 +1630,42 @@ class MarketingController extends BaseController
         }
 
         $this->audit('marketing', 'airdrop_save', '保存空投活动「' . $name . '」', ['id' => $id, 'type' => $type], 'airdrop_activity', $id);
-        return $this->success(['id' => $id], '空投活动已保存');
+
+        // 保存即自动圈一次名单（草稿也算）：
+        // 运营的心智是"存完名单就有了"，旧流程却要求再点一次「生成名单」，
+        // 于是出现缺陷单里的「名单为 0 → 点不了发放」。圈名单失败不能反过来
+        // 把已经存好的活动判成失败，所以这里吞掉异常、只把原因回传给前端提示。
+        $fresh     = Db::name('airdrop_activities')->where('id', $id)->find();
+        $genResult = null;
+        $genError  = null;
+        if ($fresh) {
+            try {
+                $genResult = $this->regenerateAirdropEligibility($fresh);
+                $this->audit('marketing', 'airdrop_eligibility', '保存空投活动「' . $name . '」时自动圈定名单 ' . $genResult['generated'] . ' 人',
+                    ['activity_id' => $id, 'generated' => $genResult['generated'], 'kept_issued' => $genResult['kept_issued'], 'auto' => 1],
+                    'airdrop_activity', $id);
+            } catch (\Throwable $e) {
+                $genError = $e->getMessage();
+                \think\facade\Log::error('[admin][marketing][airdrop_eligibility_auto] activity=' . $id . ' err=' . $genError);
+            }
+        }
+
+        $msg = '空投活动已保存';
+        if ($genResult !== null) {
+            $msg = '空投活动已保存，名单已自动圈定 ' . $genResult['total'] . ' 人（本次新增待发放 ' . $genResult['generated'] . ' 人）';
+        } elseif ($genError !== null) {
+            $msg = '空投活动已保存，但名单没圈出来：' . $genError . '（可点「生成名单」重试）';
+        }
+
+        return $this->success([
+            'id'               => $id,
+            'eligibility'      => $genResult,
+            'eligibilityError' => $genError,
+        ], $msg);
     }
 
     /**
-     * 条件配置归一化（condition_config 参数：数组或 JSON 字符串）
-     * 返回归一化数组（仅含已配置的条件），校验失败返回 fail 响应
+     * 条件配置归一化（condition_config 参数：数组或 JSON 字符串）     * 返回归一化数组（仅含已配置的条件），校验失败返回 fail 响应
      */
     private function normalizeAirdropCondition()
     {
@@ -1734,15 +1764,7 @@ class MarketingController extends BaseController
 
     /**
      * POST /admin/marketing/airdrop/eligibility-generate { activity_id }
-     * 生成资格名单快照：按活动类型筛选用户写入 airdrop_eligibilities
-     * - condition：condition_config（手机尾号/注册时间/实名状态/持有藏品）AND 组合
-     * - direct：全部有效用户（未删除、非黑名单）
-     * - hold：持有快照藏品有效持仓的用户
-     * - checkin：累计签到 ≥ N 天（condition_config.days，兼容历史 checkin_days 列）
-     * - register：活动起止时间内注册的新用户（未配置时间则全部有效用户）
-     * - login：累计登录 ≥ N 次（condition_config.count）
-     * - invite：累计成功邀请 ≥ N 人（condition_config.count，口径 status=registered）
-     * 重新生成：清除未发放（eligible）记录、保留已发放（issued）记录
+     * 手动（重新）生成资格名单快照；保存活动时也会自动跑一次（见 airdropSave）
      */
     public function airdropEligibilityGenerate()
     {
@@ -1754,9 +1776,49 @@ class MarketingController extends BaseController
         if (!$act) {
             return $this->fail(4040, '空投活动不存在');
         }
-        if (!in_array($act['type'], ['condition', 'direct', 'hold', 'checkin', 'register', 'login', 'invite'], true)) {
+        if (!in_array($act['type'], $this->airdropEligibleTypes(), true)) {
             return $this->fail(4220, '不支持的活动类型');
         }
+
+        try {
+            $result = $this->regenerateAirdropEligibility($act);
+        } catch (\Throwable $e) {
+            return $this->fail(4220, '名单生成失败：' . $e->getMessage());
+        }
+
+        $this->audit('marketing', 'airdrop_eligibility', '生成空投资格名单「' . $act['name'] . '」新增 ' . $result['generated'] . ' 人',
+            ['activity_id' => $activityId, 'generated' => $result['generated'], 'kept_issued' => $result['kept_issued']], 'airdrop_activity', $activityId);
+        return $this->success($result, '新增待发放 ' . $result['generated'] . ' 人（保留已发放 ' . $result['kept_issued'] . ' 人）');
+    }
+
+    /** 支持圈定名单的空投资格类型（保存/生成两条路共用同一份名单） */
+    private function airdropEligibleTypes(): array
+    {
+        return ['condition', 'direct', 'hold', 'checkin', 'register', 'login', 'invite'];
+    }
+
+    /**
+     * 圈定资格名单的唯一实现（保存活动与手动生成共用，避免两套口径）
+     * - condition：condition_config（手机尾号/注册时间/实名状态/持有藏品）AND 组合
+     * - direct：全部有效用户（未删除、非黑名单）
+     * - hold：持有快照藏品有效持仓的用户
+     * - checkin：累计签到 ≥ N 天（condition_config.days，兼容历史 checkin_days 列）
+     * - register：活动起止时间内注册的新用户（未配置时间则全部有效用户）
+     * - login：累计登录 ≥ N 次（condition_config.count）
+     * - invite：累计成功邀请 ≥ N 人（condition_config.count，口径 status=registered）
+     * 重新生成：清除未发放（eligible）记录、保留已发放（issued）记录
+     *
+     * 为什么要在"保存"时就跑一次：2026-10-11 的缺陷单里「全量空投投不了、名单为 0」
+     * 就是这么来的 —— 运营以为保存完名单就有了，实际上要点「生成名单」才有，
+     * 而按钮就藏在流程说明里，没人点。保存即圈一次，名单立刻可见。
+     *
+     * @param  array $act airdrop_activities 行（须为最新值，保存路径要重新读一遍）
+     * @return array {generated, kept_issued, total}
+     * @throws \Exception 超出单次上限或写库失败（调用方负责转成提示或日志）
+     */
+    private function regenerateAirdropEligibility(array $act): array
+    {
+        $activityId = (int) $act['id'];
 
         // 用户查询（空投口径：未删除 + 非黑名单）
         $query = Db::name('users')->alias('u')
@@ -1816,7 +1878,7 @@ class MarketingController extends BaseController
 
         $users = $query->field('u.id, u.phone')->select()->toArray();
         if (count($users) > 5000) {
-            return $this->fail(4220, '匹配 ' . count($users) . ' 人，超过单次生成上限 5000 人，请收窄条件或分批创建活动');
+            throw new \Exception('匹配 ' . count($users) . ' 人，超过单次生成上限 5000 人，请收窄条件或分批创建活动');
         }
 
         $now = date('Y-m-d H:i:s');
@@ -1857,16 +1919,14 @@ class MarketingController extends BaseController
             Db::commit();
         } catch (\Throwable $e) {
             Db::rollback();
-            return $this->fail(5000, '名单生成失败：' . $e->getMessage());
+            throw new \Exception($e->getMessage());
         }
 
-        $this->audit('marketing', 'airdrop_eligibility', '生成空投资格名单「' . $act['name'] . '」新增 ' . count($newUsers) . ' 人',
-            ['activity_id' => $activityId, 'generated' => count($newUsers), 'kept_issued' => $keptIssued], 'airdrop_activity', $activityId);
-        return $this->success([
+        return [
             'generated'   => count($newUsers),
             'kept_issued' => $keptIssued,
             'total'       => $keptIssued + count($newUsers),
-        ], '新增待发放 ' . count($newUsers) . ' 人（保留已发放 ' . $keptIssued . ' 人）');
+        ];
     }
 
     /**
@@ -2028,19 +2088,17 @@ class MarketingController extends BaseController
             foreach (array_slice($eligibles, 0, $canIssue) as $elig) {
                 $lastRecordId = 0;
                 for ($i = 0; $i < (int) $act['quantity_per_user']; $i++) {
+                    // 编号走全项目唯一取号入口（1..发行量随机、不越界、不重号）
                     $ucid = (int) Db::name('user_collectibles')->insertGetId([
                         'user_id'        => $elig['user_id'],
                         'collectible_id' => $act['collectible_id'],
-                        'serial'         => gen_serial_placeholder(),
+                        'serial'         => \app\service\SerialService::next((int) $act['collectible_id']),
                         'source'         => 'airdrop',
                         'acquired_price' => 0,
                         'acquired_at'    => $now,
                         'status'         => 'held',
                         'created_at'     => $now,
                         'updated_at'     => $now,
-                    ]);
-                    Db::name('user_collectibles')->where('id', $ucid)->update([
-                        'serial' => 'SN-' . $act['collectible_id'] . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
                     ]);
                     $lastRecordId = (int) Db::name('airdrop_records')->insertGetId([
                         'activity_id' => $activityId,

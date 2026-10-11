@@ -244,15 +244,16 @@ class Synthesis extends BaseController
             ]);
 
             // 生成产物：按 result_quantity 发放（SY23 修复：此前硬编码每次只发 1 份）
-            // 先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
+            // 编号一次批量取好（1..发行量随机、互不相同），不再用资产表自增行 id
             $resultQty   = max(1, (int) ($act['result_quantity'] ?? 1));
             $resultList  = []; // [['id'=>ucId, 'serial'=>serial], ...]
             $firstResultUcId = 0;
-            for ($i = 0; $i < $resultQty; $i++) {
+            $resultSerials = \app\service\SerialService::allocate((int) $act['result_collectible_id'], $resultQty);
+            foreach ($resultSerials as $resultSerial) {
                 Db::name('user_collectibles')->insert([
                     'user_id'        => $userId,
                     'collectible_id' => $act['result_collectible_id'],
-                    'serial'         => gen_serial_placeholder(),
+                    'serial'         => $resultSerial,
                     'source'         => 'synthesis',
                     'acquired_price' => 0,
                     'acquired_at'    => $now,
@@ -261,13 +262,8 @@ class Synthesis extends BaseController
                     'updated_at'     => $now,
                 ]);
                 $resultUcId = (int) Db::name('user_collectibles')->getLastInsID();
-                $resultSerial = 'SN-' . $act['result_collectible_id'] . '-' . str_pad((string) $resultUcId, 4, '0', STR_PAD_LEFT);
-                Db::name('user_collectibles')->where('id', $resultUcId)->update([
-                    'serial'     => $resultSerial,
-                    'updated_at' => $now,
-                ]);
                 $resultList[] = ['id' => $resultUcId, 'serial' => $resultSerial];
-                if ($i === 0) $firstResultUcId = $resultUcId;
+                if ($firstResultUcId === 0) $firstResultUcId = $resultUcId;
             }
 
             // 产物藏品流通量 +N（与发售/空投/盲盒奖品路径保持一致，保证 circulate = 资产行总数）

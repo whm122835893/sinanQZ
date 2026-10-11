@@ -216,28 +216,22 @@ class Decompose extends BaseController
                 return $this->fail(3001, '藏品状态异常，分解失败');
             }
 
-            // 发放产物：先插占位行取自增ID，再回写编号（与合成/开盒路径一致）
+            // 发放产物：编号走全项目唯一取号入口（一次批量取好，1..发行量随机、互不相同）
             // 注：user_collectibles.source 枚举无 decompose 值，熔炼系产物统一走 synthesis 口径
             $resultList = [];
             foreach ($items as $it) {
                 $qty = max(1, (int) $it['quantity_per']);
-                for ($i = 0; $i < $qty; $i++) {
+                foreach (\app\service\SerialService::allocate((int) $it['result_collectible_id'], $qty) as $serial) {
                     Db::name('user_collectibles')->insert([
                         'user_id'        => $userId,
                         'collectible_id' => $it['result_collectible_id'],
-                        'serial'         => gen_serial_placeholder(),
+                        'serial'         => $serial,
                         'source'         => 'synthesis',
                         'acquired_price' => 0,
                         'acquired_at'    => $nowV,
                         'status'         => 'held',
                         'created_at'     => $nowV,
                         'updated_at'     => $nowV,
-                    ]);
-                    $ucId   = (int) Db::name('user_collectibles')->getLastInsID();
-                    $serial = 'SN-' . $it['result_collectible_id'] . '-' . str_pad((string) $ucId, 4, '0', STR_PAD_LEFT);
-                    Db::name('user_collectibles')->where('id', $ucId)->update([
-                        'serial'     => $serial,
-                        'updated_at' => $nowV,
                     ]);
                     $resultList[] = [
                         'collectibleId' => (int) $it['result_collectible_id'],

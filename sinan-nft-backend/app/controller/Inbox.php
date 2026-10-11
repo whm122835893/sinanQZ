@@ -7,10 +7,15 @@ use app\BaseController;
 use think\facade\Db;
 
 /**
- * C 端收件箱：空投/转赠到达弹窗数据源 + 标记已读
+ * C 端收件箱：到账弹窗数据源 + 标记已读
  *
- * - GET  /api/inbox/pending         未读的空投/转赠到达（弹窗数据源；已读返回空）
+ * - GET  /api/inbox/pending         未读到账通知（弹窗数据源；已读返回空）
  * - POST /api/inbox/:id/read        标记已读（关闭弹窗时调用）
+ *
+ * type 由 app/service/InboxService.php 统一归类：
+ *   airdrop 空投 / transfer 转赠 / reward 活动奖励 —— 异步到账，保持未读等弹窗；
+ *   blindbox 开盒 / lottery 抽奖中奖 —— 接口同页已弹结果，回传 inboxId 由前端就地标记，
+ *   通知照写留档但不会被 15s 轮询再弹第二次。
  */
 class Inbox extends BaseController
 {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 use app\service\ActivityRewardService;
+use app\service\InboxService;
 use app\service\RewardGrantService;
 
 use think\facade\Db;
@@ -272,13 +273,15 @@ class LuckyDraw extends BaseController
                 $userCollectibleId = null;
                 $coinAmount        = null;
                 $serial            = null;
+                $inboxId           = 0;
 
                 if ($winner['prize_type'] === 'collectible' && $winner['collectible_id']) {
-                    // 先插占位行取自增ID，再回写编号（count+1 方式并发下会撞唯一索引）
+                    // 编号走全项目唯一取号入口（1..发行量随机、不越界、不重号）
+                    $serial = \app\service\SerialService::next((int) $winner['collectible_id']);
                     Db::name('user_collectibles')->insert([
                         'user_id'        => $userId,
                         'collectible_id' => $winner['collectible_id'],
-                        'serial'         => gen_serial_placeholder(),
+                        'serial'         => $serial,
                         'source'         => 'lucky_draw',
                         'acquired_price' => 0,
                         'acquired_at'    => $now,
@@ -287,17 +290,21 @@ class LuckyDraw extends BaseController
                         'updated_at'     => $now,
                     ]);
                     $userCollectibleId = (int) Db::name('user_collectibles')->getLastInsID();
-                    $serial = 'SN-' . $winner['collectible_id'] . '-' . str_pad((string) $userCollectibleId, 4, '0', STR_PAD_LEFT);
-                    Db::name('user_collectibles')->where('id', $userCollectibleId)->update([
-                        'serial'     => $serial,
-                        'updated_at' => $now,
-                    ]);
                     // 奖品藏品流通量 +1（与发售/空投/盲盒/合成路径保持一致，保证 circulate = 资产行总数）
                     Db::name('collectibles')->where('id', $winner['collectible_id'])->update([
                         'circulate'  => Db::raw('circulate + 1'),
                         'updated_at' => $now,
                     ]);
                     Db::name('lucky_draw_records')->where('id', $recordId)->update(['user_collectible_id' => $userCollectibleId]);
+
+                    // 到账通知：与开盒同理，中奖结果本页已经弹给看过 → 回传 inboxId 让前端就地标记已读，
+                    // 留档但不重复弹窗。积分奖项不写 inbox（弹窗卡片必须有藏品才渲染得出来）。
+                    $lotteryRow = Db::name('collectibles')->where('id', $winner['collectible_id'])->find();
+                    $inboxId = InboxService::pushCollectible($userId, 'lottery', $lotteryRow ?: [], [
+                        'quantity' => 1,
+                        'serial'   => $serial,
+                        'reason'   => $actName . '·' . $prizeLabel,
+                    ], $recordId);
                 } elseif ($winner['prize_type'] === 'points') {
                     $coinAmount = (float) ($winner['coin_amount'] ?? 0);
                     if ($coinAmount > 0) {
@@ -356,6 +363,7 @@ class LuckyDraw extends BaseController
                 ],
                 'userCollectible' => isset($userCollectibleId) && $userCollectibleId ? ['id' => $userCollectibleId, 'no' => $serial ?? ''] : null,
                 'coinAmount'      => $coinAmount ?? null,
+                'inboxId'         => $inboxId ?? 0,
             ]);
         } catch (\Throwable $e) {
             Db::rollback();

@@ -406,12 +406,11 @@ class Orders extends BaseController
                     'updated_at'      => $now,
                 ]);
 
-                // 生成 user_collectibles（行锁内基于 sold 序号，防并发重号）
-                $edition  = (int) $collectible['edition'];
-                $soldPrev = (int) $collectible['sold'];
-                for ($i = 0; $i < $order['quantity']; $i++) {
-                    $seq = str_pad((string) ($soldPrev + $i + 1), 4, '0', STR_PAD_LEFT);
-                    $serial = "SN-{$collectible['id']}-{$seq}";
+                // 生成 user_collectibles：编号走全项目唯一取号入口
+                // 旧写法用 sold+1 排号，而 sold 只被购买累加、空投/开盒/合成都不加 ——
+                // 藏品一旦被空投占过 0001~000N，第一个买家算出的号必撞 uk_collectible_serial（下单 500）。
+                $serials = \app\service\SerialService::allocate((int) $order['collectible_id'], (int) $order['quantity']);
+                foreach ($serials as $serial) {
                     Db::name('user_collectibles')->insert([
                         'user_id'        => $userId,
                         'collectible_id' => $order['collectible_id'],
@@ -668,6 +667,9 @@ class Orders extends BaseController
 
         $query = Db::name('airdrop_records')->alias('ar')
             ->join('collectibles c', 'c.id = ar.collectible_id')
+            // LEFT JOIN：发放失败/待发放的记录 user_collectible_id 为 NULL，
+            // 用内连接会让这些记录整条从列表里消失（用户看不到"有一笔没到账"，比看不到编号更糟）
+            ->join('user_collectibles uc', 'uc.id = ar.user_collectible_id', 'LEFT')
             ->where('ar.user_id', $userId)
             ->order('ar.id', 'desc');
 
@@ -675,7 +677,7 @@ class Orders extends BaseController
         $rows = $query->limit($p['offset'], $p['pageSize'])->field([
             'ar.id', 'ar.task_id', 'ar.phone', 'ar.collectible_id',
             'ar.quantity', 'ar.status', 'ar.issued_at', 'ar.created_at',
-            'c.name', 'c.image',
+            'c.name', 'c.image', 'uc.serial', 'uc.id AS user_collectible_id',
         ])->select()->toArray();
 
         $items = array_map(fn ($r) => [
@@ -683,6 +685,10 @@ class Orders extends BaseController
             'taskId'        => (int) $r['task_id'],
             'phone'         => $r['phone'],
             'collectibleId' => (int) $r['collectible_id'],
+            // 藏品编号（SN-藏品ID-随机序号，序号恒在 1..发行量 内）：C 端「我的订单·空投」卡片头部显示的就是它。
+            // 只有发放成功才有值，pending/failed 时为 null，前端据此退回显示记录 ID。
+            'serial'        => $r['serial'] !== null ? (string) $r['serial'] : null,
+            'userCollectibleId' => $r['user_collectible_id'] !== null ? (int) $r['user_collectible_id'] : null,
             'name'          => $r['name'],
             'image'         => $r['image'],
             'quantity'      => (int) $r['quantity'],

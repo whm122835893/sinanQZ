@@ -294,12 +294,13 @@ class RewardGrantService
                 'created_at'  => $now,
                 'updated_at'  => $now,
             ]);
-            // 资产行（先占位取 ID 再回写编号，防并发重号）
+            // 资产行（编号走全项目唯一取号入口：1..发行量随机、不越界、不重号）
+            $serial = \app\service\SerialService::next($collectibleId);
             Db::name('user_collectibles')->insert([
                 'user_id'           => $userId,
                 'collectible_id'    => $collectibleId,
                 'airdrop_record_id' => $recordId,
-                'serial'            => gen_serial_placeholder(),
+                'serial'            => $serial,
                 'source'            => $isBlindbox ? 'purchase' : 'airdrop',
                 'acquired_price'    => 0,
                 'acquired_at'       => $now,
@@ -308,8 +309,6 @@ class RewardGrantService
                 'updated_at'        => $now,
             ]);
             $ucId = (int) Db::name('user_collectibles')->getLastInsID();
-            $serial = 'SN-' . $collectibleId . '-' . str_pad((string) $ucId, 4, '0', STR_PAD_LEFT);
-            Db::name('user_collectibles')->where('id', $ucId)->update(['serial' => $serial, 'updated_at' => $now]);
             Db::name('airdrop_records')->where('id', $recordId)->update([
                 'user_collectible_id' => $ucId,
                 'updated_at'          => $now,
@@ -317,7 +316,22 @@ class RewardGrantService
             $issued[] = ['airdropRecordId' => $recordId, 'userCollectibleId' => $ucId, 'serial' => $serial];
         }
 
-        return ['rewardType' => $isBlindbox ? 'blindbox' : 'collectible', 'via' => $via, 'quantity' => $quantity, 'issued' => $issued];
+        // 到账通知（本轮需求：签到/注册/邀请/活动奖励到账也要弹窗）
+        // 一次发放只发一条，份数放 extra.quantity，避免"发 3 份弹 3 次"；
+        // 积分奖励不到这里（InboxService 类注释第 2 条：弹窗必须有一件藏品才渲染得出来）。
+        $inboxId = InboxService::pushCollectible(
+            $userId,
+            InboxService::typeForGrant($scene, $context),
+            $c,
+            [
+                'quantity' => $quantity,
+                'scene'    => $scene,
+                'reason'   => (string) ($context['title'] ?? '') ?: ($isBlindbox ? '盲盒奖励' : '活动奖励'),
+            ],
+            (int) ($context['activityId'] ?? $context['relatedId'] ?? 0)
+        );
+
+        return ['rewardType' => $isBlindbox ? 'blindbox' : 'collectible', 'via' => $via, 'quantity' => $quantity, 'issued' => $issued, 'inboxId' => $inboxId];
     }
 
     // =====================================================================

@@ -39,7 +39,7 @@ class Raffle extends BaseController
             ->field([
                 'r.id', 'r.name', 'r.description', 'r.collectible_id',
                 'r.ticket_price', 'r.winner_count', 'r.sale_quantity', 'r.sale_price',
-                'r.registration_start', 'r.registration_end', 'r.draw_time',
+                'r.registration_start', 'r.registration_end', 'r.draw_time', 'r.drawn_at',
                 'r.purchase_start', 'r.purchase_end', 'r.status',
                 'c.name as collectible_name', 'c.image as collectible_image',
             ])
@@ -64,8 +64,11 @@ class Raffle extends BaseController
                 'registrationStart' => $r['registration_start'],
                 'registrationEnd'   => $r['registration_end'],
                 'drawTime'          => $r['draw_time'],
-                'purchaseStart'     => $r['purchase_start'],
-                'purchaseEnd'       => $r['purchase_end'],
+                // 开放购买时刻：中签时刻（drawn_at，未开奖时按计划抽签时间）+ 5 分钟。
+                // 不再下发后台那个可能留空成 0000-00-00 的 purchase_start
+                'purchaseOpenAt'    => \app\service\RaffleService::purchaseOpenAt($r),
+                // purchase_end 归一后再下发：历史脏值 0000-00-00 下发出去只会让前端时间线显示乱码
+                'purchaseEnd'       => \app\service\RaffleService::normalizePurchaseTime($r['purchase_end']),
                 'status'            => (int) $r['status'],
                 // 展示阶段：upcoming报名未开始 / registering报名中 / drawn已抽签 / finished已结束
                 'phase'             => $this->phase($r, $now),
@@ -122,8 +125,8 @@ class Raffle extends BaseController
             'registrationStart' => $r['registration_start'],
             'registrationEnd'   => $r['registration_end'],
             'drawTime'          => $r['draw_time'],
-            'purchaseStart'     => $r['purchase_start'],
-            'purchaseEnd'       => $r['purchase_end'],
+            'purchaseOpenAt'    => \app\service\RaffleService::purchaseOpenAt($r),
+            'purchaseEnd'       => \app\service\RaffleService::normalizePurchaseTime($r['purchase_end']),
             'status'            => (int) $r['status'],
             'phase'             => $this->phase($r, $now),
             // 购买抽签码：开关 / 单价 / 购买上限
@@ -157,6 +160,8 @@ class Raffle extends BaseController
             if ($reg) {
                 // 邀请进度（活动维度：已邀请参与人数 / 已得邀请码 / 上限 / 门槛）
                 $inviteProgress = DrawCodeService::inviteProgress($userId, $r);
+                // 购买闸门（唯一判定入口，和 /purchase 接口同源）
+                $gate = \app\service\RaffleService::purchaseGate($r, $reg, $now);
                 $data['myRegistration'] = [
                     'ticketCount'       => (int) $reg['ticket_count'],
                     'payAmount'          => (float) $reg['pay_amount'],
@@ -167,7 +172,14 @@ class Raffle extends BaseController
                         ? max(1, (int) ($reg['win_count'] ?? 0)) * (int) $r['sale_quantity']
                         : 0,
                     'purchasedQuantity'  => (int) ($reg['purchased_quantity'] ?? 0),
-                    'purchasable'        => $this->purchasable($r, $reg, $now),
+                    'purchasable'        => $gate['purchasable'],
+                    // 购买按钮显隐与倒计时（口径：中签时刻 + 5 分钟后才出现，未中签不显示）
+                    'purchaseOpenAt'     => $gate['openAt'],
+                    'purchaseWaitSec'    => $gate['waitSeconds'],
+                    'purchaseDelaySec'   => $gate['delaySeconds'],
+                    'purchaseSoldOut'    => $gate['soldOut'],
+                    'purchaseExpired'    => $gate['expired'],
+                    'purchaseDeadline'   => $gate['deadline'],
                     // 持有码数（基础 + 邀请 + 购买，含通用码加成）
                     'codeCount'          => count($data['drawCodes']),
                     // 邀请进度
@@ -342,12 +354,25 @@ class Raffle extends BaseController
                 'reg.pay_status', 'reg.draw_status', 'reg.win_count', 'reg.purchased_quantity', 'reg.created_at',
                 'r.name as activity_name', 'r.status as activity_status',
                 'r.sale_price', 'r.sale_quantity', 'r.purchase_start', 'r.purchase_end',
+                'r.drawn_at', 'r.draw_time',
                 'c.name as collectible_name', 'c.image as collectible_image',
             ])
             ->select()->toArray();
 
         $now = date('Y-m-d H:i:s');
         $items = array_map(function ($r) use ($now) {
+            // 拼出 gate 需要的最小活动切片（列表是 LEFT JOIN，活动行字段可能为 null）
+            $gate = \app\service\RaffleService::purchaseGate([
+                'status'        => $r['activity_status'],
+                'drawn_at'      => $r['drawn_at'],
+                'draw_time'     => $r['draw_time'],
+                'purchase_end'  => $r['purchase_end'],
+                'sale_quantity' => $r['sale_quantity'],
+            ], [
+                'draw_status'        => $r['draw_status'],
+                'win_count'          => $r['win_count'],
+                'purchased_quantity' => $r['purchased_quantity'],
+            ], $now);
             return [
                 'id'                => (int) $r['id'],
                 'activityId'        => (int) $r['activity_id'],
@@ -364,12 +389,15 @@ class Raffle extends BaseController
                 'purchasedQuantity' => (int) ($r['purchased_quantity'] ?? 0),
                 'salePrice'         => (float) $r['sale_price'],
                 'saleQuantity'      => (int) $r['sale_quantity'],
-                'purchaseStart'     => $r['purchase_start'],
-                'purchaseEnd'       => $r['purchase_end'],
-                // 中签且未购满（中签次数 × 每次限购）且在购买窗口内 → 可购买
-                'purchasable'       => (int) $r['draw_status'] === 1
-                    && (int) ($r['purchased_quantity'] ?? 0) < max(1, (int) ($r['win_count'] ?? 0)) * (int) $r['sale_quantity']
-                    && $this->inWindow($r['purchase_start'], $r['purchase_end'], $now),
+                // 开放时刻与可购判定都出自同一个 gate，不再下发可能留空成 0000-00-00 的 purchase_start
+                // purchase_end 归一后再下发：历史脏值 0000-00-00 下发出去只会让前端时间线显示乱码
+                'purchaseEnd'       => \app\service\RaffleService::normalizePurchaseTime($r['purchase_end']),
+                // 可购判定与详情页、购买接口同源（RaffleService::purchaseGate）：
+                // 口径 = 中签 + 已过「中签时刻 + 5 分钟」+ 未购满 + 未过截止（若有配）
+                'purchasable'       => $gate['purchasable'],
+                'purchaseOpenAt'    => $gate['openAt'],
+                'purchaseWaitSec'   => $gate['waitSeconds'],
+                'purchaseQuota'     => $gate['quota'],
                 'createdAt'         => $r['created_at'],
             ];
         }, $rows);
@@ -404,10 +432,6 @@ class Raffle extends BaseController
             }
 
             $now = date('Y-m-d H:i:s');
-            if (!$this->inWindow($act['purchase_start'], $act['purchase_end'], $now)) {
-                Db::rollback();
-                return $this->fail(1001, '不在中签购买有效期内');
-            }
 
             // 我的报名记录：必须中签且已支付
             $reg = Db::name('raffle_registrations')
@@ -418,6 +442,24 @@ class Raffle extends BaseController
             if (!$reg) { Db::rollback(); return $this->fail(1001, '您未报名该活动'); }
             if ((int) $reg['draw_status'] !== 1) { Db::rollback(); return $this->fail(3004, '很遗憾未中签'); }
             if ((int) $reg['pay_status'] !== 1) { Db::rollback(); return $this->fail(1001, '报名费未支付，无法购买'); }
+
+            // 购买窗口与 C 端按钮显隐同源（RaffleService::purchaseGate）：
+            // 口径是「中签时刻 + 5 分钟后开放」，不再读 purchase_start
+            $gate = \app\service\RaffleService::purchaseGate($act, $reg, $now);
+            if (!$gate['purchasable']) {
+                Db::rollback();
+                if ($gate['waitSeconds'] > 0) {
+                    $hint = $gate['openAt'] !== null ? date('H:i', strtotime($gate['openAt'])) : '稍后';
+                    return $this->fail(1001, '中签后 ' . (int) ($gate['delaySeconds'] / 60) . ' 分钟开放购买，请在 ' . $hint . ' 之后再试');
+                }
+                if ($gate['soldOut']) {
+                    return $this->fail(1001, '您已购满本次中签可购数量（' . $gate['quota'] . ' 件）');
+                }
+                if ($gate['expired']) {
+                    return $this->fail(1001, '中签购买已截止');
+                }
+                return $this->fail(1001, '当前不可购买');
+            }
 
             // 限购校验（中签次数 × 每次限购；原子条件更新防并发超购）
             $winCount     = (int) $reg['draw_status'] === 1 ? max(1, (int) ($reg['win_count'] ?? 0)) : 0;
@@ -514,13 +556,15 @@ class Raffle extends BaseController
                 'updated_at'     => $nowV,
             ]);
 
-            // 生成持仓（行锁内基于 sold 序号，防并发重号）
+            // 生成持仓：编号走全项目唯一取号入口（1..发行量随机）
+            // 旧写法按 sold 倒推序号，中签购买与直购共用 sold，并发/空投占号后会撞 uk_collectible_serial
             $collectible = Db::name('collectibles')->where('id', $act['collectible_id'])->lock(true)->find();
-            $soldPrev = (int) $collectible['sold'];
-            $serials = [];
-            for ($i = 0; $i < $qty; $i++) {
-                $seq = str_pad((string) ($soldPrev - $qty + $i + 1), 4, '0', STR_PAD_LEFT);
-                $serial = 'SN-' . $act['collectible_id'] . '-' . $seq;
+            if (!$collectible) {
+                Db::rollback();
+                return $this->fail(1002, '藏品不存在');
+            }
+            $serials = \app\service\SerialService::allocate((int) $act['collectible_id'], $qty);
+            foreach ($serials as $serial) {
                 Db::name('user_collectibles')->insert([
                     'user_id'        => $userId,
                     'collectible_id' => $act['collectible_id'],
@@ -533,7 +577,6 @@ class Raffle extends BaseController
                     'created_at'     => $nowV,
                     'updated_at'     => $nowV,
                 ]);
-                $serials[] = $serial;
             }
 
             Db::commit();
@@ -555,22 +598,5 @@ class Raffle extends BaseController
         if ((int) $r['status'] === 3) return 'drawn';
         if ((int) $r['status'] === 2) return 'drawing';
         return 'finished';
-    }
-
-    /** 购买窗口（NULL 视为该侧不限制） */
-    private function inWindow(?string $start, ?string $end, string $now): bool
-    {
-        if ($start !== null && $start !== '' && $now < $start) return false;
-        if ($end !== null && $end !== '' && $now > $end) return false;
-        return true;
-    }
-
-    /** 我是否可购买（中签 + 未购满（中签次数 × 每次限购）+ 窗口内） */
-    private function purchasable(array $activity, array $reg, string $now): bool
-    {
-        if ((int) $activity['status'] !== 3 || (int) $reg['draw_status'] !== 1) return false;
-        $quota = max(1, (int) ($reg['win_count'] ?? 0)) * (int) $activity['sale_quantity'];
-        if ((int) ($reg['purchased_quantity'] ?? 0) >= $quota) return false;
-        return $this->inWindow($activity['purchase_start'], $activity['purchase_end'], $now);
     }
 }

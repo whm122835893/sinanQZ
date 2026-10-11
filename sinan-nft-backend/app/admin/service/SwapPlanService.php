@@ -322,8 +322,9 @@ class SwapPlanService
             }
             Db::name('swap_plan_users')->insertAll($planUsers);
 
-            // 逐份空投资产：airdrop_records ↔ user_collectibles 为 1:1 双向外键，
-            // serial 依赖自增 ID（沿用全项目 SN-{藏品ID}-{资产ID} 序列号规范），故逐条插入
+            // 逐份空投资产：airdrop_records ↔ user_collectibles 为 1:1 双向外键
+            // （台账要先拿到 recordId 才能建资产行、资产行 id 再回填台账），故逐条插入。
+            // 编号与此无关：走 SerialService::next()，1..发行量内随机取，见下方。
             $airdropDetails = [];
             foreach ($users as $u) {
                 $userId = (int) $u['userId'];
@@ -343,23 +344,19 @@ class SwapPlanService
                         'created_at'  => $now,
                         'updated_at' => $now,
                     ]);
-                    // 资产行（先占位取 ID 再回写编号，与空投/开盒一致防并发重号）
+                    // 资产行（编号走全项目唯一取号入口：1..发行量随机、不越界、不重号）
+                    $serial = \app\service\SerialService::next($newId);
                     $ucId = (int) Db::name('user_collectibles')->insertGetId([
                         'user_id'           => $userId,
                         'collectible_id'    => $newId,
                         'airdrop_record_id' => $recordId,
-                        'serial'            => gen_serial_placeholder(),
+                        'serial'            => $serial,
                         'source'            => 'airdrop',
                         'acquired_price'    => 0,
                         'acquired_at'       => $now,
                         'status'            => 'held',
                         'created_at'        => $now,
                         'updated_at'        => $now,
-                    ]);
-                    $serial = 'SN-' . $newId . '-' . str_pad((string) $ucId, 4, '0', STR_PAD_LEFT);
-                    Db::name('user_collectibles')->where('id', $ucId)->update([
-                        'serial'     => $serial,
-                        'updated_at' => $now,
                     ]);
                     Db::name('airdrop_records')->where('id', $recordId)->update([
                         'user_collectible_id' => $ucId,

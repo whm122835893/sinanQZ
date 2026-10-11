@@ -485,12 +485,13 @@ class InventoryService
                         'created_at'  => $now,
                         'updated_at'  => $now,
                     ]);
-                    // 资产行（先占位取 ID 再回写编号，与 C 端开盒一致防并发重号）
+                    // 资产行（编号走全项目唯一取号入口：1..发行量随机、不越界、不重号）
+                    $serial = \app\service\SerialService::next($collectibleId);
                     Db::name('user_collectibles')->insert([
                         'user_id'           => $userId,
                         'collectible_id'    => $collectibleId,
                         'airdrop_record_id' => $recordId,
-                        'serial'            => gen_serial_placeholder(),
+                        'serial'            => $serial,
                         'source'            => $assetSource,
                         'acquired_price'     => 0,
                         'acquired_at'        => $now,
@@ -499,11 +500,6 @@ class InventoryService
                         'updated_at'        => $now,
                     ]);
                     $ucId = (int) Db::name('user_collectibles')->getLastInsID();
-                    $serial = 'SN-' . $collectibleId . '-' . str_pad((string) $ucId, 4, '0', STR_PAD_LEFT);
-                    Db::name('user_collectibles')->where('id', $ucId)->update([
-                        'serial'     => $serial,
-                        'updated_at' => $now,
-                    ]);
                     Db::name('airdrop_records')->where('id', $recordId)->update([
                         'user_collectible_id' => $ucId,
                         'updated_at'          => $now,

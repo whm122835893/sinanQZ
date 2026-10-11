@@ -257,10 +257,8 @@ class OrderController extends BaseController
                     Db::rollback();
                     return $this->fail(4220, '该订单占用的锁定库存已被释放，请先核对藏品库存后再标记支付');
                 }
-                $soldPrev = (int) $collectible['sold'];
-                for ($i = 0; $i < (int) $order['quantity']; $i++) {
-                    $seq    = str_pad((string) ($soldPrev + $i + 1), 4, '0', STR_PAD_LEFT);
-                    $serial = 'SN-' . $collectible['id'] . '-' . $seq;
+                // 编号走全项目唯一取号入口（旧写法按 sold 排号，与空投/开盒占用的号段会撞唯一索引）
+                foreach (\app\service\SerialService::allocate((int) $order['collectible_id'], (int) $order['quantity']) as $serial) {
                     Db::name('user_collectibles')->insert([
                         'user_id'        => $order['user_id'],
                         'collectible_id' => $order['collectible_id'],

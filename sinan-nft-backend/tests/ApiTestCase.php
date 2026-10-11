@@ -335,6 +335,28 @@ abstract class ApiTestCase extends TestCase
     }
 
     /**
+     * 造一张**格式合法、本进程内唯一**的身份证号
+     *
+     * 为什么要唯一：2026-10-10 起「一证一号」，同一张证号只能有一个账号认证通过。
+     * 用例都共用一个常量证号的话，后一个账号会被前一个挡住，测到的是去重而不是被测功能本身（假红）。
+     * 需要「同一张证号」语义的用例请自己写死字面值（见 RealnameFlowTest 的去重用例）。
+     */
+    protected function idCard(): string
+    {
+        static $cursor = null;
+        $cursor ??= random_int(0, 33_599_999);
+        $i = $cursor++;
+        // 地区码固定 110101；年取 19xx；月 01-12、日 01-28 保证过两端那条正则；顺序码取尾三位
+        return sprintf(
+            '11010119%02d%02d%02d%03dX',
+            intdiv($i, 336000) % 100,
+            $i % 12 + 1,
+            intdiv($i, 12) % 28 + 1,
+            $i % 1000
+        );
+    }
+
+    /**
      * 走真实 API 注册并登录，返回 token
      * 依赖：mock 短信渠道（send-code 返回 debugCode）+ 图形码开关关闭
      */

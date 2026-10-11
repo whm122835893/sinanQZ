@@ -13,24 +13,11 @@ import {
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import { fmtNumber } from '@/utils/format'
+import { AIRDROP_STATUS, AIRDROP_TYPES, issueBlockReason } from '@/utils/airdrop'
 
-// ---------- 状态/类型映射 ----------
-const AIRDROP_STATUS = {
-  draft:  { label: '草稿', type: 'info' },
-  active: { label: '进行中', type: 'success' },
-  paused: { label: '已暂停', type: 'warning' },
-  ended:  { label: '已结束', type: 'info' }
-}
-
-const AIRDROP_TYPES = {
-  direct:    { label: '全量直投', tag: 'primary', snapshottable: true, desc: '向全部有效用户（未删除、非黑名单）生成名单' },
-  hold:      { label: '持有快照', tag: 'warning', snapshottable: true, desc: '向持有指定快照藏品的用户生成名单' },
-  condition: { label: '条件筛选', tag: 'danger',  snapshottable: true, desc: '按手机尾号/注册时间/实名状态/持有藏品组合筛选生成名单' },
-  checkin:   { label: '累计签到', tag: 'success', snapshottable: true, desc: '按累计签到天数圈定名单（生成时按阈值筛选）' },
-  register:  { label: '注册行为', tag: 'info',    snapshottable: true, desc: '按活动起止时间内注册的新用户圈定名单' },
-  login:     { label: '登录行为', tag: 'info',    snapshottable: true, desc: '按累计登录次数圈定名单' },
-  invite:    { label: '邀请行为', tag: 'info',    snapshottable: true, desc: '按累计成功邀请人数圈定名单' }
-}
+// 状态/类型映射与「能不能发」的判定都在 @/utils/airdrop（有单测钉住），
+// 这里只负责渲染；曾经它们写在本文件里，藏按钮的 v-if 也写在本文件里，
+// 三处判断各说各话，谁也测不到。
 
 const REALNAME_OPTIONS = [
   { value: '', label: '不限' },
@@ -213,7 +200,9 @@ async function onSave() {
   })
   submitting.value = false
   if (res.code === 0) {
-    ElMessage.success(editing.value ? '空投活动已更新' : '空投活动已创建')
+    // 文案以后端为准：保存时会自动圈一次名单，成功/失败都写在这句话里
+    // （旧实现自己拼「空投活动已创建」，名单到底有没有圈出来，运营看不出来）
+    ElMessage.success(res.message || (editing.value ? '空投活动已更新' : '空投活动已创建'))
     editShow.value = false
     load()
   }
@@ -232,7 +221,9 @@ async function onGenerate(row) {
   const res = await generateAirdropEligibility(row.id)
   generatingId.value = 0
   if (res.code === 0) {
-    ElMessage.success(`名单已更新：新增待发放 ${res.data.generated} 人（保留已发放 ${res.data.keptIssued} 人）`)
+    // kept_issued：后端返回的是下划线键（与审计载荷同名），这里以前读 keptIssued，
+    // 结果永远是 undefined，提示语就成了「保留已发放  人」——空着一个数，没人看得出错了
+    ElMessage.success(`名单已更新：新增待发放 ${res.data.generated} 人（保留已发放 ${res.data.kept_issued} 人）`)
     load()
   }
 }
@@ -278,6 +269,7 @@ async function loadEligibilities() {
 const issuingId = ref(0)
 
 async function onIssue(row) {
+  if (issueBlockReason(row)) return
   await ElMessageBox.confirm(
     `确认向「${row.name}」全部待发放用户（${row.eligibleCount} 人）发放藏品？将从藏品库存池扣减并计入活动已发放份数。`,
     '批量发放',
@@ -337,7 +329,7 @@ async function onDelete(row) {
       :closable="false"
       show-icon
       class="am__tip"
-      title="空投管理流程：创建活动 → 生成资格名单（快照）→ 核对名单 → 批量发放；发放从藏品库存池扣减、写入用户持仓与收件箱通知，全程记录审计日志"
+      title="空投管理流程：创建活动（保存时自动圈一次资格名单）→ 核对名单（改了条件可点「生成名单」重圈）→ 批量发放；发放从藏品库存池扣减、写入用户持仓与收件箱通知，全程记录审计日志。按钮置灰时把鼠标放上去会写明当前不能发的原因"
     />
 
     <!-- 活动列表 -->
@@ -405,7 +397,7 @@ async function onDelete(row) {
         </template>
       </el-table-column>
       <el-table-column label="创建时间" width="160" prop="createdAt" />
-      <el-table-column label="操作" width="250" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="AIRDROP_TYPES[row.type]?.snapshottable"
@@ -413,11 +405,20 @@ async function onDelete(row) {
             @click="onGenerate(row)"
           >生成名单</el-button>
           <el-button link type="primary" size="small" @click="openEligibilities(row)">查看名单</el-button>
-          <el-button
-            v-if="row.status === 'active' && AIRDROP_TYPES[row.type]?.snapshottable"
-            link type="success" size="small" :loading="issuingId === row.id"
-            @click="onIssue(row)"
-          >批量发放</el-button>
+          <!-- 按钮常驻：置灰 + tooltip 写清"为什么现在不能发"，不再靠 v-if 把功能藏起来 -->
+          <el-tooltip
+            :content="issueBlockReason(row)"
+            :disabled="!issueBlockReason(row)"
+            placement="top"
+            :show-after="150"
+          >
+            <span class="am__issue-wrap">
+              <el-button
+                link type="success" size="small" :loading="issuingId === row.id"
+                :disabled="!!issueBlockReason(row)" @click="onIssue(row)"
+              >批量发放</el-button>
+            </span>
+          </el-tooltip>
           <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
           <el-button link type="danger" size="small" @click="onDelete(row)">删除</el-button>
         </template>
@@ -460,7 +461,7 @@ async function onDelete(row) {
           <el-select v-model="form.status" style="width: 180px">
             <el-option v-for="(v, k) in AIRDROP_STATUS" :key="k" :value="k" :label="v.label" />
           </el-select>
-          <div class="t-tertiary am__hint">仅「进行中」的活动可执行批量发放</div>
+          <div class="t-tertiary am__hint">仅「进行中」的活动可执行批量发放；保存活动时会按当前规则自动圈一次资格名单（草稿也会圈）</div>
         </el-form-item>
 
         <el-form-item label="空投藏品">
@@ -648,6 +649,11 @@ async function onDelete(row) {
 .am__hint { font-size: 12px; margin-top: 4px; width: 100%; }
 
 .am__pager { margin-top: 14px; justify-content: flex-end; }
+
+// el-tooltip 包 disabled 按钮必须套一层可交互容器：
+// disabled 的 button 自己不派发 mouseenter，tooltip 会一声不响地不出现，
+// 而"为什么不能发"这句话正是这版改造的全部意义
+.am__issue-wrap { display: inline-flex; }
 
 .am__elig-toolbar {
   display: flex;

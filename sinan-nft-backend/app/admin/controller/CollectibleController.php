@@ -895,21 +895,18 @@ class CollectibleController extends BaseController
                 $userOk = true;
                 for ($k = 0; $k < $quantity; $k++) {
                     try {
-                        // 占位插入 + 回写编号（与 C 端一致，避免并发唯一索引冲突）
+                        // 编号走全项目唯一取号入口（1..发行量随机、不越界、不重号）
                         $ucid = (int) Db::name('user_collectibles')->insertGetId([
                             'user_id'         => $userId,
                             'collectible_id'  => $id,
                             'airdrop_record_id' => null,
-                            'serial'          => gen_serial_placeholder(),
+                            'serial'          => \app\service\SerialService::next((int) $id),
                             'source'          => 'airdrop',
                             'acquired_price'  => 0,
                             'acquired_at'     => $now,
                             'status'          => 'held',
                             'created_at'      => $now,
                             'updated_at'      => $now,
-                        ]);
-                        Db::name('user_collectibles')->where('id', $ucid)->update([
-                            'serial' => 'SN-' . $id . '-' . str_pad((string) $ucid, 4, '0', STR_PAD_LEFT),
                         ]);
 
                         Db::name('airdrop_records')->insert([

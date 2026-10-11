@@ -50,8 +50,10 @@ class RaffleService
         $regStart        = $data['registrationStart'] ?? '';
         $regEnd          = $data['registrationEnd'] ?? '';
         $drawTime        = $data['drawTime'] ?? '';
-        $purchaseStart   = $data['purchaseStart'] ?? null;
-        $purchaseEnd     = $data['purchaseEnd'] ?? null;
+        // purchase_start 已退出判定（口径改为「中签时刻 + 5 分钟」），一律落 NULL；
+        // purchase_end 归一为「购买截止（选填）」，空值/零日期统一落 NULL，不再写脏数据
+        $purchaseStart   = null;
+        $purchaseEnd     = self::normalizePurchaseTime($data['purchaseEnd'] ?? null);
 
         if ($collectibleId <= 0 || $winnerCount <= 0 || $saleQuantity <= 0) {
             throw new \InvalidArgumentException('参数缺失：藏品、中签数、每人限购');
@@ -409,5 +411,105 @@ class RaffleService
             }
         }
         return $results;
+    }
+
+    // ============================================================
+    // 中签后的购买窗口（全项目唯一判定入口）
+    // ------------------------------------------------------------
+    // 产品口径（2026-10-11 用户原话）：「中签五分钟后购买，中签五分钟之后就显示
+    // 购买按钮，未中签不显示。」
+    //
+    // 四条规则：
+    // 1. 开放时刻 = 中签时刻 + 5 分钟。中签时刻取实际开奖时间 drawn_at，
+    //    没落库时退回计划抽签时间 draw_time（自动开奖失败/历史活动兜底）。
+    // 2. 未中签的人一律不出购买按钮（连禁用态都不给，避免误以为能买）。
+    // 3. purchase_start 从判定里退出：它过去由后台表单填写，留空会被写成
+    //    '0000-00-00 00:00:00'，于是「now > start」永真、「now < end」永真，
+    //    结果就是永久不可购——用户报的"中签了却没有购买按钮"正是这条链路。
+    //    purchase_end 保留成"购买截止（选填）"，只在是合法日期且晚于开放时刻时生效。
+    // 4. C 端按钮显隐和 /purchase 接口必须走同一个 gate，否则会出现
+    //    "按钮亮着但提交被后端打回"或反过来。
+    // ============================================================
+
+    /** 中签后开放购买的延时（秒） */
+    public const PURCHASE_DELAY_SECONDS = 300;
+
+    /**
+     * 后台传来的购买时间归一：空串、纯空格、非法日期、MySQL 零日期一律落成 NULL。
+     * 库里从此不再出现 0000-00-00 这类"看起来有值、实际把窗口锁死"的脏数据。
+     */
+    public static function normalizePurchaseTime($value): ?string
+    {
+        if (!is_string($value)) return null;
+        $text = trim($value);
+        if ($text === '' || strpos($text, '0000-00-00') === 0) return null;
+        $ts = strtotime($text);
+        return $ts ? date('Y-m-d H:i:s', $ts) : null;
+    }
+
+    /** 中签时刻（实际开奖时间优先，退回计划抽签时间；都没有则 null） */
+    public static function winMoment(array $activity): ?string
+    {
+        return self::normalizePurchaseTime($activity['drawn_at'] ?? null)
+            ?? self::normalizePurchaseTime($activity['draw_time'] ?? null);
+    }
+
+    /** 购买开放时刻 = 中签时刻 + 5 分钟 */
+    public static function purchaseOpenAt(array $activity): ?string
+    {
+        $moment = self::winMoment($activity);
+        if ($moment === null) return null;
+        return date('Y-m-d H:i:s', strtotime($moment) + self::PURCHASE_DELAY_SECONDS);
+    }
+
+    /** 购买截止：后台选填的 purchase_end，非法或早于开放时刻视为不限 */
+    public static function purchaseDeadline(array $activity, ?string $openAt): ?string
+    {
+        $end = self::normalizePurchaseTime($activity['purchase_end'] ?? null);
+        if ($end === null) return null;
+        if ($openAt !== null && $end <= $openAt) return null;
+        return $end;
+    }
+
+    /**
+     * 购买闸门：C 端显隐与接口校验共用的唯一出口。
+     *
+     * @param array  $activity raffle_activities 行（需含 status/drawn_at/draw_time/purchase_end/sale_quantity）
+     * @param array|null $reg  raffle_registrations 行，null = 该用户没报名
+     * @param string $now      'Y-m-d H:i:s'
+     */
+    public static function purchaseGate(array $activity, ?array $reg, string $now): array
+    {
+        $status = (int) ($activity['status'] ?? 0);
+        $win    = $reg !== null && (int) ($reg['draw_status'] ?? 0) === 1;
+        // sale_quantity 用 ?? 0 兜底：列表接口是 LEFT JOIN，活动被删时该行可能缺字段
+        $quota  = $win ? max(1, (int) ($reg['win_count'] ?? 0)) * (int) ($activity['sale_quantity'] ?? 0) : 0;
+        $bought = $reg !== null ? (int) ($reg['purchased_quantity'] ?? 0) : 0;
+
+        $openAt   = self::purchaseOpenAt($activity);
+        $deadline = self::purchaseDeadline($activity, $openAt);
+        // 还在「中签 + 5 分钟」等待期内的剩余秒数（0 表示不在等待期）
+        $wait     = $openAt !== null && $now < $openAt
+            ? max(0, strtotime($openAt) - strtotime($now))
+            : 0;
+
+        $soldOut    = $quota > 0 && $bought >= $quota;
+        $expired    = $deadline !== null && $now > $deadline;
+        $purchasable = $win && $status === 3 && !$soldOut && !$expired && $wait === 0;
+
+        return [
+            'registered'   => $reg !== null,
+            'win'          => $win,
+            'drawn'        => $status === 3,
+            'purchasable'  => $purchasable,
+            'waitSeconds'  => $wait,
+            'soldOut'      => $soldOut,
+            'expired'      => $expired,
+            'quota'        => $quota,
+            'purchased'    => $bought,
+            'openAt'       => $openAt,
+            'deadline'     => $deadline,
+            'delaySeconds' => self::PURCHASE_DELAY_SECONDS,
+        ];
     }
 }
