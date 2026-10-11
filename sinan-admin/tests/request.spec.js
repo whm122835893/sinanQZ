@@ -109,12 +109,12 @@ describe('admin request · 网络层异常', () => {
 
   const rejected = (err) => errHandler()(err)
 
-  it('网络异常 / 超时给可行动文案，并 resolve 成 code -1 让调用方继续走', async () => {
+  it('超时 / 连不上给可行动文案，并 resolve 成 code -1 让调用方继续走', async () => {
     await expect(rejected({ code: 'ECONNABORTED' })).resolves.toEqual({
-      code: -1, message: '请求超时，请稍后重试', data: null
+      code: -1, message: '请求超时（等了 20 秒没回音）：可重试；反复超时报给开发', data: null
     })
     await expect(rejected({ message: 'Network Error' })).resolves.toMatchObject({
-      code: -1, message: '网络异常，请检查后端服务'
+      code: -1, message: '连不上服务器：请检查本机网络，或确认后端服务是否在运行'
     })
     expect(ElMessage.error).toHaveBeenCalledTimes(2)
   })
@@ -123,6 +123,43 @@ describe('admin request · 网络层异常', () => {
     const res = await rejected({ response: { data: { message: '令牌已过期' } } })
     expect(res).toEqual({ code: -1, message: '令牌已过期', data: null })
     expect(ElMessage.error).toHaveBeenCalledWith('令牌已过期')
+  })
+
+  // B6：以前这一整类全合并成一句「网络异常，请检查后端服务」，运营截图过来也判不出成因。
+  it('被 nginx / 网关截掉的响应（HTML 体）按状态码分成因', async () => {
+    const html = '<html><head><title>413 Request Entity Too Large</title></head><body></body></html>'
+    const cases = [
+      [413, '文件太大被服务器拒收（HTTP 413）'],
+      [502, '后端没有及时应答（HTTP 502）'],
+      [504, '后端没有及时应答（HTTP 504）'],
+      [404, '接口不存在（HTTP 404）'],
+      [429, '操作过于频繁（HTTP 429）'],
+      [500, '服务器内部错误（HTTP 500）'],
+      [403, '请求失败（HTTP 403）']
+    ]
+    for (const [status, expectHead] of cases) {
+      const res = await rejected({ response: { status, data: html } })
+      expect(res.code).toBe(-1)
+      // 文案必须把状态码数字带出来，运营一眼能定性
+      expect(res.message).toContain(`HTTP ${status}`)
+      expect(res.message.startsWith(expectHead)).toBe(true)
+    }
+  })
+
+  it('空响应体（只有状态码）同样走状态码分支，不会当成超时', async () => {
+    const res = await rejected({ response: { status: 502, data: '' }, code: 'ERR_BAD_RESPONSE' })
+    expect(res.message).toContain('HTTP 502')
+  })
+
+  it('silent 请求的网络错误不弹全局提示，文案仍回给调用方自己显示', async () => {
+    const res = await rejected({ response: { status: 413 }, config: { _silent: true } })
+    expect(res.message).toContain('HTTP 413')
+    expect(ElMessage.error).not.toHaveBeenCalled()
+  })
+
+  it('上传取消防错：取消不算故障，也不弹「网络异常」', async () => {
+    const res = await rejected({ code: 'ERR_CANCELED' })
+    expect(res.message).toBe('请求已取消')
   })
 })
 
