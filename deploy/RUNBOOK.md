@@ -1621,6 +1621,68 @@ H5 **12 文件 / 116 用例全绿**；后台 **8 文件 / 90 用例全绿**（`u
 4. **APP_KEY 变更的联动没测**：指纹跟着 `APP_KEY` 走，将来跑 `php think rekey:encrypted` 换密钥时指纹必须一起重算，
    绕过命令手改 `.env` 会让查重静默失效 —— 这条纪律写在 `RealnameIdHash.php` 与 7.13，没有测试覆盖。
 
+### 7.26 盲盒详情页补齐「转赠 / 寄售」两枚开关（2026-10-12 代码完成，**只在本地，没发版**）
+
+**你怎么问的**：「盲盒在详情里面怎么没有转赠和寄售的开关」。
+
+**先给结论：不是功能坏了，是同一件事在四个地方做了、第四个只做了个摆设。** 四格实测（改动前）：
+
+| 位置 | 文件 | 改前 | 本次 |
+|---|---|---|---|
+| 藏品列表 | `src/views/collectible/Index.vue:365 / :373` | 转赠、寄售两枚 `el-switch`（寄售走价格弹窗＋密码） | 没动 |
+| 藏品详情 | `src/views/collectible/Detail.vue:359-437` | 同上，功能齐全 | 没动 |
+| 盲盒列表 | `src/views/blindbox/Index.vue:196 / :204` | 同上（同一列里还多一枚「开」开关 :188） | 没动 |
+| **盲盒详情** | `src/views/blindbox/Detail.vue` | **两行纯文字**：「转赠 / 寄售开关」→「转赠已开启 / 已关闭」，点不动 | 补齐两枚开关（现 :369-385） |
+
+**大白话讲数据形状**（说明这开关本来就该存在）：一个盲盒在库里是**两行** ——
+`nft_blind_boxes`（盒子本身）＋ 它 `collectible_id` 指向的 `nft_collectibles` 一行
+（`tag='blindbox'`、`status='upcoming'`，创建时 `is_transferable=0 / is_resaleable=0`）。
+「转赠」「寄售」这两列**只长在 collectibles 那行上**，管的是**用户手里这只还没开的盒子**能不能送人、能不能挂出去卖，
+跟开出来的奖品无关 —— C 端两道校验读的就是这一列：`Resale.php:63` 看 `is_resaleable`、`Transfers.php:54` 看 `is_transferable`。
+后台详情页不给开关，等于运营只能绕去藏品列表里找到那行 blindbox 藏品才能改，而盲盒详情页显示的恰恰是同一列的当前值。
+
+**你定的口径**：「只补两枚 + 防漏测试」—— 复用列表页已有的两个 API 与同一句二次确认文案，
+寄售仍走「价格管控弹窗 + 管理员密码验证」；**不加求购开关**（那是产品范围，不是漏网）；后端一行不动。
+
+**改了哪些**（纯前端）：`src/views/blindbox/Detail.vue` +143 / −6 行。
+脚本侧新增 `onTransferableSwitch()`（:149，二次确认 → `toggleBlindBoxTransferable`）、
+寄售三件套 `openResaleDialog / onResaleSubmit / onResaleVerified`（:166-215，含固定价必填、区间价上下限必填且 min<max 的校验）；
+模板侧把两行只读 kv 换成两枚 `el-switch`（:369-385），新增「寄售管控 · 盒名」弹窗（:590-629，`append-to-body`）
+与第三个 `PasswordVerify`（:631）。样式加 `.bd__switch-row` / `.bd__switch-ops`。
+
+**为什么不会跟藏品那边长歪**：两枚开关打的都是 `src/api/index.js:1025 / :1040` 的
+`toggleBlindBoxResale` / `toggleBlindBoxTransferable`，它们内部先 `GET /blind-boxes/:id` 取 `collectibleId`，
+再打 `PUT /collectibles/:cid/market-config` —— 全平台唯一的写入口（`CollectibleController::marketConfig()`，:1200 起，
+认 `is_transferable` / `is_resaleable` / `is_buy_request_enabled` / `resale_price_mode` 0|1|2）。页面里**不许**自己拼 `market-config`。
+
+**一条坑，记在这儿**：盲盒那两枚开关真正打的是 **collectibles 的接口**，所以它要的权限是 **`collectible:market`**，不是 `blindbox:*`。
+将来若给运营建「只有盲盒权限」的角色，他在盲盒页点开关会吃 4003「无权限」—— 那不是代码坏，是权限组没给对。
+（本轮没改权限，超管账号不受影响。）
+
+**防漏测试**：新文件 `sinan-admin/tests/market-switch.spec.js`（149 行、20 例）。
+这仓库没装 `@vue/test-utils`，所以走本仓库既有的**源码扫描**路子：`CELLS` 写死四格文件与各自该调的 API 符号，四条规则 ——
+① 提到 `isTransferable` / `isResaleable` 就必须有绑定它的 `<el-switch>`，退化成纯文字就红；
+② 寄售那枚不许在标签里直接调 `toggle…Resale`（必须走弹窗），文件里必须有 `PasswordVerify` 且有 `@verified="…Resale/Price"`；
+③ 四个文件谁都不许裸拼 `market-config`（扫描前先 `stripComments()`，注释不算）；
+④ 转赠关闭那句二次确认文案，四格必须逐字节一致。
+
+**反证**（本仓库规矩：把修复拆掉，测试必须变红）：`cp` 备份后用 perl 把 `blindbox/Detail.vue` 里两枚 `<el-switch …>` 换回只读文字，
+打出真实 2 行 diff → 该 spec 红 **2 例**（开关缺失 + 寄售闸门缺失）→ `cp` 还原、`diff` 干净、`grep -c` 回到 4 → 20 例复绿。
+**差点假绿一次**：第一条替换正则按多行写、而开关其实写在一行上，perl 没匹配上也不报错，测试照样 20 例绿 —— 靠 `diff` 备份才发现。
+
+**回归**：`npx vitest run` 全量 **11 文件 / 146 例全绿**；`npm run build` 通过，
+产物 `dist/assets/Detail-B7J5GhJS.js` 里能搜到「寄售管控」与新加的转赠提示语。
+
+**没做 / 没在线上验的**（照例说清楚）：
+
+1. **没有真人在浏览器里点过这两枚开关**。后台登录有图形验证码，我不用脚本绕；本地 8080 后端当时也没起。
+   上面的证据都是「代码 + 测试 + 构建产物」层面的，不等于「点一下真生效了」。
+   你点一次就是最终确认：进任意盲盒详情 → 拨转赠（应弹二次确认）→ 拨寄售（应弹「寄售管控」价格弹窗，提交还要输管理员密码）。
+2. **没加求购开关**：盲盒详情页原来就没这一项，藏品详情页有。属于产品范围，本次口径明确排除，等你单独说。
+3. **生产上现在还没有这次改动** —— 现在线上盲盒详情页仍是两行只读文字。
+
+**发版要动什么**：只有后台前端一个包（`:8088`），后端与 H5 都不动，形状同第 5 次发版（7.24）。**要你说「发」我才发。**
+
 
 
 1. **带宽 1Mbps**：实测后台主 JS 1.33MB 单下就要 8.6 秒，加 CSS 约 11 秒首屏。建议改「按流量计费 + 峰值 100Mbps」，小站月成本通常几元。
