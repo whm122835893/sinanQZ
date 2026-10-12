@@ -305,6 +305,17 @@ class SerialRenumber extends Command
                 }
             }
 
+            // 两段式写号的中转位（TMP-R-{资产ID}）不能被现有编号占着，否则第一段就会撞唯一索引。
+            // 这里是预检：提前给出人话错误，不留到写库阶段抛 1062。
+            $holding = array_merge(array_values($current), $other);
+            foreach ($expect as $row) {
+                $slot = 'TMP-R-' . (int) $row['id'];
+                if ((string) $row['new'] !== (string) $row['old'] && in_array($slot, $holding, true)) {
+                    $output->writeln("<error>藏品 {$cid} 已有资产占用中转编号 {$slot}，请先人工处理该行，方案作废</error>");
+                    return 1;
+                }
+            }
+
             $verified[] = ['cid' => $cid, 'rows' => $expect];
         }
 
@@ -333,10 +344,17 @@ class SerialRenumber extends Command
                     $new = (string) $row['new'];
                     if ($new === (string) $row['old']) continue;
 
-                    // 两段式写号：先挪到 TMP-R-{资产ID}（parseNo 认不出、也不在号池里），
-                    // 再落最终号。一步写的话，新号可能正好撞上还没改走的别人的旧号，
-                    // 直接踩 uk_collectible_serial 唯一索引报错。
+                    // 两段式写号：先整批挪到 TMP-R-{资产ID}（parseNo 认不出、也不在号池里），
+                    // 再整批落最终号。**两段之间不能夹着落号**：
+                    // 新号很可能正好是另一行还没改走的旧号（例如资产 3 要 SN-1-0247，而 SN-1-0247
+                    // 此刻还挂在资产 22 名下），逐行「挪一格就落一格」会直接踩 uk_collectible_serial。
                     Db::name('user_collectibles')->where('id', $id)->update(['serial' => 'TMP-R-' . $id]);
+                }
+                foreach ($v['rows'] as $row) {
+                    $id  = (int) $row['id'];
+                    $new = (string) $row['new'];
+                    if ($new === (string) $row['old']) continue;
+
                     Db::name('user_collectibles')->where('id', $id)->update(['serial' => $new]);
                     $changed++;
 
