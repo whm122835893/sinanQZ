@@ -11,7 +11,9 @@ import {
   airdropBlindBox,
   destroyBlindBox,
   releaseBlindBox,
-  setBlindBoxOpenable
+  setBlindBoxOpenable,
+  toggleBlindBoxTransferable,
+  toggleBlindBoxResale
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import PasswordVerify from '@/components/PasswordVerify.vue'
@@ -138,6 +140,76 @@ async function onToggleOpen(val) {
   if (res.code === 0) {
     detail.value.isOpenable = val
     ElMessage.success(val ? '已允许开启' : '已暂停开启')
+  }
+}
+
+// ---- 转赠开关（盲盒本体那行藏品，与藏品详情页同一口径、同一个 market-config 接口）----
+// 说明：盲盒在库里 = collectibles 一行（tag=blindbox）+ blind_boxes 一行。转赠/寄售两列长在
+// collectibles 那行上，管的是「用户手里这只还没开的盲盒能不能送人 / 挂出去卖」，不是开出来的奖品。
+async function onTransferableSwitch(val) {
+  await ElMessageBox.confirm(
+    val
+      ? `确认开启「${detail.value.name}」的转赠开关？用户端将显示转赠入口。`
+      : `确认关闭「${detail.value.name}」的转赠开关？用户端转赠按钮置灰（已发起待确认的转赠不受影响）。`,
+    '转赠开关',
+    { type: 'warning' }
+  )
+  const res = await toggleBlindBoxTransferable(id, val)
+  if (res.code === 0) {
+    ElMessage.success(val ? '已开启转赠' : '已关闭转赠')
+    await load()
+  } else {
+    ElMessage.error(res.message || '开关设置失败')
+  }
+}
+
+// ---- 寄售开关（联动价格管控：0=不限价 1=固定价 2=区间价，需管理员密码验证）----
+const priceShow = ref(false)
+const pricePwdShow = ref(false)
+const priceForm = ref({ enabled: 1, priceMode: 0, priceMin: null, priceMax: null })
+
+function openResaleDialog() {
+  const d = detail.value
+  priceForm.value = {
+    enabled: d.isResaleable ? 1 : 0,
+    priceMode: Number(d.resalePriceMode) || 0,
+    priceMin: d.resalePriceMin ?? null,
+    priceMax: d.resalePriceMax ?? null
+  }
+  priceShow.value = true
+}
+
+function onResaleSubmit() {
+  const f = priceForm.value
+  if (f.enabled) {
+    if (f.priceMode === 1 && (f.priceMin === null || f.priceMin === undefined)) {
+      return ElMessage.warning('固定价模式需填写寄售价格')
+    }
+    if (f.priceMode === 2) {
+      if (f.priceMin === null || f.priceMin === undefined || f.priceMax === null || f.priceMax === undefined) {
+        return ElMessage.warning('区间价模式需填写价格上下限')
+      }
+      if (Number(f.priceMin) >= Number(f.priceMax)) return ElMessage.warning('价格下限需小于上限')
+    }
+  }
+  pricePwdShow.value = true
+}
+
+async function onResaleVerified() {
+  const f = priceForm.value
+  const res = await toggleBlindBoxResale({
+    id,
+    enabled: !!f.enabled,
+    priceMode: f.enabled ? f.priceMode : 0,
+    priceMin: f.enabled && f.priceMode >= 1 ? Number(f.priceMin) : null,
+    priceMax: f.enabled && f.priceMode === 2 ? Number(f.priceMax) : null
+  })
+  if (res.code === 0) {
+    ElMessage.success(f.enabled ? '已开启寄售' : '已关闭寄售，在售挂单已全部系统下架')
+    priceShow.value = false
+    await load()
+  } else {
+    ElMessage.error(res.message || '寄售设置提交失败')
   }
 }
 
@@ -288,11 +360,25 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
               <span class="k">允许开启</span>
               <el-switch :model-value="!!detail.isOpenable" size="small" @change="onToggleOpen" />
             </div>
-            <div class="adm-kv">
-              <span class="k">转赠 / 寄售开关</span>
-              <span class="v">
-                {{ detail.isTransferable ? '转赠已开启' : '转赠已关闭' }} ·
-                {{ detail.isResaleable ? `寄售已开启（${detail.resalePriceMode === 1 ? `固定价 ¥${detail.resalePriceMin}` : detail.resalePriceMode === 2 ? `限价 ¥${detail.resalePriceMin}-¥${detail.resalePriceMax}` : '不限价'}）` : '寄售已关闭' }}
+            <!--
+              这两枚开关以前是「只读文字」，只能退回盲盒列表才能改（2026-10-12 补齐）。
+              口径与藏品详情页完全一致：转赠二次确认后直接生效；寄售必须先过价格管控弹窗 + 管理员密码验证。
+              注意管的是「还没开的盲盒本体」能不能送人 / 挂单，不是开出来的奖品。
+            -->
+            <div class="adm-kv bd__switch-row">
+              <span class="k">转赠开关</span>
+              <span class="v bd__switch-ops">
+                <el-switch :model-value="detail.isTransferable" @change="onTransferableSwitch" />
+                <span class="t-tertiary" style="font-size: 12px">{{ detail.isTransferable ? '已开启：用户可无偿转赠这只盲盒' : '已关闭：用户端转赠入口置灰' }}</span>
+              </span>
+            </div>
+            <div class="adm-kv bd__switch-row">
+              <span class="k">寄售开关</span>
+              <span class="v bd__switch-ops">
+                <el-switch :model-value="detail.isResaleable" @change="openResaleDialog" />
+                <span class="t-tertiary" style="font-size: 12px">
+                  {{ detail.isResaleable ? `已开启（${detail.resalePriceMode === 1 ? `固定价 ¥${fmtMoney(detail.resalePriceMin)}` : detail.resalePriceMode === 2 ? `限价 ¥${fmtMoney(detail.resalePriceMin)}-¥${fmtMoney(detail.resalePriceMax)}` : '不限价'}）` : '已关闭：用户端无法挂单寄售这只盲盒' }}
+                </span>
               </span>
             </div>
           </div>
@@ -500,9 +586,49 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
         </template>
       </el-dialog>
 
+      <!-- 寄售开关 + 价格管控弹窗（与藏品详情页同一套表单与校验） -->
+      <el-dialog v-model="priceShow" :title="`寄售管控 · ${detail.name}`" width="480px" append-to-body :close-on-click-modal="false">
+        <el-form label-width="110px">
+          <el-form-item label="允许寄售">
+            <el-switch v-model="priceForm.enabled" :active-value="1" :inactive-value="0" />
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">
+              关闭后该盲盒所有在售挂单将全部系统下架，用户无法重新上架
+            </div>
+          </el-form-item>
+          <template v-if="priceForm.enabled">
+            <el-form-item label="限价策略">
+              <el-radio-group v-model="priceForm.priceMode">
+                <el-radio :value="0">不限价</el-radio>
+                <el-radio :value="1">固定价</el-radio>
+                <el-radio :value="2">区间价</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="priceForm.priceMode === 1" label="固定寄售价（元）">
+              <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" :step="10" style="width: 180px" />
+              <div class="t-tertiary" style="font-size: 12px; margin-top: 4px">用户挂单价格必须等于该固定价</div>
+            </el-form-item>
+            <template v-if="priceForm.priceMode === 2">
+              <el-form-item label="寄售区间（元）">
+                <el-input-number v-model="priceForm.priceMin" :min="0.01" :precision="2" placeholder="最低" style="width: 140px" />
+                <span style="margin: 0 10px">~</span>
+                <el-input-number v-model="priceForm.priceMax" :min="0.01" :precision="2" placeholder="最高" style="width: 140px" />
+              </el-form-item>
+              <el-alert type="info" :closable="false" show-icon title="用户挂单价格必须落在上下限闭区间内" />
+            </template>
+            <el-alert v-if="priceForm.priceMode === 0" type="info" :closable="false" show-icon title="不限价模式：用户自由定价，仅保留全局最大金额校验" />
+          </template>
+        </el-form>
+        <el-alert type="warning" :closable="false" show-icon title="寄售开关与价格管控影响二级市场流通，需管理员密码验证并写入审计日志" />
+        <template #footer>
+          <el-button @click="priceShow = false">取消</el-button>
+          <el-button type="primary" @click="onResaleSubmit">提交（需密码验证）</el-button>
+        </template>
+      </el-dialog>
+
       <!-- 密码验证 -->
       <PasswordVerify v-model="airPwdShow" title="盲盒空投验证" @verified="onAirdropVerified" />
       <PasswordVerify v-model="destroyPwdShow" title="盲盒销毁验证" @verified="onDestroyVerified" />
+      <PasswordVerify v-model="pricePwdShow" title="寄售管控验证" @verified="onResaleVerified" />
     </template>
   </div>
 </template>
@@ -548,6 +674,17 @@ const phoneCount = () => airForm.value.phones.split(/[\n,，\s]+/).filter(Boolea
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.bd__switch-row {
+  .v { flex: 1; }
+}
+
+.bd__switch-ops {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .bd__audit {
