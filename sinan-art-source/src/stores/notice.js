@@ -48,7 +48,11 @@ export const useNoticeStore = defineStore('notice', () => {
       category: a.subtype || 'operation',
       categoryLabel: categoryLabels[a.subtype] || '公告',
       time: (a.createdAt || '').slice(0, 19).replace('T', ' '),
-      coverImage: a.coverImage || ''
+      coverImage: a.coverImage || '',
+      // 平台风险提示（后端 AnnouncementDisclaimer 生成的 HTML 片段，空串 = 不显示）。
+      // 正文与提示分两个字段下发，不拼进 content：拼进去会让纯文本公告被认成富文本，
+      // 段落换行就得在接口里重做一遍（见 RUNBOOK §7.32 的口径说明）
+      disclaimer: a.disclaimer || ''
     }
     if (isHtml) {
       // 富文本内容存为一个 text 块（模板 v-html 渲染，保留加粗/高亮等标签）

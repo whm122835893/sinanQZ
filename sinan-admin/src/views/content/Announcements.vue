@@ -205,6 +205,10 @@ async function onRemove(a) {
             placeholder="公告正文，支持标题/加粗/颜色/列表/图片等（C 端公告详情展示）"
             :height="280"
           />
+          <div class="t-tertiary" style="font-size: 12px; width: 100%">
+            C 端详情页会在正文底部自动附上平台《风险提示》（公告与新闻都带，正文里不必再自己写一遍）；
+            文案与开关在「系统 → 全局参数 → 内容与公告」，改完实时生效、不用发版
+          </div>
         </el-form-item>
         <el-form-item label="发布方式">
           <el-radio-group v-model="form.mode">

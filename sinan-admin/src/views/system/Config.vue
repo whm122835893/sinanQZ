@@ -20,6 +20,7 @@ const GROUPS = [
   { key: 'resale', name: '寄售市场', icon: 'Sell', keys: ['resale_cooldown_seconds', 'resale_fee_rate', 'resale_price_global_max', 'market_recommend_tab_enabled'] },
   { key: 'marketing', name: '营销参数', icon: 'Present', keys: ['checkin_rewards'] },
   { key: 'service', name: '客服配置', icon: 'Service', keys: ['service_hotline', 'service_hours', 'service_online_url'] },
+  { key: 'content', name: '内容与公告', icon: 'Document', keys: ['announcement_disclaimer_enabled', 'announcement_disclaimer'] },
   { key: 'risk', name: '风控阈值', icon: 'Warning', keys: ['large_recharge_alert', 'large_refund_approval_threshold'] },
   { key: 'user', name: '用户与实名', icon: 'User', keys: ['realname_audit_mode'] },
   { key: 'platform', name: '平台运维', icon: 'Operation', keys: ['cleanup_sms_required', 'chain_mint_batch_limit'] }
@@ -37,6 +38,8 @@ const META = {
   service_hotline: { label: '客服热线电话', unit: '', hint: 'C 端客服页展示的热线号码' },
   service_hours: { label: '客服在线时间', unit: '', hint: 'C 端客服页展示的在线时段' },
   service_online_url: { label: '在线客服链接', unit: '', hint: 'C 端「在线客服」跳转链接（可空，空则展示提示）' },
+  announcement_disclaimer_enabled: { label: '公告风险提示开关', unit: '', hint: '开启后 C 端公告与新闻详情页正文底部自动显示下方「公告正文底部风险提示」那段文字；关闭即完全恢复改造前的样子。公告表里的正文一个字节都不改，随时可以再打开', bool: true },
+  announcement_disclaimer: { label: '公告正文底部风险提示', unit: '', hint: 'C 端每条公告 / 新闻正文底部自动附加的平台声明。格式：第一行是加粗标题，空一行分段，段内直接回车也会换行。保存后实时生效、不用发版，存量公告当场就有提示。这里是纯文本：尖括号会照原样显示成文字，不会变成网页标签；上限 5000 字，清空则不显示（想整段隐藏请用上面的开关，清空会丢掉原文案）', multiline: true },
   large_recharge_alert: { label: '大额充值告警', unit: '元', hint: '单笔充值超过该金额触发风控告警' },
   large_refund_approval_threshold: { label: '大额退款审批阈值', unit: '元', hint: '退款金额超过后需审批中心复核' },
   realname_audit_mode: {
@@ -118,7 +121,12 @@ async function onSave(cfg) {
           {{ g.name }}
         </div>
         <div class="cfg__list">
-          <div v-for="cfg in g.items" :key="cfg.key" class="cfg__item">
+          <div
+            v-for="cfg in g.items"
+            :key="cfg.key"
+            class="cfg__item"
+            :class="{ 'cfg__item--multiline': META[cfg.key]?.multiline }"
+          >
             <div class="cfg__item-main">
               <div class="cfg__item-name">
                 {{ META[cfg.key]?.label || cfg.key }}
@@ -155,6 +163,21 @@ async function onSave(cfg) {
                   :rows="2"
                   style="width: 320px"
                   class="cfg__json"
+                />
+                <el-button
+                  type="primary"
+                  size="small"
+                  :loading="savingKey === cfg.key"
+                  @click="onSave(cfg)"
+                >保存</el-button>
+              </template>
+              <template v-else-if="META[cfg.key]?.multiline">
+                <el-input
+                  v-model="cfg.value"
+                  type="textarea"
+                  :rows="8"
+                  resize="vertical"
+                  class="cfg__multiline"
                 />
                 <el-button
                   type="primary"
@@ -210,6 +233,28 @@ async function onSave(cfg) {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+// 长文本参数（如公告风险提示文案）：整行铺开、顶部对齐，保存键落在文本框右下方
+.cfg__item--multiline {
+  align-items: flex-start;
+
+  .cfg__item-ctrl {
+    flex-direction: column;
+    align-items: flex-end;
+    align-self: stretch;
+  }
+  .el-button {
+    margin-top: 8px;
+  }
+}
+
+.cfg__multiline {
+  width: 100%;
+
+  :deep(textarea) {
+    line-height: 1.7;
+  }
 }
 
 .cfg__item-name {

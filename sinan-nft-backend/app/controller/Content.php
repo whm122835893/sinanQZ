@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
+use app\service\AnnouncementDisclaimer;
 use think\facade\Db;
 
 /**
@@ -67,6 +68,10 @@ class Content extends BaseController
             'subtype'    => $a['subtype'],
             'tagColor'   => $a['tag_color'],
             'createdAt'  => $a['created_at'],
+            // 正文底部统一附加的平台风险提示（HTML 片段，空串 = 不显示）。
+            // 全仓库只有这一个出口对外输出公告正文，所以提示只在这里拼；
+            // 文案与开关在「系统配置 → 全局参数」，见 app/service/AnnouncementDisclaimer.php 与 RUNBOOK §7.32
+            'disclaimer' => AnnouncementDisclaimer::fromConfig(),
         ]);
     }
 

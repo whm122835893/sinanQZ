@@ -74,6 +74,12 @@ function back() {
             <span>司南文创 · 数字艺术品平台</span>
           </div>
         </template>
+
+        <!-- 平台风险提示（2026-10-14，见 RUNBOOK §7.32）：
+             后端 GET /api/announcements/:id 的 disclaimer 字段，公告与新闻、富文本与纯文本正文
+             都统一拼在最底部，所以放在上面两个分支之外；文案在后台「系统配置 → 全局参数」改。
+             样式复用下面已有的 __warning（灰底 + 小字 + .warn-title 加粗），不新画一套。 -->
+        <div v-if="notice.disclaimer" class="notice-detail__warning" v-html="notice.disclaimer"></div>
       </article>
 
       <div class="notice-detail__back">
