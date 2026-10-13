@@ -892,29 +892,28 @@ class MarketingController extends BaseController
                     throw new \Exception('邀请档位最多 20 档');
                 }
                 $seenCounts = [];
-                foreach ($tiers as $tier) {
+                foreach (array_values($tiers) as $tierNo => $tier) {
                     $inviteCount = (int) ($tier['inviteCount'] ?? 0);
                     if ($inviteCount < 1 || $inviteCount > 50) {
-                        throw new \Exception('邀请档位人数需在 1~50');
+                        throw new \Exception('第 ' . ($tierNo + 1) . ' 档：邀请档位人数需在 1~50');
                     }
                     if (isset($seenCounts[$inviteCount])) {
-                        throw new \Exception('邀请档位人数重复：' . $inviteCount);
+                        throw new \Exception('第 ' . ($tierNo + 1) . ' 档：邀请档位人数重复：' . $inviteCount);
                     }
                     $seenCounts[$inviteCount] = true;
-                    $rewards = (array) ($tier['rewards'] ?? []);
-                    if (!$rewards) {
-                        throw new \Exception('每档需至少配置一项奖励');
-                    }
                     $cleanTiers[] = [
                         'inviteCount' => $inviteCount,
-                        'rewards'     => ActivityRewardService::normalizeRewards($rewards),
+                        'rewards'     => $this->normalizeInviteRewards(
+                            (array) ($tier['rewards'] ?? []),
+                            '邀请 ' . $inviteCount . ' 人档'
+                        ),
                     ];
                 }
                 usort($cleanTiers, fn ($a, $b) => $a['inviteCount'] <=> $b['inviteCount']);
             }
             $cleanInviteeReward = null;
             if (is_array($inviteeReward) && !empty($inviteeReward['type'])) {
-                $cleanInviteeReward = RewardGrantService::validate((string) $inviteeReward['type'], $inviteeReward);
+                $cleanInviteeReward = $this->normalizeInviteRewards([$inviteeReward], '被邀请人奖励')[0];
             }
             $cleanConditions = [];
             if (is_array($inviteeConditions)) {
@@ -991,6 +990,52 @@ class MarketingController extends BaseController
 
         $this->audit('marketing', 'invite_save', '保存邀请活动「' . $name . '」', ['id' => $id], 'invite_activity', $id);
         return $this->success(['id' => $id], '邀请活动已保存');
+    }
+
+    /**
+     * 邀请活动专用：逐个奖励位校验，并把「哪一档 · 第几个奖励位 · 什么类型」写进报错文案
+     *
+     * 为什么不改 ActivityRewardService::normalizeRewards()：那个方法签到/注册/抽奖/合成都在用，
+     * 改它的文案会牵动其他活动的报错（本轮口径只改邀请这一套）。
+     * 规则与 normalizeRewards 保持一致（非空、≤10 项、类型走 RewardGrantService::validate），
+     * 只是多了位置上下文，并把 none（后台下拉里的「无奖励」）单独拦成一句人话——
+     * 它在发放侧同样不被 RewardGrantService 认，存进档位只会在结算时炸，所以保存时就直接拒绝。
+     *
+     * @param array  $rewards 该奖励位下的奖励项列表
+     * @param string $where   位置描述，如「邀请 3 人档」「被邀请人奖励」
+     * @throws \Exception 校验失败（文案自带位置与类型）
+     */
+    private function normalizeInviteRewards(array $rewards, string $where): array
+    {
+        if (!$rewards) {
+            throw new \Exception($where . '：至少配置一项奖励');
+        }
+        if (count($rewards) > 10) {
+            throw new \Exception($where . '：最多配置 10 项奖励（当前 ' . count($rewards) . ' 项）');
+        }
+
+        $isSingle = count($rewards) === 1;
+        $result = [];
+        foreach (array_values($rewards) as $i => $reward) {
+            $reward = (array) $reward;
+            // 兼容两种输入：管理端原始格式（type）与已规范化存储格式（rewardType）
+            $type = (string) ($reward['type'] ?? $reward['rewardType'] ?? '');
+            $label = ActivityRewardService::TYPE_LABELS[$type] ?? ($type === '' ? '未选择类型' : $type);
+            $at = $where . ($isSingle ? '' : ' · 第 ' . ($i + 1) . ' 个奖励位') . '（' . $label . '）';
+
+            if ($type === '') {
+                throw new \Exception($at . '：奖励类型不能为空');
+            }
+            if ($type === 'none') {
+                throw new \Exception($at . '：「无奖励」不能算作一项奖励，请改成具体类型或删掉这一项');
+            }
+            try {
+                $result[] = RewardGrantService::validate($type, $reward);
+            } catch (\Throwable $e) {
+                throw new \Exception($at . '：' . $e->getMessage());
+            }
+        }
+        return $result;
     }
 
     // ==================== 抽奖活动 ====================

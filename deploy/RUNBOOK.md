@@ -1799,6 +1799,78 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
 **发版口径**：本轮只涉及 **H5 一个前端包**（`AppEmpty.vue` + `Raffle.vue`，另加一份测试），后端与后台一个字节没动。
 **线上目前仍是铜鼎图**，要上线得重建并部署 H5 包 —— 可与第 7 次发版并批，也可单独发一次，等你点头。
 
+### 7.29 邀请活动保存那句「未知类型」：根因与报错带位置（2026-10-13，**本地做完并测过，线上未动**）
+
+**你报的原话**：「邀请活动保存显示位未知类型」→ 要的是「报错说清位置 + 类型」，范围**只改邀请这一套**
+（签到 / 注册 / 抽奖 / 合成共用的那条路本轮明确不动）。
+
+**根因（先用只读探针坐实，别猜）**：`qa/probe_invite_reward_readonly.php`（本地沙箱跑，用完即删、不进 web 目录）
+把后台下拉里每一个类型逐个送进保存校验，结果：
+
+```
+  RewardGrantService::TYPES      = collectible/priority_qualification/eligibility_qualification/draw_chance/blindbox/points
+  ActivityRewardService 中文标签 = 同上 + none
+  差额（能显示但不能保存的类型） = none
+  [报错] type=none     → 未知奖励类型 none
+  [报错] type=blindbox → 盲盒奖励必须指定 blindboxId
+```
+
+两句话把症状解释完了：
+
+1. 后台共享组件 `RewardListEditor.vue` 的下拉里**有「无奖励」(none)**，而邀请页没传 `types` 白名单，
+   于是运营选得到它；后端 `RewardGrantService::TYPES` 里没有 `none`，
+   `inviteSave → normalizeRewards → validate` 直接抛「**未知奖励类型 none**」——这就是你看到的那句。
+   注意它不是「报错文案不好看」这么简单：发放侧（`ActivityRewardService::settleInviteReward`）同样不认 `none`，
+   真让它存进档位，结算时会在同一个地方炸。所以修法是**这条选项在邀请里不该存在**，而不是把 `none` 供起来。
+2. 报错不带位置。`normalizeRewards()` 循环里调 `validate()` 时把「第几档 / 第几个奖励位」丢掉了，
+   八项奖励里坏一项，也只有一句「藏品 #999999 不存在」。
+
+**改了什么（三处，全在邀请这一套里）**：
+
+- 后端 `MarketingController.php`：新增私有 `normalizeInviteRewards($rewards, $where)`，
+  规则与共用 `normalizeRewards` 一致（非空、≤10 项、类型走 `RewardGrantService::validate`），
+  只是把「哪一档 · 第几位（类型中文名）」拼进报错；`inviteSave()` 的档位循环与被邀请人奖励都改走它，
+  档位人数那两句也补了「第 N 档」。共用的 `ActivityRewardService::normalizeRewards()` **一个字没动**。
+- 后台 `Invite.vue`：新增 `INVITE_REWARD_TYPES`（= 后端 TYPES 六种）传给两处 `RewardListEditor`，
+  「无奖励」从邀请的下拉里摘掉；`REWARD_TYPES` 表里的 `none` 留着只为兜底展示历史数据。
+  共享组件与签到 / 注册 / 抽奖页没传 `types`，行为不变。
+- 同页保存前的前端提示同样带上位置（`第 N 档（邀请 X 人） · 第 M 个奖励位（类型）：原因`），
+  只有一项时不硬写「第 1 个」。
+
+**改完的报错长这样**（探针第 4 节实测输出）：
+
+```
+  邀请 3 人档（无奖励）：「无奖励」不能算作一项奖励，请改成具体类型或删掉这一项
+  邀请 5 人档 · 第 2 个奖励位（司南币）：司南币奖励金额必须大于 0
+  邀请 5 人档 · 第 2 个奖励位（盲盒）：盲盒奖励必须指定 blindboxId
+  被邀请人奖励（藏品空投）：藏品奖励必须指定 collectibleId
+```
+
+**测了什么**：
+- 后端 `tests/unit/InviteRewardErrorPositionTest.php`（9 例 / 全库单测 209 例绿）：反射调私有方法验不连库的分支，
+  加两条防漂移 —— ① `inviteSave` 体内不得再出现 `ActivityRewardService::normalizeRewards` 与裸 `RewardGrantService::validate`；
+  ② 邀请白名单必须等于后端 `TYPES`（读 PHP 常量对照，防前端自己列歪）。
+- 后台 `tests/invite-reward-type-gate.spec.js`（9 例 / 全库 135 例绿）：两处 `:types` 都在、白名单不含 `none`、
+  共享编辑器仍保留全量（证明没顺手改别人）、签到 / 注册 / 抽奖页不得出现 `:types=`。
+- **反证做过**：用 node 脚本（不是 sed，见 7.20 的坑）把后端那两行拼接口拆回原样并 **当场打出 diff**（1030 / 1035 两行），
+  测试立刻红 3 例；把前端 `:types` 两行删掉（打出 388 / 410 两行 diff），spec 立刻红 1 例；
+  之后 `cp` 回备份，`diff` 输出 0 行 + 全量重跑绿。
+- `npm run build` 后台包通过（Invite.vue 是真编译过的，不只是源码扫描）。
+
+**没做 / 要你定的**：
+1. **盲盒在邀请里其实还是存不进去**：`RewardListEditor` 只有「数量」一格，没有选具体盲盒的地方，
+   而后端 `blindbox` 分支要求 `blindboxId` —— 全仓库后台前端没有任何一处出现 `blindboxId`，所以这是**共享编辑器的缺口**，
+   签到 / 注册 / 抽奖同样中招。修它要动共享组件（加一枚盲盒下拉 + 各活动传列表），超出你给的「只改邀请」范围，
+   我没顺手做；现在至少报错会指到具体那一格。要修的话给一句话，我按「邀请先修 / 四活动一起修」两种口径出方案。
+2. **端到端没在线上验**：后台登录有图形验证码，不用脚本绕（见 7.24 同条）。你上线后在邀请活动里选一次「盲盒」保存，
+   看到那句带位置的报错，就是最终确认。
+3. **发放侧遇到历史脏数据仍会抛同一句**：`settleInviteReward` 走的是共用校验，本轮没动。
+   现在保存侧已经拦死 + 下拉摘掉，新数据不可能再是 `none`；存量 `nft_invite_activities.tiers` 里有没有 `none`
+   要查得连生产库，属只读 SELECT，你说查我就查。
+
+**发版口径**：本轮动 **后端 1 个文件（`MarketingController.php`）+ 后台前端 1 个文件（`Invite.vue`）**，
+各加一份测试；H5 与数据库一个字节没动。需要**单独点头**才能上生产（可与 7.28 那个 H5 包并成第 7 次发版）。
+
 
 
 1. **带宽 1Mbps**：实测后台主 JS 1.33MB 单下就要 8.6 秒，加 CSS 约 11 秒首屏。建议改「按流量计费 + 峰值 100Mbps」，小站月成本通常几元。
@@ -1872,3 +1944,7 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
     公告的 `tag_color` 后端字段、接口下发、C 端读取都在，只有后台表单缺一个输入口。详见 7.14「查出来但故意没改的」。
 16. **后台「修改密码」弹窗的修复**（2026-10-12，见 7.23 / 7.24）：**已上线**，只发后台一个前端。
     唯一没在线上验的是「真人登录后点一次看见弹窗浮出来」（后台登录有图形验证码，不用脚本绕）—— 你点一次就是最终确认。
+17. **奖励编辑器选不了盲盒**（2026-10-13 发现，见 **7.29**）：`RewardListEditor.vue` 的「盲盒」那一行只有数量一格，
+    后端 `blindbox` 分支却要求 `blindboxId`（全仓库后台前端没有一处出现这个字段），
+    所以邀请 / 签到 / 注册 / 抽奖的「盲盒奖励」**都存不进去**，只会换回一句报错。
+    现在报错至少指得到具体那一格，但选项本身仍是死路；修要动共享组件，等你点头。

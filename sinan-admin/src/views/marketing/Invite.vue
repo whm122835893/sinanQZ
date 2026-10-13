@@ -36,8 +36,21 @@ const REWARD_TYPES = {
   priority_qualification: { label: '优先购白名单资格', tag: 'info' },
   eligibility_qualification: { label: '资格购资格', tag: 'info' },
   blindbox: { label: '盲盒', tag: 'danger' },
+  // 只用于兜底展示历史数据；新配置在下拉里选不到它（见 INVITE_REWARD_TYPES）
   none: { label: '无奖励', tag: 'info' }
 }
+
+/**
+ * 邀请档位 / 被邀请人奖励可选类型 = 后端 RewardGrantService::TYPES 全集
+ *
+ * 这里原先没传 types，用的是共享编辑器 RewardListEditor 的默认全量（含「无奖励」）。
+ * 但 none 在保存和发放两侧都不被后端认（报「未知奖励类型 none」），选了只会保存失败，
+ * 所以从邀请的下拉里摘掉；其他活动的下拉不在本轮改动范围内。
+ */
+const INVITE_REWARD_TYPES = [
+  'collectible', 'points', 'draw_chance',
+  'priority_qualification', 'eligibility_qualification', 'blindbox'
+]
 
 /** 被邀请人完成条件（任一满足即算有效邀请） */
 const INVITEE_CONDITIONS = {
@@ -153,6 +166,11 @@ function rewardText(r) {
   return t
 }
 
+/** 奖励类型中文名（报错文案要用，缺类型时也得说得出是哪一格） */
+function rewardTypeName(r) {
+  return REWARD_TYPES[r.type]?.label || r.type || '未选类型'
+}
+
 /** 校验单个奖励项完整性，返回错误文案或 null */
 function rewardError(r) {
   if (r.type === 'collectible' && !r.collectibleId) return '藏品奖励需选择藏品'
@@ -166,26 +184,34 @@ async function onSave() {
   const f = form.value
   if (!f.name.trim()) return ElMessage.warning('请输入活动名称')
 
-  // 档位校验
+  // 档位校验：报错一律带上「第几档 · 第几个奖励位 · 什么类型」，
+  // 否则两档八项里坏一项，运营只知道有问题，不知道改哪一格（后端同口径，见 normalizeInviteRewards）
   const seen = new Set()
-  for (const t of f.tiers) {
+  for (const [i, t] of f.tiers.entries()) {
     if (!Number.isInteger(t.inviteCount) || t.inviteCount < 1 || t.inviteCount > 50) {
-      return ElMessage.warning('邀请档位人数需在 1~50 之间')
+      return ElMessage.warning(`第 ${i + 1} 档：邀请人数需在 1~50 之间`)
     }
-    if (seen.has(t.inviteCount)) return ElMessage.warning(`邀请档位人数重复：${t.inviteCount} 人`)
+    if (seen.has(t.inviteCount)) return ElMessage.warning(`第 ${i + 1} 档：邀请人数重复：${t.inviteCount} 人`)
     seen.add(t.inviteCount)
-    if (!(t.rewards || []).length) return ElMessage.warning(`「邀请 ${t.inviteCount} 人」档位需至少配置一项奖励`)
-    for (const r of t.rewards) {
+    const where = `第 ${i + 1} 档（邀请 ${t.inviteCount} 人）`
+    const rewards = t.rewards || []
+    if (!rewards.length) return ElMessage.warning(`${where}：至少配置一项奖励`)
+    for (const [j, r] of rewards.entries()) {
       const err = rewardError(r)
-      if (err) return ElMessage.warning(`「邀请 ${t.inviteCount} 人」档位：${err}`)
+      if (err) {
+        const at = rewards.length === 1
+          ? `${where}（${rewardTypeName(r)}）`
+          : `${where} · 第 ${j + 1} 个奖励位（${rewardTypeName(r)}）`
+        return ElMessage.warning(`${at}：${err}`)
+      }
     }
   }
 
-  // 被邀请人奖励校验
+  // 被邀请人奖励校验（只有一项，不必硬说「第 1 个奖励位」）
   const inviteeReward = f.inviteeRewards[0] || null
   if (inviteeReward) {
     const err = rewardError(inviteeReward)
-    if (err) return ElMessage.warning(`被邀请人奖励：${err}`)
+    if (err) return ElMessage.warning(`被邀请人奖励（${rewardTypeName(inviteeReward)}）：${err}`)
   }
 
   // 启用校验：新版档位或被邀请人奖励至少其一；旧版空投藏品兜底
@@ -359,6 +385,7 @@ function conditionsText(conds) {
               </div>
               <RewardListEditor
                 v-model="t.rewards"
+                :types="INVITE_REWARD_TYPES"
                 :collectibles="collectibles"
                 :priority-sales="prioritySales"
               />
@@ -380,6 +407,7 @@ function conditionsText(conds) {
         <el-form-item label="被邀请人奖励">
           <RewardListEditor
             v-model="form.inviteeRewards"
+            :types="INVITE_REWARD_TYPES"
             :collectibles="collectibles"
             :priority-sales="prioritySales"
             :max="1"
