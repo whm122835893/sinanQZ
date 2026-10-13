@@ -68,7 +68,7 @@ onMounted(() => {
     <!-- 活动列表 -->
     <template v-if="tab === 'list'">
       <div v-if="loading" class="raffle__loading">加载中…</div>
-      <AppEmpty v-else-if="!activities.length" text="暂无抽签活动" />
+      <AppEmpty v-else-if="!activities.length" description="暂无抽签活动" />
       <div v-else class="raffle__list">
         <div v-for="a in activities" :key="a.activityId" class="raffle-card" @click="goDetail(a.activityId)">
           <div class="raffle-card__img-wrap">
@@ -91,7 +91,7 @@ onMounted(() => {
 
     <!-- 我的抽签 -->
     <template v-else>
-      <AppEmpty v-if="!mine.length" text="暂无抽签记录" />
+      <AppEmpty v-if="!mine.length" description="暂无抽签记录" />
       <div v-else class="raffle__list">
         <div v-for="m in mine" :key="m.id" class="raffle-card" @click="goDetail(m.activityId)">
           <div class="raffle-card__img-wrap">
