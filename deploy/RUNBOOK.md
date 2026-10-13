@@ -1998,6 +1998,106 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
 3. 第一次真发盲盒奖励时人工盯一眼到账记录（发放侧代码只读过、没在线上跑过）。
 空状态那条不在此列 —— 上面已经有浏览器实测的线上证据了。
 
+### 7.32 公告与新闻正文底部自动附「风险提示」（2026-10-14 本地做完并测过，**尚未上线**）
+
+**起因**：你发来一张别家平台（iCard 爱卡集市）的公告截图，问「可以在每一条发布的公告底部加上这样的文本吗」。
+截图里那三段是：① 数字藏品仅具收藏欣赏价值、官方不指导价格、严防炒作；② 对第三方工具锁单抢单、承诺收益回购、
+非法集资拉人头等零容忍，封号冻结；③ 依反洗钱反诈法规禁止洗钱赌博非法集资传销，查实封禁冻结并移交司法机关。
+
+**你定的四条口径**（AskUserQuestion 三个问题都选了推荐项）：
+
+| 口径 | 内容 |
+| --- | --- |
+| 文案 | **按司南重写一版**，不照抄别家原文与品牌名（照抄有版权风险，且「以平台名义承诺回购」这类表述得跟你的实际业务对得上） |
+| 落点 | **接口拼接 + 文案放后台可改**：文案存在 `nft_system_configs`，后台「系统配置 → 全局参数 → 内容与公告」改，实时生效不用发版 |
+| 范围 | **公告（notice）与新闻（news）都加** —— 都是对外发的内容，口径统一最省心 |
+| 数据库 | **公告表一个字节没动**：不加列、不回填、不改正文，存量公告当场就有提示（这是选「接口拼接」而不是「保存时写进正文」的直接好处） |
+
+**改了哪些文件**（本地，未上线）：
+
+| 文件 | 作用 |
+| --- | --- |
+| `app/service/AnnouncementDisclaimer.php`（**新增**） | 唯一的生成出口。`format()` 是纯函数（离线可测）：开关关掉或文案为空 → 返回空串；否则「第一行当标题、空行分段、段内回车转 `<br />`」，**逐行 `htmlspecialchars`**。`fromConfig()` 只负责读那两个参数 |
+| `app/controller/Content.php` | `announcementDetail()` 响应里多一个 `disclaimer` 字段。**全仓库只有这一处拼**（列表接口连正文都不下发） |
+| `app/admin/controller/SystemController.php` | `announcement_disclaimer_enabled` 进 0/1 布尔白名单，防止后台存进任意字符串 |
+| `migrations/20261014_announcement_disclaimer.sql`（**新增，第 24 份 DDL**） | 补两行种子。**故意只有 `INSERT IGNORE`、没有 `UPDATE`**（与 20261010 那份归位默认值的写法不同）—— 这两个键运营会在后台改，重复执行不该把他们改过的文案冲回默认值 |
+| `database/full_init.sql` | 同一条 `nft_system_configs` 种子 INSERT 追加 id 42 / 43，**该行元组数实测 38 → 40**（id 1~43、无重复）。让「全新部署」与「老库跟迁移」两条路装出同一个默认值 |
+| `sinan-admin/src/views/system/Config.vue` | 新增「内容与公告」分组 + 两个键的中文 META + 一种 `multiline` 多行文本框渲染（原来最长的只有 JSON 那档 2 行高） |
+| `sinan-admin/src/views/content/Announcements.vue` | 富文本编辑器下面加一句指路话：提示会自动加、去哪改、不用发版 |
+| `sinan-art-source/src/stores/notice.js` + `src/views/NoticeDetail.vue` | C 端把 `disclaimer` 透出来，渲染在正文卡片**最底部**（两个正文分支之外）。样式复用 `NoticeDetail.vue` 里早就写好却从没被真实数据喂过的 `.notice-detail__warning`（灰底 + 小字 + `.warn-title` 加粗），**没新画一套 CSS** |
+
+**为什么单独下发一个字段，而不是把 HTML 直接拼进 `content`**：
+`stores/notice.js` 用 `/<[a-z][\s\S]*>/i` 判断正文是不是富文本。拼进去会让**纯文本公告**也被判成富文本，
+于是原来「按空行切段」的逻辑失效、段落换行得在接口里重做一遍 —— 那是给存量公告制造回归。
+分两个字段还有个附带好处：v-html 注入的元素拿不到 scoped 样式的 `data-v` 属性，走模板里的
+`<div class="notice-detail__warning">` 才能直接吃到现成样式。
+
+**测了什么**（三端全量，离线）：
+
+- 后端 `--testsuite unit` **217 → 234 例全绿**（新增 `tests/unit/AnnouncementDisclaimerTest.php` 17 例）：
+  开关/空值/分段/`<br />`/CRLF 与 CR 都吃/连续空行只算一次分段/**转义**（`<script>` 变字面量、引号变实体）/
+  超 5000 字丢整段（含一条「没超限要正常出来」的反面对照，防止写成永远返回空）/
+  防漂移三条（只有详情接口拼、列表接口不下发正文、开关行缺失按「开」处理）/
+  两份 SQL 种子的默认文案**逐字节相同**、默认文案齐四段口径且不含别家品牌名与「最终解释权」/
+  跨仓两条（后台 META 有入口、C 端会渲染）。
+- 后台 **153 → 158 例全绿**（`tests/announcement-disclaimer-config.spec.js` 5 例，源码扫描 —— 本仓库不装 @vue/test-utils）。
+- H5 **128 → 133 例全绿**（`tests/announcement-disclaimer.spec.js` 5 例，真挂载 `NoticeDetail.vue`：
+  富文本模式、纯文本模式（落在「司南文创」落款之后）、`undefined`/`''`/`null` 三种空值都不留空灰块、store 只透传不自己拼）。
+- 两个前端 `npm run build` 都过；产物里查得到接线：H5 `dist/assets/NoticeDetail-BjFwr_oR.js` 有 `notice-detail__warning`，
+  后台 `dist/assets/Config-C6XRjLjt.js` 有 `announcement_disclaimer_enabled`。
+- **本地真库实测**（`127.0.0.1:3308` 的开发沙箱库，与生产无关；跑完把两条测试公告删回 0 条）：
+  第 24 份 DDL 连跑两次仍是 2 行（幂等 ✓）；库里 `\n` 存成了真换行（398 字符含 6 个 LF，`\\n` 字面量 0 处 ——
+  mysql 命令行回显时会把真换行显示成 `\n`，别被骗）；起后端打 `GET /api/announcements/:id`，
+  **notice 与 news 两条都返回 659 字符的 `disclaimer`**；把开关改成 `0` **不重启进程**立刻变空串、改回 `1` 立刻恢复（实时生效 ✓）；
+  顺带确认 `/admin/system/configs` 未登录是 4001、假令牌 4002，没有裸奔。
+- 浏览器结构实测（本地 H5 dev + 代理到本地后端，`#/notice/987655`）：`.notice-detail__warning` 存在、
+  是正文卡片的**最后一个子元素**、内含 4 个 `<p>`、`.warn-title` 计算样式 `font-weight: 700`、
+  选择器 `.notice-detail__warning[data-v-a96ab1cf]` 命中现成规则。
+  **像素几何没量到**：内嵌浏览器视口 0×0，而本项目 px 会被编译成 vw（`12px → 3.2vw`），所以 `getComputedStyle` 回 0px。
+  这不是样式坏了，但**真机/线上看一眼版式**仍归你（见下面「没验的」）。
+
+**反证怎么做**（拆掉修复看红，并按项目规矩打出 diff 证明真的拆了）：
+一次性脚本逐个拆 5 个承重点，每个都要求原文命中 1 次，命中 0 次就报错退出 ——
+**第一版脚本就是这么自曝的**：Content.php 与 NoticeDetail.vue 两条按 LF 写的匹配串命中 0 次（这仓库 PHP/Vue 文件是 CRLF），
+若不看返回值就会把「没拆动」当成「拆动了但测试没红」记进台账。改成行尾无关的匹配串后重跑：
+
+| 拆掉的东西 | 结果 |
+| --- | --- |
+| `Content.php` 里 `AnnouncementDisclaimer::fromConfig()` → `''` | 后端红 |
+| `AnnouncementDisclaimer.php` 里 `htmlspecialchars(...)` → 原样输出 | 后端红（转义那条用例） |
+| `NoticeDetail.vue` 提示块 → `v-if="false"` | H5 红 |
+| `stores/notice.js` 里 `disclaimer: a.disclaimer \|\| ''` | 后端跨仓用例 + H5 都红 |
+| `Config.vue` META 里 `multiline: true` | 后台红 |
+
+拆后实测：后端 17 例 **4 红**、H5 5 例 **4 红 1 绿**（那 1 绿是「空值不该渲染」的负向用例，本来就该绿）、后台 5 例 **1 红**。
+还原后 5 个文件与备份 `cmp` **全部 identical**，`grep` 残留的拆动字样 **0 处**。
+
+**故意没改的**：
+
+1. 公告列表页与首页公告轮播**不加** —— 它们只下发标题/摘要，没有正文可加（`test_列表接口不下发公告正文` 把这条钉住了）。
+2. 没做「每篇公告单独关掉」的勾选框 —— 你选的是全局口径，要做就得加字段 + 后台表单，另说。
+3. 文案里**故意没写**「最终解释权归平台所有」这类话 —— 属违法格式条款；测试直接断言它不许出现。
+4. 没在代码里再写一份默认文案当兜底 —— 那样同一句话就有两份真相，运营改了库里的那份就永远对不上。
+   代价是**这份 DDL 必须随版本执行**，否则提示静默不出现（用例注释与本节都写了这条）。
+5. 公告 `tag_color` 后台输入口仍没做（第 8 节 13 条），没顺手带。
+6. `database/init.sql`（拆分版本机重建用）的 configs 种子**没加**这两个键 —— 那份本来就停在 8 个键的历史现状
+   （`realname_audit_mode`、`lucky_enabled` 等都不在），不是本轮引入的不一致。
+
+**这批还没验的（要你真人）**：后台「系统配置 → 全局参数 → 内容与公告」里改一次文案并保存、拨一次开关
+（后台登录有图形验证码，我不绕，同 7.24 / 7.29 / 7.30 / 7.31）；C 端真机看一眼这段提示的版式与折行。
+
+**生产现值**：**本轮一行代码一个文件都没上生产，也没实测生产现值**（要我先只读看一眼再说，别把这句当实测结论）。
+按「本轮没碰生产」可推知的状态是：`announcement_disclaimer%` 两行不存在、`app/service/AnnouncementDisclaimer.php` 这个文件不存在、
+`app/controller/Content.php` 与 `app/admin/controller/SystemController.php` 仍是改造前的版本
+（这两个文件都不在 §7.31 的发版清单里）。要上线看下一段清单，**等你点头**。
+
+**下一轮要上线的话，顺序是**：① 先只读查 `SELECT config_key,config_value FROM nft_system_configs WHERE config_key LIKE 'announcement%';`，
+缺哪行跑第 24 份 DDL 补哪行（幂等，不会覆盖运营已改的值）；② 后端 3 文件（`app/service/AnnouncementDisclaimer.php` 新增、
+`app/controller/Content.php`、`app/admin/controller/SystemController.php`）+ 两个前端整包；③ 回滚点照 §7.31 的规格做；
+④ 上线后走公网 IP 复验 `GET /api/announcements/:id` 有 `disclaimer` 字段、拨开关看实时生效。
+**注意 DDL 与代码的先后**：这次不像 §7.16 那回有强依赖 —— 代码先发只是提示暂时不出现（读不到行 → 空串），不会报错；
+DDL 先发也没副作用。两条都安全，但仍建议 **DDL 先行**，少一个「上线了怎么没看到」的问号。
+
 
 
 1. **带宽 1Mbps**：实测后台主 JS 1.33MB 单下就要 8.6 秒，加 CSS 约 11 秒首屏。建议改「按流量计费 + 峰值 100Mbps」，小站月成本通常几元。
@@ -2081,3 +2181,9 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
     **2026-10-14 00:4x 已随第 7 次发版上生产**，线上只读探针实测文案输出 `盲盒「青色」×2`、无盒 id 退回 `盲盒×1`、盒被删退回 `盲盒「#999999」×1`。
     生产现值：3 个盒都有名字可用，存量奖励里**没有一条盲盒**，不需要回填数据。
     **待你确认的只剩真人一次**：后台选一次盒、保存，看到摘要变成「盲盒「名字」×N」就是最终确认（登录有验证码，不脚本绕）。
+18. **公告与新闻正文底部的「风险提示」**（2026-10-14 本地做完并测过，**尚未上线**，过程与口径见 **7.32**）：
+    文案按司南重写了一段三段式声明（收藏欣赏价值 / 零容忍行为清单 / 反洗钱反诈法律责任），存在 `nft_system_configs` 两个新键里，
+    后台「系统配置 → 全局参数 → 内容与公告」可改可关，公告表一个字节没动。
+    **欠两件事**：① 上线要你点头（第 24 份 DDL + 后端 3 文件 + 两个前端整包，DDL 与代码谁先都安全，建议 DDL 先行）；
+    ② 真人两次 —— 后台改一次文案/拨一次开关看实时生效（登录有验证码我不绕）、C 端真机看一眼这段的版式与折行
+    （本地浏览器只验到 DOM 结构与选择器命中：内嵌浏览器视口 0×0，而本项目 px 编译成 vw，量不到像素）。
