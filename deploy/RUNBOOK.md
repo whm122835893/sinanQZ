@@ -1998,7 +1998,7 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
 3. 第一次真发盲盒奖励时人工盯一眼到账记录（发放侧代码只读过、没在线上跑过）。
 空状态那条不在此列 —— 上面已经有浏览器实测的线上证据了。
 
-### 7.32 公告与新闻正文底部自动附「风险提示」（2026-10-14 本地做完并测过，**尚未上线**）
+### 7.32 公告与新闻正文底部自动附「风险提示」（2026-10-14 本地做完并测过 → **同日 02:1x 已上线，见 7.33**）
 
 **起因**：你发来一张别家平台（iCard 爱卡集市）的公告截图，问「可以在每一条发布的公告底部加上这样的文本吗」。
 截图里那三段是：① 数字藏品仅具收藏欣赏价值、官方不指导价格、严防炒作；② 对第三方工具锁单抢单、承诺收益回购、
@@ -2013,7 +2013,7 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
 | 范围 | **公告（notice）与新闻（news）都加** —— 都是对外发的内容，口径统一最省心 |
 | 数据库 | **公告表一个字节没动**：不加列、不回填、不改正文，存量公告当场就有提示（这是选「接口拼接」而不是「保存时写进正文」的直接好处） |
 
-**改了哪些文件**（本地，未上线）：
+**改了哪些文件**：
 
 | 文件 | 作用 |
 | --- | --- |
@@ -2086,17 +2086,64 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
 **这批还没验的（要你真人）**：后台「系统配置 → 全局参数 → 内容与公告」里改一次文案并保存、拨一次开关
 （后台登录有图形验证码，我不绕，同 7.24 / 7.29 / 7.30 / 7.31）；C 端真机看一眼这段提示的版式与折行。
 
-**生产现值**：**本轮一行代码一个文件都没上生产，也没实测生产现值**（要我先只读看一眼再说，别把这句当实测结论）。
-按「本轮没碰生产」可推知的状态是：`announcement_disclaimer%` 两行不存在、`app/service/AnnouncementDisclaimer.php` 这个文件不存在、
-`app/controller/Content.php` 与 `app/admin/controller/SystemController.php` 仍是改造前的版本
-（这两个文件都不在 §7.31 的发版清单里）。要上线看下一段清单，**等你点头**。
+**生产现值**：本地做完那一版**一行都还没上生产**，当时也没实测生产现值（那一句写在 7.32 定稿时是实话，别回头把它当成线上结论）。
+后来你说「现在就上」，第 8 次发版已照下面这个顺序执行完并复验，**线上实测结果都在 7.33**。
 
-**下一轮要上线的话，顺序是**：① 先只读查 `SELECT config_key,config_value FROM nft_system_configs WHERE config_key LIKE 'announcement%';`，
+**上线顺序（7.33 已照此执行）**：① 先只读查 `SELECT config_key,config_value FROM nft_system_configs WHERE config_key LIKE 'announcement%';`，
 缺哪行跑第 24 份 DDL 补哪行（幂等，不会覆盖运营已改的值）；② 后端 3 文件（`app/service/AnnouncementDisclaimer.php` 新增、
 `app/controller/Content.php`、`app/admin/controller/SystemController.php`）+ 两个前端整包；③ 回滚点照 §7.31 的规格做；
 ④ 上线后走公网 IP 复验 `GET /api/announcements/:id` 有 `disclaimer` 字段、拨开关看实时生效。
 **注意 DDL 与代码的先后**：这次不像 §7.16 那回有强依赖 —— 代码先发只是提示暂时不出现（读不到行 → 空串），不会报错；
 DDL 先发也没副作用。两条都安全，但仍建议 **DDL 先行**，少一个「上线了怎么没看到」的问号。
+
+### 7.33 第 8 次发版上线记录（2026-10-14 02:10~02:2x，你说「现在就上」）
+
+**上线的是 7.32 那一版**：公告与新闻详情页正文底部自动附平台《风险提示》，文案与开关在后台「系统配置 → 全局参数 → 内容与公告」。
+代码基线 = commit `b5906ea`（功能 + 27 例测试）+ `83dab31`（7.32 文档）。数据库这次**动了**：只补 2 行 `nft_system_configs` 种子。
+
+| 项 | 内容 |
+| --- | --- |
+| 预检发现的一个坑 | 生产后端目录是 **`/www/wwwroot/sinan-backend`**，不叫仓库名 `sinan-nft-backend`。第一遍预检按仓库名抄路径，`ls` 直接「No such file or directory」—— 与 §7.31 那条「抄错目录」是同一类错，这次靠报错自己暴露 |
+| 线上没漂移 | 发前 `Content.php` md5 `c0c0f82badd1ee9605522b251920603d`（10,194 B）、`SystemController.php` md5 `f25f6ca3affe8c9d697bb935f3781a06`（28,169 B），与 git 基线 `1738b5c` 的内容**按 CRLF 归一后逐字节相等**；§7.31 那两份（`MarketingController.php` `579fd095…`、`ActivityRewardService.php` `5ce6e8b8…`）线上仍是记录值 —— 生产确实停在第 7 次发版的状态 |
+| 发版前快照 | `/root/sinan-release8-20261014_021051`（指针 `/root/sinan-release8-latest`，共 41M）：`backend/` 两个旧文件（`cmp` 与线上全等）、`frontend/sinan-admin` 与 `frontend/sinan-h5` **整目录**拷贝（文件数 646 / 345 两边对得上）、`snapshot/` 里库 dump `sinan_nft_before_release8.sql.gz` 43,646 B → 解压 270,377 B、**80 个 `CREATE TABLE`**（按 §7.31 教训当场数过，不是只看压缩包完整）、`system_configs_before.tsv` 40 行（39 个键 + 表头）、`precheck.txt`、迁移文件本身（两端 md5 `70efcd47c84f5064019f19907caa95a3` 一致）、`api_announcement1_before.json`（277 B，`disclaimer` 出现 **0** 次） |
+| ① DDL | 第 24 份。跑第 1 次 `exit=0`：`nft_system_configs` **39 → 41 行**，`announcement_disclaimer` = **398 字符 / 6 个真换行 / 字面 `\n` 残留 0 处 / md5 `cf8932f55fe84ff53d3e80f8e0999187`** —— 这个 md5 是我在本地先把 SQL 字面量按 MySQL 的转义规则解出来算的，线上落库与它**逐字节相同**；`announcement_disclaimer_enabled` = `1`。跑第 2 次无变化（`uk_config_key` 唯一索引在，`INSERT IGNORE` 幂等）。**再实测「不覆盖运营改动」这条设计**：把文案手工改成 7 个字的「运营改过的文案」后跑第 3 次，`SELECT` 出来**还是那 7 个字**（正因为这份 DDL 故意只有 INSERT IGNORE、没有 UPDATE），随后用同一段字面量 UPDATE 复位成 398 字符默认文案、md5 回到 `cf8932f5…` |
+| ② 后端 3 文件 | 先 `scp` 到 `/root/ds-upload/` 暂存、md5 与本地对齐后才 `cp` 就位（吸取 §7.31「`cp` 静默失败」的教训，改成**先验再落位**）：`AnnouncementDisclaimer.php` `da8835713f7eb21ef772dd85b7fe473f`（4,785 B / 104 行，新增）、`Content.php` `9a79fa49a91ee70f69d5035929b9ff79`（10,643 B）、`SystemController.php` `5272df2c97c115f7b0edc4951ee9738d`（28,355 B）；三份 `www:www` + `644`，`/www/server/php/84/bin/php -l`（PHP 8.4.25）**三份都 No syntax errors**；`php think clear --cache` = Clear Successed，随后 `chown -R www:www runtime`。暂存目录已删。**没往生产 `migrations/` 放文件** —— 那目录线上停在 20260922，第 8 节里历次发版都没镜像它，这份迁移的副本留在回滚点 `snapshot/` 里 |
+| ③ 两个前端整包 | 照 RUNBOOK 第 4 节那两条 `tar czf - -C <仓> dist \| ssh … --strip-components=1 && chown -R www:www …` **叠加解包**（不清目录）。入口换了：H5 `index-sR4yu9kT.js` → **`index-TARjuzYk.js`**（468,511 B）、后台 `index-B-XlNegR.js` → **`index-Dm9z2FwK.js`**（index.html 592 B mtime 已更新）；文件数 H5 345 → **388**、后台 646 → **715**，旧入口文件原地还在（老用户不 404） |
+| 双端 + 公网三段 md5 | 6 个关键产物（两个 index.html、两个入口包、`NoticeDetail-BjFwr_oR.js`、`Config-C6XRjLjt.js`）**本地 = 线上磁盘 = 走公网 IP 回读**三处 md5 全等；公网直取三个 URL 都 HTTP 200，尺寸与本地一致 |
+
+**线上行为复验（全走公网 IP，不用 127.0.0.1，见 §7.21 那个假 404 的坑）**：
+
+- 详情接口 `GET /api/announcements/1`：`data` 的键从 `id,title,content,coverImage,type,subtype,tagColor,createdAt`
+  变成末尾多一个 **`disclaimer`**，值 **439 字符**的 HTML = **1 个 `<p class="warn-title">` + 3 个 `<p>`**，四段齐（标题 / 收藏欣赏价值 / 零容忍清单 / 反洗钱反诈法律责任）。
+- 列表接口 `GET /api/announcements?page=1&pageSize=5`：整份响应里 `disclaimer` **0 次**，首条仍是 `…summary,isTop,createdAt`（不下发正文）—— 收口只在一处这条在线上成立。
+- **开关实时生效**：库里把 `announcement_disclaimer_enabled` 拨 `0`（不重启 PHP、不清缓存）→ 详情接口 `disclaimer` 立刻变 `""`；拨回 `1` → 立刻 439 字符。
+- **线上代码里 `announcementDetail()` 没有按 `type` 分支**（把生产文件第 51~76 行读出来核对过，`'disclaimer' => AnnouncementDisclaimer::fromConfig()` 就第 74 行一处）——
+  所以「新闻也带」与「公告也带」走的是同一条语句。要说清证据边界：**生产 `nft_announcements` 只有 1 条**（id=1，`notice`，`published`，正文是富文本 `<div style="text-align:center">…`），`news` **0 条**；
+  我没有为了造证据去线上写内容数据，news 那一类是**本地沙箱实测过两条（notice/news 都返回 disclaimer）**+ 线上这段无分支代码。
+- **浏览器实测线上页面** `http://<IP>/#/notice/1`：`.notice-detail__warning` 存在，是 `.notice-detail__content` 的**最后一个子元素**（子元素顺序 `notice-detail__block--text` → `notice-detail__warning`），
+  内含 4 个 `<p>`、首个是 `.warn-title` 文本「司南风险提示」、计算样式 `font-weight: 700`、容器底色 `rgb(247,248,250)`（现成的 scoped 样式吃到了），
+  非空白字符 **392** 个 = 库里 398 减去 6 个换行，结尾是「依法追究法律责任。」；控制台 **0** 条报错。
+  再把开关拨 `0` 后整页重新加载（`?dscheck=off#/notice/1` 强制重开文档）：**块不存在、全文搜不到「风险提示」**，即「关掉 = 回到本改造之前」在线上成立；拨回 `1` 再加载又出现。
+  **像素几何仍没量到**：内嵌浏览器视口 0×0 + 本项目 px 编译成 vw，`font-size`/`padding` 计算值回显 `0px`（同 7.32 本地那次），真机版式仍归你。
+- 后台侧：`/api/admin/system/configs` 未登录仍是 `{"code":4001,"message":"未登录或令牌缺失"}`，没有因为新键裸奔；
+  `SystemController.php:76` 的 0/1 白名单在线上确实是 `['cleanup_sms_required', 'market_recommend_tab_enabled', 'announcement_disclaimer_enabled']`。
+- 日志：后端 `runtime/log/202610/14.log` 里 `fatal|Fatal|Uncaught|CRITICAL|Exception` **0 条**、`AnnouncementDisclaimer` 相关 **0 条**；
+  `/www/wwwlogs/` 下 `nginx_error.log`、`sinan-h5.error.log`、`sinan-admin.error.log`、`sinan-backend.error.log` 今日（`2026/10/14`）**各 0 条**。
+
+**这次我自己踩的两个坑（都不是部署问题，当场纠正）**：
+1. 把远程 mysql 命令写成**双引号**包的一整串，本地 bash 先展开了 `$(…)` 与 `\$`，结果变成 `cat: /root/.mysql_root_pass: No such file or directory`
+   加 `bash: -h127.0.0.1: command not found`。改成「迁移文件 `scp` 上去 + 远程命令用单引号包」一次就过。
+2. `curl -o f.js -w "…$(grep -c … f.js)"` —— 命令替换在 curl 之前就求值，文件还不存在，于是打印 `No such file or directory` 与 0。
+   下载其实**是成功的**（尺寸都对），重跑单条 grep 即对。**教训：校验分两步落，别把「取值」嵌进「产生这个值的那条命令」的参数里。**
+
+**回滚怎么做**：后端 = `cp -p` 把 `backend/` 那两个旧文件放回原位（md5 `c0c0f82b…` / `f25f6ca3…`）+ `php think clear --cache`，
+再把 `app/service/AnnouncementDisclaimer.php` 删掉即回到 7.31 的状态；库 = 删那 2 行（或留着，代码回滚后没人读它）；
+前端 = `tar czf - -C /root/sinan-release8-20261014_021051/frontend/sinan-h5 dist | ssh …` 反着解一次（整目录拷贝在，不靠旧分块）。
+
+**这批线上还没验的（要你真人一次，登录有图形验证码我不绕，同 7.24 / 7.29 / 7.30 / 7.31）**：
+后台「系统配置 → 全局参数 → 内容与公告」里**改一次文案并保存**（看多行文本框好不好用、保存后 C 端是否即时变）、
+**拨一次开关**（我在库里拨过两次，接口层即时生效已证；后台那个开关控件本身没被真人点过）。
+另外 C 端真机看一眼这段的版式与折行。
 
 
 
@@ -2181,9 +2228,9 @@ DDL 先发也没副作用。两条都安全，但仍建议 **DDL 先行**，少�
     **2026-10-14 00:4x 已随第 7 次发版上生产**，线上只读探针实测文案输出 `盲盒「青色」×2`、无盒 id 退回 `盲盒×1`、盒被删退回 `盲盒「#999999」×1`。
     生产现值：3 个盒都有名字可用，存量奖励里**没有一条盲盒**，不需要回填数据。
     **待你确认的只剩真人一次**：后台选一次盒、保存，看到摘要变成「盲盒「名字」×N」就是最终确认（登录有验证码，不脚本绕）。
-18. **公告与新闻正文底部的「风险提示」**（2026-10-14 本地做完并测过，**尚未上线**，过程与口径见 **7.32**）：
+18. **~~公告与新闻正文底部的「风险提示」~~**（2026-10-14 本地做完并测过，**同日 02:1x 已上线，见 7.32 / 7.33**）：
     文案按司南重写了一段三段式声明（收藏欣赏价值 / 零容忍行为清单 / 反洗钱反诈法律责任），存在 `nft_system_configs` 两个新键里，
     后台「系统配置 → 全局参数 → 内容与公告」可改可关，公告表一个字节没动。
-    **欠两件事**：① 上线要你点头（第 24 份 DDL + 后端 3 文件 + 两个前端整包，DDL 与代码谁先都安全，建议 DDL 先行）；
-    ② 真人两次 —— 后台改一次文案/拨一次开关看实时生效（登录有验证码我不绕）、C 端真机看一眼这段的版式与折行
-    （本地浏览器只验到 DOM 结构与选择器命中：内嵌浏览器视口 0×0，而本项目 px 编译成 vw，量不到像素）。
+    ~~上线要你点头~~ 已执行：第 24 份 DDL（39 → 41 行）+ 后端 3 文件 + 两个前端整包，线上复验见 7.33。
+    **还剩真人两次** —— 后台改一次文案/拨一次开关看实时生效（登录有验证码我不绕；接口层实时生效我用库里的值证过两次）、
+    C 端真机看一眼这段的版式与折行（内嵌浏览器视口 0×0 + 本项目 px 编译成 vw，只验到 DOM 结构、选择器命中与 `font-weight`，量不到像素）。
