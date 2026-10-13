@@ -11,6 +11,7 @@ import {
   saveFeatureSwitch,
   getCollectibleList,
   getPrioritySales,
+  getBlindBoxList,
   uploadImage
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
@@ -48,6 +49,7 @@ async function onToggleModule(val) {
 // ---- 下拉数据源 ----
 const collectibles = ref([])
 const prioritySales = ref([])
+const blindboxes = ref([])
 
 // ---- 活动（新建/编辑） ----
 const actShow = ref(false)
@@ -87,12 +89,14 @@ const PRIZE_TYPES = {
 onMounted(async () => {
   load()
   loadSwitches()
-  const [col, pri] = await Promise.all([
+  const [col, pri, bb] = await Promise.all([
     getCollectibleList({ page: 1, pageSize: 200 }),
-    getPrioritySales()
+    getPrioritySales(),
+    getBlindBoxList({ page: 1, pageSize: 200 })
   ])
   if (col.code === 0) collectibles.value = col.data.list || []
   if (pri.code === 0) prioritySales.value = pri.data || []
+  if (bb.code === 0) blindboxes.value = bb.data.list || []
 })
 
 async function load() {
@@ -267,6 +271,7 @@ function onConfirmPrize() {
   if (type === 'points' && !(rewardConfig.amount > 0)) return ElMessage.warning('司南币奖项金额需大于 0')
   if (type === 'priority_qualification' && !rewardConfig.prioritySaleId) return ElMessage.warning('优先购资格需选择优先购活动')
   if (type === 'eligibility_qualification' && !rewardConfig.collectibleId) return ElMessage.warning('资格购白名单需选择目标藏品')
+  if (type === 'blindbox' && !rewardConfig.blindboxId) return ElMessage.warning('盲盒奖项需选择具体盲盒（发哪一个）')
   const entry = {
     tier: f.tier.trim(),
     name: f.name.trim(),
@@ -596,6 +601,7 @@ async function onUploadPrizeImage({ file }) {
             v-model="prizeForm.rewards"
             :collectibles="collectibles"
             :priority-sales="prioritySales"
+            :blindboxes="blindboxes"
             :max="1"
           />
           <div class="t-tertiary" style="font-size: 12px; margin-top: 2px; width: 100%">

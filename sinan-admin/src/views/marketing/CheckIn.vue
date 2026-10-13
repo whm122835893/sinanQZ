@@ -9,7 +9,8 @@ import {
   getFeatureSwitches,
   saveFeatureSwitch,
   getCollectibleList,
-  getPrioritySales
+  getPrioritySales,
+  getBlindBoxList
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import RewardListEditor from '@/components/RewardListEditor.vue'
@@ -24,6 +25,7 @@ const checkinEnabled = ref(true) // 签到模块开关（checkin_enabled）
 // ---- 下拉数据源 ----
 const collectibles = ref([])
 const prioritySales = ref([])
+const blindboxes = ref([])
 
 const REWARD_TYPES = {
   points: { label: '司南币', tag: 'warning' },
@@ -39,12 +41,14 @@ onMounted(async () => {
   load()
   loadSwitches()
   // 下拉数据源（失败不阻断）
-  const [col, pri] = await Promise.all([
+  const [col, pri, bb] = await Promise.all([
     getCollectibleList({ page: 1, pageSize: 200 }),
-    getPrioritySales()
+    getPrioritySales(),
+    getBlindBoxList({ page: 1, pageSize: 200 })
   ])
   if (col.code === 0) collectibles.value = col.data.list || []
   if (pri.code === 0) prioritySales.value = pri.data || []
+  if (bb.code === 0) blindboxes.value = bb.data.list || []
 })
 
 async function load() {
@@ -76,6 +80,7 @@ async function onToggleModule(val) {
 
 const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏品 #${id}`
 const pname = (id) => prioritySales.value.find((p) => p.id === id)?.name || `优先购 #${id}`
+const bname = (id) => blindboxes.value.find((b) => b.id === id)?.name || (id ? `盲盒 #${id}` : '未选盲盒')
 
 /** 奖励项摘要 */
 function rewardText(r) {
@@ -84,7 +89,8 @@ function rewardText(r) {
   if (r.type === 'points') return `${r.amount ?? 0} 司南币`
   if (r.type === 'priority_qualification') return `${pname(r.prioritySaleId)} 可购${r.quantity ?? 1}份`
   if (r.type === 'eligibility_qualification') return `${cname(r.collectibleId)} 资格 ×${r.quantity ?? 1}`
-  if (r.type === 'draw_chance' || r.type === 'blindbox') return `${t} ×${r.quantity ?? 1}`
+  if (r.type === 'blindbox') return `${t}「${bname(r.blindboxId)}」×${r.quantity ?? 1}`
+  if (r.type === 'draw_chance') return `${t} ×${r.quantity ?? 1}`
   return t
 }
 
@@ -172,6 +178,7 @@ async function onSave() {
       if (item.type === 'points' && !(item.amount > 0)) return ElMessage.warning('司南币奖励金额需大于 0')
       if (item.type === 'priority_qualification' && !item.prioritySaleId) return ElMessage.warning('优先购资格需选择优先购活动')
       if (item.type === 'eligibility_qualification' && !item.collectibleId) return ElMessage.warning('资格购白名单需选择目标藏品')
+      if (item.type === 'blindbox' && !item.blindboxId) return ElMessage.warning('盲盒奖励需选择具体盲盒（发哪一个）')
     }
   }
   if (f.eligibility.type === 'hold' && !(f.eligibility.config.collectibleIds || []).filter(Boolean).length) {
@@ -351,6 +358,7 @@ function removeRuleSlot(idx) {
                   v-model="r.rewards"
                   :collectibles="collectibles"
                   :priority-sales="prioritySales"
+                  :blindboxes="blindboxes"
                 />
               </div>
               <el-button :icon="Plus" size="small" @click="addRuleSlot">添加档位</el-button>

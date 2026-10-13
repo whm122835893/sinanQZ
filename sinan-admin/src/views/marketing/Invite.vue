@@ -7,7 +7,8 @@ import {
   saveInviteActivity,
   toggleInviteActivity,
   getCollectibleList,
-  getPrioritySales
+  getPrioritySales,
+  getBlindBoxList
 } from '@/api'
 import StatusTag from '@/components/StatusTag.vue'
 import RewardListEditor from '@/components/RewardListEditor.vue'
@@ -20,6 +21,7 @@ const list = ref([])
 // ---- 下拉数据源 ----
 const collectibles = ref([])
 const prioritySales = ref([])
+const blindboxes = ref([])
 
 // ---- 新建/编辑 ----
 const editShow = ref(false)
@@ -80,12 +82,14 @@ function emptyForm() {
 
 onMounted(async () => {
   load()
-  const [col, pri] = await Promise.all([
+  const [col, pri, bb] = await Promise.all([
     getCollectibleList({ page: 1, pageSize: 200 }),
-    getPrioritySales()
+    getPrioritySales(),
+    getBlindBoxList({ page: 1, pageSize: 200 })
   ])
   if (col.code === 0) collectibles.value = col.data.list || []
   if (pri.code === 0) prioritySales.value = pri.data || []
+  if (bb.code === 0) blindboxes.value = bb.data.list || []
 })
 
 async function load() {
@@ -154,6 +158,7 @@ function nextTierCount() {
 
 const cname = (id) => collectibles.value.find((c) => c.id === id)?.name || `藏品 #${id}`
 const pname = (id) => prioritySales.value.find((p) => p.id === id)?.name || `优先购 #${id}`
+const bname = (id) => blindboxes.value.find((b) => b.id === id)?.name || (id ? `盲盒 #${id}` : '未选盲盒')
 
 /** 奖励项摘要 */
 function rewardText(r) {
@@ -162,7 +167,8 @@ function rewardText(r) {
   if (r.type === 'points') return `${r.amount ?? 0} 司南币`
   if (r.type === 'priority_qualification') return `${pname(r.prioritySaleId)} 可购${r.quantity ?? 1}份`
   if (r.type === 'eligibility_qualification') return `${cname(r.collectibleId)} 资格 ×${r.quantity ?? 1}`
-  if (r.type === 'draw_chance' || r.type === 'blindbox') return `${t} ×${r.quantity ?? 1}`
+  if (r.type === 'blindbox') return `${t}「${bname(r.blindboxId)}」×${r.quantity ?? 1}`
+  if (r.type === 'draw_chance') return `${t} ×${r.quantity ?? 1}`
   return t
 }
 
@@ -177,6 +183,7 @@ function rewardError(r) {
   if (r.type === 'points' && !(r.amount > 0)) return '司南币奖励金额需大于 0'
   if (r.type === 'priority_qualification' && !r.prioritySaleId) return '优先购资格需选择优先购活动'
   if (r.type === 'eligibility_qualification' && !r.collectibleId) return '资格购白名单需选择目标藏品'
+  if (r.type === 'blindbox' && !r.blindboxId) return '盲盒奖励需选择具体盲盒（发哪一个）'
   return null
 }
 
@@ -388,6 +395,7 @@ function conditionsText(conds) {
                 :types="INVITE_REWARD_TYPES"
                 :collectibles="collectibles"
                 :priority-sales="prioritySales"
+                :blindboxes="blindboxes"
               />
             </div>
             <el-button
@@ -410,6 +418,7 @@ function conditionsText(conds) {
             :types="INVITE_REWARD_TYPES"
             :collectibles="collectibles"
             :priority-sales="prioritySales"
+            :blindboxes="blindboxes"
             :max="1"
           />
           <div class="t-tertiary" style="font-size: 12px; margin-top: 4px; width: 100%">

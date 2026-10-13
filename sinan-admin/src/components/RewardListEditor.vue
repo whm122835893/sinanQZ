@@ -7,7 +7,7 @@
  *   { type: 'draw_chance', quantity }
  *   { type: 'priority_qualification', prioritySaleId, quantity, expiresAt? }
  *   { type: 'eligibility_qualification', collectibleId, quantity, expiresAt? }
- *   { type: 'blindbox', quantity }
+ *   { type: 'blindbox', blindboxId, quantity }
  *   { type: 'none' }
  */
 import { ref, watch } from 'vue'
@@ -18,6 +18,7 @@ const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   collectibles: { type: Array, default: () => [] },
   prioritySales: { type: Array, default: () => [] },
+  blindboxes: { type: Array, default: () => [] },
   /** 允许的奖励类型（缺省全部） */
   types: { type: Array, default: null },
   /** 最多奖励项数 */
@@ -60,7 +61,8 @@ function onTypeChange(item) {
   else if (t === 'collectible') Object.assign(base, { collectibleId: null, quantity: 1 })
   else if (t === 'eligibility_qualification') Object.assign(base, { collectibleId: null, quantity: 1 })
   else if (t === 'priority_qualification') Object.assign(base, { prioritySaleId: null, quantity: 1 })
-  else if (t === 'draw_chance' || t === 'blindbox') base.quantity = 1
+  else if (t === 'blindbox') Object.assign(base, { blindboxId: null, quantity: 1 })
+  else if (t === 'draw_chance') base.quantity = 1
   Object.keys(item).forEach((k) => delete item[k])
   Object.assign(item, base)
   sync()
@@ -71,6 +73,7 @@ function sync() {
 
 const cname = (id) => props.collectibles.find((c) => c.id === id)?.name || `藏品 #${id}`
 const pname = (id) => props.prioritySales.find((p) => p.id === id)?.name || `优先购 #${id}`
+const bname = (id) => props.blindboxes.find((b) => b.id === id)?.name || (id ? `盲盒 #${id}` : '未选盲盒')
 
 /** 奖励摘要文案（列表展示用） */
 function summary(r) {
@@ -79,7 +82,8 @@ function summary(r) {
   if (r.type === 'points') return `${t} ${r.amount ?? 0}`
   if (r.type === 'priority_qualification') return `${t}「${pname(r.prioritySaleId)}」可购 ${r.quantity ?? 1} 份`
   if (r.type === 'eligibility_qualification') return `${t}「${cname(r.collectibleId)}」×${r.quantity ?? 1}`
-  if (r.type === 'draw_chance' || r.type === 'blindbox') return `${t} ×${r.quantity ?? 1}`
+  if (r.type === 'blindbox') return `${t}「${bname(r.blindboxId)}」×${r.quantity ?? 1}`
+  if (r.type === 'draw_chance') return `${t} ×${r.quantity ?? 1}`
   return t
 }
 defineExpose({ summary })
@@ -118,9 +122,23 @@ defineExpose({ summary })
         <el-input-number v-model="r.quantity" :min="1" :max="99" style="width: 120px" @change="sync" />
         <span class="rle__unit">份</span>
       </template>
-      <template v-else-if="r.type === 'draw_chance' || r.type === 'blindbox'">
+      <template v-else-if="r.type === 'draw_chance'">
         <el-input-number v-model="r.quantity" :min="1" :max="9999" style="width: 150px" @change="sync" />
-        <span class="rle__unit">{{ r.type === 'draw_chance' ? '次' : '个' }}</span>
+        <span class="rle__unit">次</span>
+      </template>
+      <template v-else-if="r.type === 'blindbox'">
+        <el-select
+          v-model="r.blindboxId"
+          filterable
+          placeholder="选择盲盒"
+          no-data-text="还没有盲盒，请先到「盲盒管理」新建"
+          style="flex: 1"
+          @change="sync"
+        >
+          <el-option v-for="b in blindboxes" :key="b.id" :label="b.name" :value="b.id" />
+        </el-select>
+        <el-input-number v-model="r.quantity" :min="1" :max="9999" style="width: 120px" @change="sync" />
+        <span class="rle__unit">个</span>
       </template>
 
       <el-button link type="danger" :icon="Delete" @click="remove(idx)" />

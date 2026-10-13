@@ -235,7 +235,19 @@ class ActivityRewardService
                 $name = Db::name('collectibles')->where('id', (int) $reward['collectibleId'])->value('name');
                 return $label . '「' . ($name ?: '#' . $reward['collectibleId']) . '」×' . (int) ($reward['quantity'] ?? 1);
             case 'blindbox':
-                return $label . '×' . (int) ($reward['quantity'] ?? 1);
+                // 盲盒表（blind_boxes）没有 name 列，名字在它绑定的藏品上 ——
+                // 后台「盲盒管理」和奖励编辑器下拉显示的都是这个 join 出来的名字，
+                // 名单里只写「盲盒×1」运营没法核对发的到底是哪一盒，所以这里补上名字。
+                // blindboxId<=0 的是历史数据（共享编辑器一直没有盲盒选择器，字段是空的），
+                // 兜底回原来的「盲盒×N」：导出一张名单不该因为一条老记录抛异常整份断掉。
+                $bid = (int) ($reward['blindboxId'] ?? 0);
+                if ($bid <= 0) {
+                    return $label . '×' . (int) ($reward['quantity'] ?? 1);
+                }
+                $bbname = Db::name('blind_boxes')->alias('bb')
+                    ->join('collectibles c', 'c.id = bb.collectible_id')
+                    ->where('bb.id', $bid)->value('c.name');
+                return $label . '「' . ($bbname ?: '#' . $bid) . '」×' . (int) ($reward['quantity'] ?? 1);
             case 'points':
                 return $label . ' ' . (float) $reward['amount'];
             case 'draw_chance':
