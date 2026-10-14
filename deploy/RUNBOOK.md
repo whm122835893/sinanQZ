@@ -2822,6 +2822,99 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
 **没验的**：① 观感（虚线分隔好不好看、卡内提示会不会被读成「公告自己的免责声明」而不是「平台在说话」）；
 ② 生产（这批仍**一行没上**）。
 
+### 7.40 寄售与运营两张出厂首图重画（2026-10-15 02:1x，本地做完并测过，**未上线**）
+
+**你的原话**：「寄售公告和运营公告的首图重新生成」。方向按你在选项里点的那句：**「换构图：主体更小更靠右，左半边留白更干净」**。
+主题色**没动**（寄售橙 `#E89121`、运营靛蓝 `#3D5A99`，仍与类型标签同色 —— 标签色和头图同源这件事是 §7.36 定的，这次不碰）。
+
+**只换了 2 个文件的内容，文件名一个都没改**：
+
+| 文件（`sinan-nft-backend/public/uploads/notice-default/`） | 旧 | 新 |
+| --- | --- | --- |
+| `announcement-consignment.webp` | 27,658B `5d6863aa72e85e6927cf6e11a891c557` | **18,458B `78048a7b61f4dfef82807f742e199fd5`** |
+| `announcement-operation.webp` | 32,836B `aae08ec17fc881acf844fbc36e1995d7` | **17,674B `1d4d9ec805116a24f350d6c954f442f4`** |
+
+`announcement-activity.webp`（41,550B）与 `announcement-compose.webp`（31,278B）**没动**。四张仍是 `1280×495`。
+
+**不动代码、不动库、不动接口**：`AnnouncementCover` 里那四个 `cover_key` 参数值、`FACTORY_DIR` 常量、
+`coverFor()` 的解析口径全是**按路径**走的，文件名不变 → 后端与两个前端**一个源文件都不用改**。
+运营在后台「全局参数 → 公告头图」自己换过的图存在参数里，也不受这次出厂图更新影响（这正是 §7.36「读取时解析、不回填」的设计）。
+`scripts/make_notice_banners.php` 这次也**没改**。
+
+**新的两段 prompt**（下次要重画直接抄；`ImageGen` 尺寸**必须 2560×1080**，理由见坑 ②）：
+
+- 寄售（采用版）：`Ultra-wide horizontal banner background illustration, 21:9, ... Warm amber orange palette
+  (#E89121 to #A85B00 smooth gradient) ... The LEFT two-thirds is almost empty, pure smooth gradient ...
+  The RIGHT one-third holds ONE single small motif, occupying no more than 22% of the canvas width ...
+  a minimal modern consignment price-tag card ... Nothing else on the right side: no display case, no shopfront,
+  no window frame, no chart grid, no rings, no orbits. ... Absolutely NO text, NO letters, NO Chinese characters ...`
+- 运营（采用版 v4）：`Ultra-wide 21:9 panoramic cinematic background, deep indigo blue monochrome (around #3D5A99),
+  one completely smooth continuous gradient across the ENTIRE frame ... CRITICAL: the background must be a SINGLE
+  seamless soft studio backdrop — absolutely NO rectangles, NO panels, NO blocks, NO differently-toned regions,
+  NO vertical seams ... Test: no two neighbouring vertical slices of the background may differ in brightness.
+  On the RIGHT side only, one small elegant three-dimensional faceted crystal prism, occupying no more than 20% ...`
+
+**出图流水线没变**：`php scripts/make_notice_banners.php <素材目录> <输出目录>` → 裁掉底部 90px 水印带 → 左 62% 压暗 32%→0 →
+叠 `SINAN · DIGITAL ART`(arial 40) / 英文标签(arial 46) / 中文类型名(simhei 190) → 缩到宽 1280 → `imagewebp` 质量 82。
+
+**两个坑（都只在脚本的行为里，代码没写守卫，所以只能记在台账）**：
+
+① `glob($artDir.'/'.$spec['art'].'*.png')[0]` 取的是**排序后第一个 = 文件名最旧那张**。素材目录里只要留着上一版的 PNG，
+脚本会**静悄悄用旧图**，产出的 webp 与仓库现值只差几 KB，肉眼看输出根本发现不了 —— 本轮第一次就被这样骗过（把整包
+`vibe_images` 直接当素材目录，四张全出了 10-14 那批的旧底图）。**做法**：每次新建一个**只放本次素材**的空目录（本轮 `qa_art_in4`），
+跑完看它打印的「跳过 xxx」条数对不对（只放两张就会打「只出了 2 张」，那是正常提示不是报错）。
+
+② 底图比例不是 21:9 时脚本**不报错**，只是产出高度跟着比例走：1792×1024 的素材会出 **1280×667**。
+这条**有测试兜着**（见下面反证那行），但脚本自己不会提醒你。
+
+**「AI 把画面切成两块板」这种分块痕迹怎么客观判**：量**每一列亮度中位数、相邻列的最大跳变 Δ**（一次性脚本 `qa_seam_probe.php`，纵向抽样约 150 行/列，用完已删）。
+
+| 底图（运营） | 最大跳变 | 跳变位置 | 判定 |
+| --- | --- | --- | --- |
+| 仓库旧版（§7.36 那张） | Δ9.9 | x=2016（79%，主体边缘） | **基准**：跳变只出现在主体上，背景是连续的 |
+| v1 | Δ19.9 | x=1477（58%，**背景正中**） | 有硬竖边，弃 |
+| v2 | Δ7.4 | x=1486（58%） | 软化了，但渲染出来仍看得出断层，弃 |
+| **v4（采用）** | Δ5.8 | x=2559（100%，画幅边缘） | 背景无断层，主体在 76% 处 |
+| 寄售新图（采用） | Δ3.2 | x=1917（75%，主体边缘） | 干净 |
+
+⚠️ **这个探针必须在底图 PNG 上量，不能在成品 webp 上量**：成品左半边有「运营公告」四个 190px 大字，
+字形边缘本身就是 Δ60 级的跳变，会把背景断层完全淹掉 —— 本轮第一次就在成品上量，v1 报 65.0、v2 报 18.0，
+两处都落在 x≈740（≈58%），看着像「改好了」，其实量的全是字形而不是背景。**这是一次自我更正**：
+原来的结论（「v2 还有拼缝」）碰巧是对的，但当时那个数字是假信号，换一张图就会误判。
+
+**测试基线**：后端 **269 / 1760**、后台 **167**、C 端 **151** —— 与 §7.39 完全相同，**这次没加新测试**
+（尺寸/格式/体积>4000B/四张同尺寸那几条，本来就被 `AnnouncementCoverTest::test_四张出厂图真的在仓库里且尺寸一致` 钉着）。
+
+**反证 1 行**（口径照 §7.37 v2：跑**整套**、从报告里取失败用例名、必须命中预期那条、还原后逐字节比 md5）：
+把坑 ② 产出的那张 **1280×667** 塞进 `announcement-operation.webp` → 整套 unit `tests=269 assertions=1759 failures=1`，
+红灯用例名**正是** `test_四张出厂图真的在仓库里且尺寸一致`；还原后 md5 `1d4d9ec805116a24f350d6c954f442f4` = **SAME**。
+（断言数 1760 → 1759 是「红得对」而不是「没跑」的证据：那条测试在尺寸断言处就停了，后面几条断言没执行。）
+
+**本地端到端实测**（`127.0.0.1:5173`，挑的是 `cover_image` 为空、因此一定走类型默认图的两条公告）：
+
+| 公告 | subtype | 页面实际加载的 `img.src` | `naturalWidth×naturalHeight` | 标签底色 |
+| --- | --- | --- | --- | --- |
+| 987671 | consignment | `/uploads/notice-default/announcement-consignment.webp` | 1280×495 | `rgb(232,145,33)` = `#E89121` |
+| 987672 | operation | `/uploads/notice-default/announcement-operation.webp` | 1280×495 | `rgb(61,90,153)` = `#3D5A99` |
+
+再加一层字节级：`curl` 5173 与 8080 上这两个 URL，拿到的与仓库工作区文件 **md5 逐张 SAME**（18,458B / 17,674B）。
+（`getComputedStyle` 读到的 width/height 是 `0px`，还是 §7.36 起那条「视口 0×0 + px 编译成 vw」的限制，不是图坏了；
+`naturalWidth` 那对才是图自己的真值。）
+
+**发版归属**：并进**第 9 + 第 10 那一批**（第 8 节 20 + 21 条）。清单**条目数不变** —— 仍是「一个新目录 4 个文件」，
+只是其中两张的**内容**换了。两处要跟着改口径：① 20 条里那句「共 133KB」已过期，现在四张合计 **108,960B（约 106KB）**；
+② 双端 md5 的基准按下面这张**当场量的**表，别照抄本节任何旧数字。
+
+| 四张出厂图工作区现值（2026-10-15 02:1x） | 尺寸 | 字节 | md5 |
+| --- | --- | --- | --- |
+| `announcement-activity.webp` | 1280×495 | 41,550 | `c6a2626313ce12e1202baf138c5b32c3` |
+| `announcement-compose.webp` | 1280×495 | 31,278 | `a914b63fc0e7d2e479cc02067e88fad4` |
+| `announcement-consignment.webp` | 1280×495 | 18,458 | `78048a7b61f4dfef82807f742e199fd5` |
+| `announcement-operation.webp` | 1280×495 | 17,674 | `1d4d9ec805116a24f350d6c954f442f4` |
+
+**没验的**：① 观感最终确认（新构图好不好看、寄售右下角那几道淡金弧会不会被读成杂物）—— 仍要你或真机看一眼；
+② 生产（**一行没上**，这两张新图目前只存在于工作区与本地）。
+
 
 
 
@@ -2966,8 +3059,10 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
     - 后端 3 个文件：`app/service/AnnouncementCover.php`（**新增**，全站子分类/标签色/默认图的唯一真源）、
       `app/admin/controller/CmsController.php`（列表筛选/新建/编辑三处白名单改走它 + 列表随分页下发 `covers`）、
       `app/controller/Content.php`（列表下发 `subtypeLabel`/`tagColor`，详情下发 `coverImage`）。
-    - **一个新目录 4 个文件**：`public/uploads/notice-default/announcement-{activity,compose,consignment,operation}.webp`（共 133KB）。
+    - **一个新目录 4 个文件**：`public/uploads/notice-default/announcement-{activity,compose,consignment,operation}.webp`
+      （四张合计 **108,960B**；其中寄售与运营两张是 **2026-10-15 02:1x 重画的**，见 **7.40** —— 本条旧版写的「共 133KB」是 10-14 那版四张的总数，已过期）。
       ⚠️ 它在后端站点根，**不在两个前端的 dist 包里**，整包覆盖带不到 —— 必须单独 `scp`，并且生产上这个目录现在是**不存在**的（发之前先 `ls` 确认，别把「传了」当成「传对」）。
+      **双端 md5 的基准表在 7.40 末尾**（四张逐条列了尺寸/字节/md5），别照抄本节任何旧数字。
     - 迁移**第 25 份** `migrations/20261014_announcement_cover_defaults.sql`：4× `INSERT IGNORE`，**零 DDL、公告表一个字节不动**；
       `nft_system_configs` 从 41 行 → **45 行**。**故意没有 UPDATE**，重复执行安全（运营换过的默认图不会被冲回出厂图）。
     - 后台前端整包（改了 4 个源文件：`api/index.js`、`utils/maps.js`、`views/content/Announcements.vue`、`views/system/Config.vue`）。
@@ -3012,7 +3107,8 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
     - C 端前端整包（本批改了 `stores/notice.js`、`views/NoticeDetail.vue`，同样并入第 20 条那份 dist）。
     - 三端测试基线要用**这份**（10-15 01:0x 实测，含 §7.38 + §7.39）：后端 **269/1760**、后台 **167**、C 端 **151** ——
       比本节上一版写的 267/1732、165、149 新，也比第 20 条写的 251/1619、158、141 新。
-      反证 **15 行 + 2 行 + 4 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2；§7.39 S1~S4，全红如预期、还原 md5 SAME）。
+      反证 **15 行 + 2 行 + 4 行 + 1 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2；§7.39 S1~S4；§7.40 那张 1280×667 错比例图，全红如预期、还原 md5 SAME）。
+      **§7.40 没改基线数字**：它只换两张 webp 的内容，三端测试一条没加没减。
 
     **⚠️ 两个 dist 必须是重过到新代码的那份，别用 10-14 14:41 的旧整包**（缘由见 7.37 第三轮：旧包里有 §7.36 的头图、
     **没有 §7.37 的敬语落款**，照旧包传上线就是「测试全绿但线上整批功能静默缺失」）。发版时按老规矩当场重量：
@@ -3045,6 +3141,9 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
     ⑦ **它现在和正文共用同一个边框**（§7.39）：风险提示应当在正文那张白卡**里面**、落款下面、由一条**虚线**和正文分隔，
       它自己**不再是一张独立的白卡**（若你看到上下两个分开的白框 = 传的是旧 dist，按 §7.37 第三轮那套四层测量重刷）。
       这两条都只能眼看，或按 §7.38 / §7.39 那两张表读 `getComputedStyle`。
+    ⑧ **寄售与运营那两张首图是 10-15 重画的**（见 **7.40**）：新构图的标志是「**主体很小、贴在右边约 3/4 处，左半边几乎只有渐变**」。
+      若线上看到的是旧版（寄售左边带展柜/图表、运营右边一大块棱镜墙），就是传了 10-14 那版四张 —— 按 7.40 末尾那张 md5 表逐张比对重传。
+      这两张**与两个前端 dist 无关**，硬刷新解决不了，只能重传 `public/uploads/notice-default/` 里的文件。
 
     **不发版就能改的**（这次特意这么设计）：全站默认敬语/落款 → 「系统配置 → 全局参数 → 内容与公告」那两格；
     单条公告用自己的 → 「内容 → 公告管理」编辑弹窗那两格（**留空保存 = 改回跟随全局默认**）；
