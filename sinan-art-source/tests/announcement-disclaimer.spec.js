@@ -129,6 +129,20 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
     expect((await store.fetchNotice(5)).disclaimer).toBe('')
   })
 
+  it('「司南风险提示」这几个字居中，正文段落不跟着居中（2026-10-15 你的要求）', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/views/NoticeDetail.vue'), 'utf-8').replace(/\r\n/g, '\n')
+    const title = src.match(/:deep\(\.warn-title\) \{([\s\S]*?)\n    \}/)
+    expect(title, '找不到 .warn-title 样式块（后端下发的标题就靠它上样式）').not.toBeNull()
+    expect(title[1]).toMatch(/text-align:\s*center;/)
+    // 只居中这一句：外层灰块与正文段落都不带 text-align，否则整段声明变成居中对齐，读起来像诗
+    const box = src.match(/&__warning \{([\s\S]*?)\n    \}/)
+    expect(box, '找不到 __warning 样式块').not.toBeNull()
+    expect(box[1].split(':deep(')[0]).not.toMatch(/text-align/)
+    const pRule = src.match(/:deep\(p\) \{([^}]*)\}/)
+    expect(pRule, '找不到 __warning 里的段落规则').not.toBeNull()
+    expect(pRule[1]).not.toMatch(/text-align/)
+  })
+
   it('提示块写在两个正文分支之外，保证两种模式都有', () => {
     const src = readFileSync(resolve(process.cwd(), 'src/views/NoticeDetail.vue'), 'utf-8').replace(/\r\n/g, '\n')
     const block = src.match(/<div v-if="notice\.disclaimer"[^\n]*\n?/)

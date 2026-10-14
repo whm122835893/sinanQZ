@@ -251,6 +251,7 @@ const typeStyle = computed(() => {
       font-weight: 700;
       color: $color-text-primary;
       margin-bottom: 6px;
+      text-align: center;
     }
   }
   > .notice-detail__warning {
