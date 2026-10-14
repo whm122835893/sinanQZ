@@ -31,7 +31,6 @@ const editShow = ref(false)
 const editing = ref(null)
 const submitting = ref(false)
 const uploading = ref(false)
-const form = ref(emptyForm())
 
 // 四个子分类的默认头图（来自列表接口的 data.covers，键即 activity/compose/consignment/operation）
 // 走列表接口而不是 /system/configs：那个接口要 system:config 权限，只给运营开的内容管理员会 403
@@ -39,6 +38,12 @@ const covers = ref({})
 // 全局默认的敬语与落款名（同一次请求的 data.salutation，键 greeting / signature）
 // 这里只当「留空会显示什么」的占位符用，不在前端抄一份出厂文案——真源是后端 AnnouncementSalutation
 const salutation = ref({})
+// 上一条公告实际用的敬语与落款（同一次请求的 data.lastSalutation）。新建弹窗拿它预填那两格，
+// 这就是用户要的「填一次之后一直沿用，除非手动更换」；真源同样是后端，前端不自己翻列表找。
+// 声明必须排在 form 之前：emptyForm() 会读它，const 有暂时性死区，放后面初次挂载就 ReferenceError。
+const lastSalutation = ref({})
+
+const form = ref(emptyForm())
 
 onMounted(loadCovers)
 
@@ -48,6 +53,7 @@ async function loadCovers() {
   if (res.code === 0) {
     covers.value = res.data?.covers || {}
     salutation.value = res.data?.salutation || {}
+    lastSalutation.value = res.data?.lastSalutation || {}
   }
 }
 
@@ -64,9 +70,9 @@ function emptyForm() {
     content: '',
     // 公告图：留空 = 跟随该类型默认头图，不是「不显示图」
     coverImage: '',
-    // 开头敬语 / 落款署名：留空 = 跟随全局默认（系统参数），不是「不显示」
-    greeting: '',
-    signature: '',
+    // 开头敬语 / 落款署名：预填「上一条公告实际用的那句」，留空保存 = 跟随全局默认（不是「不显示」）
+    greeting: lastSalutation.value.greeting || '',
+    signature: lastSalutation.value.signature || '',
     // 发布方式：now 立即发布 / schedule 定时发布 / draft 存草稿
     mode: 'now',
     publishTime: ''
@@ -167,6 +173,9 @@ async function onSave() {
     )
     editShow.value = false
     listRef.value?.refresh()
+    // 顺带刷新预填值：loadCovers 只在挂载时跑一次，不补这一下，刚发布完立刻再点「发布公告」
+    // 预填的还是上一条之前的旧值，用户会以为「改的不算数」。
+    loadCovers()
   }
 }
 
@@ -306,8 +315,8 @@ async function onRemove(a) {
             :placeholder="salutation.greeting"
           />
           <div class="t-tertiary" style="font-size: 12px; width: 100%">
-            显示在 C 端正文第一行（顶格，不在正文里）。占位符即当前全局默认，留空 = 用这句；
-            想让所有公告都换一句：系统设置 → 全局参数 → 内容与公告 → 公告默认敬语
+            显示在 C 端正文第一行（顶格，不在正文里）。这里默认带上上一条公告实际用的那句，不用重打；要换直接改。
+            清空后保存 = 这条跟随全局默认（占位符即当前默认）；想让所有公告都换一句：系统设置 → 全局参数 → 内容与公告 → 公告默认敬语
           </div>
         </el-form-item>
         <el-form-item label="落款署名">
@@ -318,8 +327,9 @@ async function onRemove(a) {
             :placeholder="salutation.signature"
           />
           <div class="t-tertiary" style="font-size: 12px; width: 100%">
-            显示在 C 端正文右下。日期由系统按这条公告的实际生效时间自动跟在名字后面（如「{{ salutation.signature }} 2026年10月14日」），
-            这里不用填日期、也改不了日期。留空 = 名字用全局默认。
+            显示在 C 端正文右下，默认带上上一条公告实际用的名字，要换直接改。
+            日期由系统按这条公告的实际生效时间自动跟在名字后面（如「{{ salutation.signature }} 2026年10月14日」），
+            这里不用填日期、也改不了日期。清空后保存 = 这条的名字跟随全局默认。
           </div>
         </el-form-item>
         <el-form-item label="发布方式">

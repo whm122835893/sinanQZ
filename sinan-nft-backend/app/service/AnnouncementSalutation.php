@@ -143,6 +143,64 @@ class AnnouncementSalutation
         ];
     }
 
+    /**
+     * 后台表单用的全局默认（短键 greeting / signature）
+     *
+     * 为什么单独一个方法：defaults() 的键是参数键名（announcement_greeting_default），那是「系统配置」的身份证；
+     * 弹窗那两格读的是 salutation.greeting / .signature（与 lastSalutation 同形）。2026-10-14 本地实测发现
+     * 直接把 defaults() 下发时两个占位符与「如「司南运营团队 2026年10月14日」」那句提示都是空的 ——
+     * 键名对不上，源码扫描的防漂移钉住了「用接口的值」，却钉不住「键名对不对」，只有浏览器量得出来。
+     *
+     * @return array{greeting: string, signature: string}
+     */
+    public static function defaultsForForm(): array
+    {
+        $d = self::defaults();
+        return [
+            'greeting'  => $d[self::GREETING_KEY],
+            'signature' => $d[self::SIGNATURE_KEY],
+        ];
+    }
+
+    /**
+     * 纯函数：后台「新建公告」那两格的预填值
+     *
+     * 需求（2026-10-14 用户第二轮补充）：「署名在发布公告时填一次之后就一直沿用，不用每次都填，除非手动更换」。
+     * 所以预填的不是全局默认，而是**上一条公告实际用的那句**；上一条没填（NULL/空）才继续按三级回落往下走。
+     * 「上一条」里包含草稿与定时中的行 —— 运营刚敲进去的那句就是他此刻想要的，别因为没发布就当他没填。
+     *
+     * @param array<string,string|null> $own      上一条公告自带的 ['greeting' => …, 'signature' => …]
+     * @param array<string,string>      $defaults defaults() 的结果
+     */
+    public static function lastUsedFor(?array $own, array $defaults): array
+    {
+        return [
+            'greeting'  => self::greetingFor($own['greeting'] ?? null, $defaults),
+            'signature' => self::signatureFor($own['signature'] ?? null, $defaults),
+        ];
+    }
+
+    /**
+     * 后台新建公告时的预填值（唯一出口，别在控制器或前端各算一遍）
+     *
+     * 按 created_at 取最新一条（**不按 is_top 排**：列表第一屏是置顶优先，
+     *  搭那趟车会把「最老但被置顶的那条」当成上一条，预填成八百年前的文案）。
+     * 一条公告都没有 → 空数组传进去，两个值就是全局默认（再缺就是出厂常量）。
+     *
+     * @return array{greeting: string, signature: string}
+     */
+    public static function lastUsed(): array
+    {
+        $row = Db::name('announcements')
+            ->whereNull('deleted_at')
+            ->field('greeting,signature')
+            ->order('created_at', 'desc')
+            ->order('id', 'desc')
+            ->find();
+
+        return self::lastUsedFor($row ?: null, self::defaults());
+    }
+
     /** 三级回落：自带 > 全局默认 > 出厂 */
     private static function pick(?string $own, ?string $default, string $factory): string
     {

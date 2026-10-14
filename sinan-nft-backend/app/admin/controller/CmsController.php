@@ -411,10 +411,14 @@ class CmsController extends BaseController
         // 编辑弹窗要靠它把「选了这个类型会配哪张图」显示出来（不传就得为这点事新开一个接口，
         // 而新接口要重新过一遍权限码，不如搭这趟车）。真源仍是 AnnouncementCover，这里只是转发。
         // salutation：同理，弹窗里敬语/署名两格的占位符与「留空会用哪句」提示要显示全局默认，
-        //             真源仍是 AnnouncementSalutation（RUNBOOK §7.37）。
+        //             真源仍是 AnnouncementSalutation（RUNBOOK §7.37）。键用短名（greeting/signature），
+        //             defaults() 的长参数键是给「系统配置」页认行用的，直接下发这里两个占位符会是空的。
+        // lastSalutation：点「发布公告」时那两格**预填**的值 = 上一条公告实际用的那句（§7.37 第二轮补充：
+        //             「填一次之后就一直沿用，除非手动更换」）。判定收在服务类里，控制器只转发。
         return $this->paginate($items, $total, $page, $pageSize, [
             'covers' => AnnouncementCover::defaultCovers(),
-            'salutation' => AnnouncementSalutation::defaults(),
+            'salutation' => AnnouncementSalutation::defaultsForForm(),
+            'lastSalutation' => AnnouncementSalutation::lastUsed(),
         ]);
     }
 

@@ -148,6 +148,37 @@ class AnnouncementSalutationTest extends TestCase
         $this->assertSame('2026年10月14日', $got['signatureDate']);
     }
 
+    public function test_预填值取上一条实际用的那句没填才回落全局默认(): void
+    {
+        // 需求第二轮（2026-10-14）：「署名和敬语第一次填写之后就保存，不用每次都填，除非手动更换」。
+        // 预填的是**上一条公告实际用的值**，不是全局默认 —— 拿成 defaults() 就等于没做这件事。
+        $defaults = [
+            AnnouncementSalutation::GREETING_KEY  => '亲爱的藏友：',
+            AnnouncementSalutation::SIGNATURE_KEY => '司南小助手',
+        ];
+
+        // ① 上一条自己填过 → 原样带过来（哪怕和全局默认不一样），键顺序就是接口下发顺序
+        $got = AnnouncementSalutation::lastUsedFor(['greeting' => '各位同好：', 'signature' => '寄售小组'], $defaults);
+        $this->assertSame(['greeting', 'signature'], array_keys($got));
+        $this->assertSame('各位同好：', $got['greeting']);
+        $this->assertSame('寄售小组', $got['signature']);
+
+        // ② 上一条留空/NULL → 回落到全局默认（这时预填显示默认值，保存下来也是「跟随默认」，语义一致）
+        $got = AnnouncementSalutation::lastUsedFor(['greeting' => '  ', 'signature' => null], $defaults);
+        $this->assertSame('亲爱的藏友：', $got['greeting']);
+        $this->assertSame('司南小助手', $got['signature']);
+
+        // ③ 库里一条公告都没有（lastUsed() 传 null）→ 两格都是全局默认，不能报错也不能留空
+        $got = AnnouncementSalutation::lastUsedFor(null, $defaults);
+        $this->assertSame('亲爱的藏友：', $got['greeting']);
+        $this->assertSame('司南小助手', $got['signature']);
+
+        // ④ 全局默认也缺 → 出厂常量，和 C 端解析同一套回落，不能出现「后台预填了一句、C 端显示另一句」
+        $got = AnnouncementSalutation::lastUsedFor(['greeting' => null, 'signature' => null], []);
+        $this->assertSame('尊敬的司南用户：', $got['greeting']);
+        $this->assertSame('司南运营团队', $got['signature']);
+    }
+
     // ================================================ B. 单一出口（防漂移）
 
     public function test_出厂文案的字面量只出现在服务类里(): void
@@ -159,6 +190,37 @@ class AnnouncementSalutationTest extends TestCase
             $this->assertStringNotContainsString('司南运营团队', $src,
                 "{$where} 里不该出现出厂落款字面量，取值只走 AnnouncementSalutation");
         }
+    }
+
+    public function test_预填的上一条按创建时间取且全仓只有一个出口(): void
+    {
+        // 「上一条」怎么找，只许在 AnnouncementSalutation::lastUsed() 这一处定。
+        // 后台列表的排序是 is_top desc, created_at desc：搭那趟车会把「最老但被置顶」的那条当成上一条，
+        // 预填出来就是八百年前的文案 —— 用户看到的正是「我明明填过新的，怎么又变回旧的」。
+        $m = [];
+        $this->assertSame(1,
+            preg_match('/public static function lastUsed\(\): array\s*\{([\s\S]*?)\n    \}/', $this->serviceSrc, $m),
+            'lastUsed() 的形状变了（它是预填值的唯一出口），这条防漂移要跟着一并改');
+        $body = $m[1];
+
+        $this->assertStringContainsString("->whereNull('deleted_at')", $body,
+            '已删除的公告不该继续当「上一条」预填给新公告');
+        $this->assertStringContainsString("->order('created_at', 'desc')", $body,
+            '「上一条」= 最近新建的那条，不是最近被改的，也不是置顶的');
+        $this->assertStringContainsString("->order('id', 'desc')", $body,
+            '同一秒建多条时要有确定的次级排序，否则预填值随执行计划变');
+        $this->assertStringNotContainsString('is_top', $body,
+            'lastUsed() 一旦按置顶排序，预填就会指向一条很老的公告（这条用例要防的就是这次跑偏）');
+        $this->assertStringContainsString('self::lastUsedFor(', $body,
+            '回落判定要收在纯函数里，好让上一条用例不连库也能测');
+        $this->assertStringContainsString('$row ?: null', $body,
+            '查到的那条要真的传进去；传成 null 就变成「永远预填全局默认」，源码扫描只有这一行能看出区别');
+
+        // 单一出口：控制器出现第二次 lastUsed() 说明有第二处在算「上一条」；C 端用不到预填值
+        $this->assertSame(1, substr_count($this->cmsSrc, 'AnnouncementSalutation::lastUsed()'),
+            'lastSalutation 只该在后台列表下发一次');
+        $this->assertStringNotContainsString('lastUsed', $this->contentSrc,
+            'C 端接口不该下发预填值，它显示的是这条公告的实际值');
     }
 
     public function test_C端详情下发三件套而列表不下发(): void
@@ -186,12 +248,39 @@ class AnnouncementSalutationTest extends TestCase
         //    /admin/system/configs 要 system:config 权限，只开内容权限的运营点进去会 403
         $list = $this->methodBody($this->cmsSrc, 'announcementList()');
         $this->assertMatchesRegularExpression(
-            '/\$this->paginate\([\s\S]*?\'salutation\' => AnnouncementSalutation::defaults\(\)/',
+            '/\$this->paginate\([\s\S]*?\'salutation\' => AnnouncementSalutation::defaultsForForm\(\)/',
             $list,
-            '后台公告列表的分页结果里要带 salutation，否则编辑弹窗显示不出「留空会用哪句」'
+            '后台公告列表要带 salutation（短键的全局默认），否则编辑弹窗显示不出「留空会用哪句」'
+        );
+        // 键名形状这一条是 2026-10-14 本地实测补的：当时下发的是 defaults() 的长参数键
+        // （announcement_greeting_default），而弹窗读 salutation.greeting → 两个占位符与落款示例都是空的，
+        // 源码扫描只钉得住「用接口带的值」，钉不住「键名对不对」，所以这里把两端的键名一起钉。
+        $this->assertSame(1,
+            preg_match('/public static function defaultsForForm\(\): array\s*\{([\s\S]*?)\n    \}/',
+                $this->serviceSrc, $f),
+            'defaultsForForm() 形状变了，键名对齐这条要一并改');
+        foreach (['greeting' => 'GREETING_KEY', 'signature' => 'SIGNATURE_KEY'] as $short => $const) {
+            // 模式全用单引号拼：双引号里的 "\$d" 会被 PHP 当变量插值（试过就报 Undefined variable $d）
+            $this->assertMatchesRegularExpression('/' . $short . "'\\s*=>\\s*" . '\\$d\\[self::' . $const . '\\]/',
+                $f[1], "后台表单的 {$short} 键不是从 {$const} 映射来的");
+        }
+        $admin = dirname(__DIR__, 3) . '/sinan-admin/src/views/content/Announcements.vue';
+        if (is_file($admin)) {
+            $view = $this->read($admin);
+            foreach (['greeting', 'signature'] as $field) {
+                $this->assertStringContainsString('salutation.' . $field, $view,
+                    "弹窗读的是 salutation.{$field}，后端下发必须保持同名短键");
+            }
+        }
+
+        // ② 预填值同一次请求下发（第二轮补充：「填一次之后一直沿用，除非手动更换」）
+        $this->assertMatchesRegularExpression(
+            '/\$this->paginate\([\s\S]*?\'lastSalutation\' => AnnouncementSalutation::lastUsed\(\)/',
+            $list,
+            '后台列表要带 lastSalutation：新建弹窗那两格的预填值从这儿来，前端自己去翻列表会踩 is_top 排序的坑'
         );
 
-        // ② 新建 + 编辑四处写入都要截到 MAX_CHARS（列宽 varchar(100)，超了严格模式直接报错）
+        // ③ 新建 + 编辑四处写入都要截到 MAX_CHARS（列宽 varchar(100)，超了严格模式直接报错）
         $this->assertSame(4, substr_count($this->cmsSrc, 'AnnouncementSalutation::MAX_CHARS'),
             '新建两列 + 编辑两列，四处落库都该过一次长度闸');
         foreach (['greeting', 'signature'] as $col) {
@@ -297,7 +386,18 @@ class AnnouncementSalutationTest extends TestCase
         $this->assertMatchesRegularExpression('/salutation: d\.salutation \|\| \{\}/', $apiSrc,
             '列表返回要把后端带的 salutation 透出来，弹窗的占位符靠它');
 
-        // ③ 需求点名的日期口径：弹窗里不该出现「自己填日期」的输入框
+        // ③ 预填口径（第二轮补充：「填一次之后一直沿用，除非手动更换」）：
+        //    新建弹窗那两格预填接口带下来的「上一条实际用的值」，前端不自己翻列表找上一条
+        $this->assertMatchesRegularExpression('/lastSalutation: d\.lastSalutation \|\| \{\}/', $apiSrc,
+            'api 层要把 lastSalutation 透出来，弹窗的预填值靠它');
+        foreach (['greeting', 'signature'] as $field) {
+            $this->assertMatchesRegularExpression(
+                '/' . $field . ': lastSalutation\.value\.' . $field . " \|\| ''/", $view,
+                "新建弹窗的「{$field}」要预填上一条实际用的值；改回空串就是退回「每次都得重打」"
+            );
+        }
+
+        // ④ 需求点名的日期口径：弹窗里不该出现「自己填日期」的输入框
         $this->assertStringNotContainsString('signatureDate', $view,
             '落款日期由后端按实际生效时间算，后台不该出现填日期的口子');
     }

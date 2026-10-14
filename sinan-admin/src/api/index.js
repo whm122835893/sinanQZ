@@ -2292,7 +2292,9 @@ export async function getAnnouncements(params) {
       // 四个子分类的默认头图（后端随列表带下来，编辑弹窗用它显示「选这个类型会配哪张图」）
       covers: d.covers || {},
       // 全局默认的敬语与落款（同上，弹窗里两格的占位符与「留空会用哪句」提示用它，键见后端 AnnouncementSalutation）
-      salutation: d.salutation || {}
+      salutation: d.salutation || {},
+      // 「上一条公告实际用的」敬语与落款：新建弹窗用它预填，省得每次重打（后端 AnnouncementSalutation::lastUsed）
+      lastSalutation: d.lastSalutation || {}
     }
   }
 }
