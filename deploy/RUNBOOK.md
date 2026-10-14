@@ -2564,6 +2564,16 @@ C 端 `tests/announcement-cover.spec.js` **8 用例**（含一条「后端源码
 20. **公告头图这一批：本地全绿、生产一行没动，等你点头才发（第 9 次发版）**（2026-10-14，做完的过程见 **7.36**）：
     这批改的是「C 端公告详情页的样子 + 后台能不能换图」，**发版前生产的公告页还是老版式**。三端测试、12 项反证、本地真人端到端都过了（7.36 末尾两张表）。
 
+    **发版前的只读预检（2026-10-14 15:3x 现场量，六条都对得上，确认生产确实没动）**：
+    ① 生产**没有** `app/service/AnnouncementCover.php`；② 生产**没有** `public/uploads/notice-default/` 这个目录；
+    ③ 生产**没有**第 25 份迁移文件；④ `nft_system_configs` 仍是 **41 行**，`announcement%` 只有第 8 次发版那两个键
+    （`announcement_disclaimer` / `announcement_disclaimer_enabled`），**四个 `announcement_cover_*` 一条都没有**；
+    ⑤ 公网 `GET /api/announcements` 里既没有 `covers` 也没有 `cover_image`，四张出厂图的 URL 现在 **404**；
+    ⑥ 两个前端入口仍是第 8 次发版那对（后台 `index-Dm9z2FwK.js`、H5 `index-TARjuzYk.js`），公告表仍是 2 行 / max id 2。
+    **一条对 md5 的口径提醒**（当场差点误报「生产漂移」）：线上那两个后端文件是 **CRLF**，而 `git show <commit>:<path>` 给的是 **LF**，
+    直接 `md5sum` 比必然不同 —— 把两边都 `tr -d '\r'` 再 diff 是**逐字节相同**，说明生产确实停在改动前。
+    **比对要用工作区文件（`md5sum sinan-nft-backend/app/...`），别拿 `git show` 的输出当基准**；上线后双端 md5 同理，两边都取部署后的实际文件。
+
     **要传到生产的（运行时必需 9 个字节级动作）**：
     - 后端 3 个文件：`app/service/AnnouncementCover.php`（**新增**，全站子分类/标签色/默认图的唯一真源）、
       `app/admin/controller/CmsController.php`（列表筛选/新建/编辑三处白名单改走它 + 列表随分页下发 `covers`）、
