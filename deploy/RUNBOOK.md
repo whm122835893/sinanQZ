@@ -2036,7 +2036,7 @@ basename 又只匹配到 `nft_admin_operation_logs`（上传审计行），于�
 | `database/full_init.sql` | 同一条 `nft_system_configs` 种子 INSERT 追加 id 42 / 43，**该行元组数实测 38 → 40**（id 1~43、无重复）。让「全新部署」与「老库跟迁移」两条路装出同一个默认值 |
 | `sinan-admin/src/views/system/Config.vue` | 新增「内容与公告」分组 + 两个键的中文 META + 一种 `multiline` 多行文本框渲染（原来最长的只有 JSON 那档 2 行高） |
 | `sinan-admin/src/views/content/Announcements.vue` | 富文本编辑器下面加一句指路话：提示会自动加、去哪改、不用发版 |
-| `sinan-art-source/src/stores/notice.js` + `src/views/NoticeDetail.vue` | C 端把 `disclaimer` 透出来，渲染在正文卡片**最底部**（两个正文分支之外）。样式复用 `NoticeDetail.vue` 里早就写好却从没被真实数据喂过的 `.notice-detail__warning`（灰底 + 小字 + `.warn-title` 加粗），**没新画一套 CSS** |
+| `sinan-art-source/src/stores/notice.js` + `src/views/NoticeDetail.vue` | C 端把 `disclaimer` 透出来，渲染在正文卡片**最底部**（两个正文分支之外）。（⚠️ 这句在 §7.36 被改成「挪到卡片外面单独一张白卡」，**§7.39 又并回卡内**，位置仍是「最底部、两个分支之外」，只是盒子从白卡变成一条虚线。）样式复用 `NoticeDetail.vue` 里早就写好却从没被真实数据喂过的 `.notice-detail__warning`（灰底 + 小字 + `.warn-title` 加粗），**没新画一套 CSS** |
 
 **为什么单独下发一个字段，而不是把 HTML 直接拼进 `content`**：
 `stores/notice.js` 用 `/<[a-z][\s\S]*>/i` 判断正文是不是富文本。拼进去会让**纯文本公告**也被判成富文本，
@@ -2314,6 +2314,7 @@ CSS 只留 `text-align`/`color`）→ C 端 `#/notice/2` 的 DOM 里 4 个 `<h2>
 **你怎么点的头**：两张别的平台的「公告详情」截图 + 一句
 「**c端公告页面的内容和样式参考这两张图。后台的话我想要有公告图，就像图中的运营公告图片和寄售公告图片一样，选择哪个类型都有对应的图片，并且这个图片可以上传更换。**」
 参考图的读法（我按这个排的）：标题 → 彩色类型标签 + 日期 → 一条与类型配套的横幅图 → 正文 → 底部风险提示**单独一张白卡**。
+（⚠️ 这条口径**已被 §7.39 推翻**：2026-10-15 你要求「公告正文和风险提示共用一个边框」，提示现在并回正文卡片内、只留一条虚线。）
 **公告列表页不动** —— 它没有图片位，多查一次库、多下发一个没人用的字段都是债。
 
 四个岔路口我用问题框问了你，你的选择是：① 默认头图「**我用 AI 生成三张（推荐）**」（实际做了四张，因为你选了③）；
@@ -2365,7 +2366,7 @@ AI 只出**无字底图**（提示词最后 explicitly 写 `Absolutely NO text, 
   换图/清空都走原来的保存确认弹框与审计（`config_save`），改完实时生效。
 
 **C 端详情页**（`NoticeDetail.vue`）按参考图重排：一张主卡片「标题 → 类型标签+日期 → 出血横幅 → 正文」，
-风险提示**搬到卡片外面单独一张白卡**（和正文分开才像「平台在说话」），横幅在卡片内左右出血铺满
+风险提示**搬到卡片外面单独一张白卡**（和正文分开才像「平台在说话」，⚠️ **2026-10-15 §7.39 已按你的要求推翻：并回正文卡片内**），横幅在卡片内左右出血铺满
 （`width: calc(100% + 32px)` + `margin: 0 -16px`，px 会被编译成 vw）。类型标签的底色来自接口的 `tagColor`，前端再校验一次形状。
 
 **迁移第 25 份 `20261014_announcement_cover_defaults.sql`：只有 4× INSERT IGNORE，故意不写 UPDATE。**
@@ -2533,7 +2534,7 @@ v2 的三条硬判据（以后照抄）：① 不用 `--filter`，直接跑整�
 | 纯文本没被当标签 | 敬语与落款的 `innerHTML` 与 `textContent` 一致；正文里带 `greeting` 类的元素下 **0 个**子节点（P11b 是同一口径的自动化版本） |
 | 编译后的 CSS 规则 | `.notice-detail__cover{ display:block; width:100%; margin:3.2vw auto 0px; border-radius:2.66667vw; object-fit:cover }` —— `3.2vw`=12px、`2.66667vw`=**10px**（375 设计宽下 px→vw）；`__foot` 是 `display:flex; justify-content:flex-end; gap:2.13333vw(8px); font-size:3.46667vw(13px)` |
 | 头图真的加载 | `naturalWidth×naturalHeight = 1280×495`，`complete=true` |
-| 风险提示 | 还是**单独那张白卡**（`.notice-detail__warning` 存在），没被这次改动并回正文卡 |
+| 风险提示 | 还是**单独那张白卡**（`.notice-detail__warning` 存在），没被这次改动并回正文卡（⚠️ 下一步 §7.39 就并回去了，那是你那句「共用一个边框」） |
 
 **后台的写路径是你在 20:40–20:42 真点出来的**（审计日志 id=797 `POST cms/announcements`、id=798 `PUT cms/announcements/987670`，`admin_id=1`）：
 987670「阿斯顿」那条**是你自己造的测试公告，两列里的「尊敬的用户 / 司南团队敬呈」就是那次填进去的 —— 别删，它是这批唯一一条「自带值优先」的活样本**。
@@ -2751,6 +2752,78 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
 
 **没验的**：居中之后好不好看（像素观感仍要你或真机看一眼）。`text-align` 这个**生效**是量到的，不是猜的。
 
+### 7.39 公告正文和风险提示共用一个边框（2026-10-15 01:0x，本地做完并测过，**未上线**）
+
+**你的原话**：「公告正文和风险提示共用一个边框」。
+
+**这是一次口径推翻**，不是补 bug：§7.32 首次上线时把提示做成「正文卡片下面另一张白卡」，§7.36 照参考图重排时又确认了一遍
+（当时写的理由是「声明和正文分开才像平台在说话」）。现在按你的要求合并 —— 提示块搬进 `<article class="notice-detail__main">`
+的最底下，**和正文共用同一张卡的边框**，中间只留一条虚线。
+
+**改了三处，都在 C 端这一个文件 + 两个测试文件里**：
+
+| 位置 | 改了什么 |
+| --- | --- |
+| `NoticeDetail.vue` 模板 | 那块 `<div v-if="notice.disclaimer" … v-html>` 从 `</article>` **之后**挪到 **之前**（仍在富文本/纯文本两个分支之外，所以两种正文都有一份，且只有一份） |
+| `NoticeDetail.vue` 样式 | 原来那条独立白卡的容器规则 `> .notice-detail__warning { margin: 12px $page-padding 0; padding: 14px 16px; background: $color-card; border-radius: $radius-lg; }` 换成卡内分隔 `&__main > .notice-detail__warning { margin-top: 18px; padding-top: 14px; border-top: 1px dashed $color-border; }` |
+| 两个测试 | H5 `announcement-disclaimer.spec.js` 的位置断言方向翻转；**后端跨仓防漂移** `AnnouncementDisclaimerTest.php::test_C端会把风险提示渲染出来` 同样翻转（见下） |
+
+**为什么虚线是 `dashed`**：直接复用同卡片里落款 `&__foot` 已有的分隔习惯（`border-top: 1px dashed $color-border`），
+不新造第三种视觉层级。灰底小字与居中标题那套文字样式（§7.38）**一个字没动**。
+
+**故意没改的**：`&__body &__warning`（富文本正文块里夹 `block.type === 'warning'` 那条历史形状，现网接口不产出，留着兜旧数据）
+仍是卡内灰底小块 —— 它不在这次的要求里。
+
+**跨仓那钉必须一起翻，否则「测试全绿但口径是旧的”**：后端 `AnnouncementDisclaimerTest.php` 里那条不是普通单测，
+它是**读 C 端 `.vue` 源文件**的防漂移钉（当年 §7.36 就是靠它拦住「卡片里又放了一份」）。
+上一版钉的是 `$bodyClose < $warn`（提示排在卡片**之外**），这次改成 `$bodyOpen < $warn < $bodyClose`（嵌在卡片**之内**），
+并补一条 `assertSame(1, substr_count(...))` —— 挪进来之后「只许一份」这个约束比原来更要紧，因为卡片内已经有一份了，
+再在正文分支里补一份就是页面上出现两遍。**改代码不改这一条，后端套件当场就红**（本轮第一次跑就是它红的）。
+
+**测试基线**：后端 **269 / 1760**（断言 1759 → 1760，就是上面新加的那条）、后台 **167**、C 端 **151**（+1 条新的白卡防漂移）。
+
+**反证 4 行**（口径照 §7.37 v2：跑**整套**、从报告取失败用例名、必须命中预期那条，还原后 md5 逐字节比）：
+
+| 档 | 拆什么 | 结果 |
+| --- | --- | --- |
+| S1 | 把提示块搬回 `</article>` 之外（推翻这次的决定） | C 端 150/151、红 1 = 「富文本正文：提示嵌在正文卡片最底部…」→ **RED-AS-PREDICTED**，还原 md5 `ca489e37…` **SAME** |
+| S2 | 给卡内那条重新画上白卡（`background` + `border-radius`） | C 端 150/151、红 1 = 「卡内那条提示不再自己画白卡」→ **RED-AS-PREDICTED**，还原 **SAME** |
+| S3 | 后端那条跨仓位置断言掰回旧方向 | 后端 269、失败 1、红 = `test_C端会把风险提示渲染出来` → **RED-AS-PREDICTED**，还原 md5 `da9756a6…` **SAME** |
+| S4 | 在正文卡片里**再塞一份**提示块（模拟真写错成两份） | 后端同上那条红（`assertSame(1, 2)` 抓住）→ **RED-AS-PREDICTED**，还原 **SAME** |
+
+**两个当场浮出的工具坑（记下来省下一轮）**：
+① `execFileSync('npx', …)` 在 Windows 上直接 ENOENT（`npx` 是 `npx.cmd`），必须走 shell；
+② PHPUnit 的 JUnit 报告里通过用例是**自闭合** `<testcase …/>`，而 `<testcase>` 标签同时带 `classname="tests.unit.X"` ——
+提取红灯时正则若不把 `name` 钉死在 `<testcase ` 后面、又不禁止跨 `<testcase`，就会把红灯记成**类名或前一个通过的用例名**。
+第一版就是这么报出一条不相干的用例，差点当成「预期用例没红」而误判这次改动没被钉住。
+
+**实测（浏览器里读 `getComputedStyle`，本地 H5 `127.0.0.1:5173/#/notice/987674`）**：
+
+| 量的东西 | 实测 |
+| --- | --- |
+| 提示块的父元素 | `notice-detail__main`（在正文卡片里面了） |
+| 是不是卡片内最后一个元素 | `true` |
+| `border-top` | `dashed 1px rgb(238,238,238)`（= `$color-border`） |
+| `background` / `border-radius` | `rgba(0,0,0,0)` / `0px`（**自己不再画卡**） |
+| `.warn-title` 的 `text-align` | `center`（§7.38 那行没被带坏） |
+| 对照：落款 `&__foot` 的 `border-top` | 同为 `dashed 1px`（同款分隔，符合预期） |
+
+⚠️ 视口仍是 `0×0`，所以 `margin-top` / `padding-top` 这类被编译成 **vw** 的长度全部读成 `0px` —— 落款那条老规则也一样读成 0，
+**这是量不到，不是 bug**（§7.36 起就记着这条限制）。边框线与颜色是 px/色值，不受影响，量到了。
+
+**整包又重过一次**（同 §7.37/§7.38 那条教训的应用）：H5 入口换成 `index-BZqfQTQ.js`（md5 `8c93f8bbc6a90ea00877b010035fc49a`）。
+编译后 CSS（`dist/assets/NoticeDetail-0-4Aeock.css`）里量到 `.notice-detail__main>.notice-detail__warning[…]{margin-top:4.8vw;padding-top:3.73333vw;border-top:1px dashed var(--color-border)}`，
+且旧形状 `notice-detail__warning{margin:12px…` **grep 无命中**。发版前仍要**当场重量**（文件名与 md5 每次 build 都会变）。
+
+**发版归属**：跟 §7.38 一样 —— `NoticeDetail.vue` 本来就在第 9 + 第 10 批那 7 个共用文件里，
+**这次不新增文件、不新增迁移、不动库、不动接口**，`disclaimer` 字段一个字没改（纯前端版式）。
+跟着同一批发即可（第 8 节 20 + 21 条）；上线后要多看第 8 节 21 条复验清单里的 ⑦。
+
+**没验的**：① 观感（虚线分隔好不好看、卡内提示会不会被读成「公告自己的免责声明」而不是「平台在说话」）；
+② 生产（这批仍**一行没上**）。
+
+
+
 
 
 
@@ -2913,7 +2986,8 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
     某条公告用别的图 → 「内容 → 公告管理」编辑弹窗里传一张「公告图」，或点「恢复跟随类型默认」；想让某类型不显示横幅 → 把那个参数清空。
 
     **仍然没验的**：像素级观感（内嵌浏览器视口 `0×0` + 本项目 px 编译成 vw，`getComputedStyle` 的长度量不到，只验到 DOM 顺序、
-    `matches()`、编译后规则文本与图片真实尺寸）。**你或真机看一眼详情页那张横幅与风险提示白卡**就是这批的最终确认。
+    `matches()`、编译后规则文本与图片真实尺寸）。**你或真机看一眼详情页那张横幅与底部风险提示**就是这批的最终确认
+    （提示现在的形状按 §7.39：在正文卡片里面、虚线分隔，不再是独立白卡）。
 
 21. **公告敬语/落款 + 首图通宽这一批：本地全绿、生产一行没动，等你点头才发（第 10 次发版）**（2026-10-14，做完的过程见 **7.37**）：
 
@@ -2936,16 +3010,21 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
       幂等：DDL 先查 `information_schema` 再 `PREPARE`，参数种子只有 `INSERT IGNORE`、**故意没有 UPDATE**。
     - 后台前端整包（本批多改了 `api/index.js`、`Announcements.vue`、`Config.vue` 三个文件，与第 20 条那 4 个重叠，合并后是**同一份 dist**）。
     - C 端前端整包（本批改了 `stores/notice.js`、`views/NoticeDetail.vue`，同样并入第 20 条那份 dist）。
-    - 三端测试基线要用**这份**（10-15 00:5x 实测，含 §7.38）：后端 **269/1759**、后台 **167**、C 端 **150** ——
-      比本节上一版写的 267/1732、165、149 新，也比第 20 条写的 251/1619、158、141 新。反证 **15 行 + 2 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2，全红如预期、还原 md5 SAME）。
+    - 三端测试基线要用**这份**（10-15 01:0x 实测，含 §7.38 + §7.39）：后端 **269/1760**、后台 **167**、C 端 **151** ——
+      比本节上一版写的 267/1732、165、149 新，也比第 20 条写的 251/1619、158、141 新。
+      反证 **15 行 + 2 行 + 4 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2；§7.39 S1~S4，全红如预期、还原 md5 SAME）。
 
     **⚠️ 两个 dist 必须是重过到新代码的那份，别用 10-14 14:41 的旧整包**（缘由见 7.37 第三轮：旧包里有 §7.36 的头图、
     **没有 §7.37 的敬语落款**，照旧包传上线就是「测试全绿但线上整批功能静默缺失」）。发版时按老规矩当场重量：
     00:5x 的快照是 H5 入口 `index-BY_I9mXE.js` / md5 `a4d00011dec2cafbd2c1b3e53418ef61`，后台入口 `index-qMvhze0Z.js` / md5 `f3b0a3457c874a37729ce3a09a4df70f`
     —— **但入口文件名与 md5 每 `npm run build` 一次就变，所以这两个数只当"是不是旧包"的对照，重量以你当场量的为准**。
-    传之前先跑三条指纹（比时间戳可靠）：`grep -c notice-detail__greeting sinan-art-source/dist/assets/*.js` ≥1、
+    传之前先跑四条指纹（比时间戳可靠）：`grep -c notice-detail__greeting sinan-art-source/dist/assets/*.js` ≥1
+    （**它在 `NoticeDetail-*.js` 那个分块里，不在入口 `index-*.js` 里** —— 只 grep 入口会假报 0，本轮差点误判）、
     `grep -c lastSalutation sinan-admin/dist/assets/*.js` ≥1、
-    `grep -o 'warn-title{[^}]*}' sinan-art-source/dist/assets/NoticeDetail-*.css` 里必须含 `text-align:center`（§7.38 那句）。
+    `grep -o 'warn-title{[^}]*}' sinan-art-source/dist/assets/NoticeDetail-*.css` 里必须含 `text-align:center`（§7.38 那句）、
+    `grep -c 'notice-detail__main>.notice-detail__warning' sinan-art-source/dist/assets/NoticeDetail-*.css` = 1 **且**
+    `grep -c 'notice-detail__warning{margin:12px' sinan-art-source/dist/assets/*.css` = 0（§7.39：卡内分隔那条在、旧白卡那条不在；
+    01:0x 那次的实测快照是 H5 入口 `index-BZqfQTQ.js` / md5 `8c93f8bbc6a90ea00877b010035fc49a`、CSS 块 `NoticeDetail-0-4Aeock.css`）。
 
     **顺序（DDL 先行 → 后端 → 两个前端）**：回滚点 + 上传前快照 → 跑第 25 份（4 行参数）→ 跑第 26 份（2 列 + 2 行参数）并
     `SELECT`/`SHOW COLUMNS` 双复核 → 传后端 **4 个文件**（`AnnouncementCover.php`、`AnnouncementSalutation.php`、`Content.php`、`CmsController.php`）
@@ -2962,7 +3041,10 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
       见 7.37 第二轮补充那次缺陷），落款示例那句要印出「司南运营团队 <今天>」而不是「 <今天>」；清空保存后 C 端跟着回到默认那句；
     ⑤ 公网 `GET /api/announcements/2` 里 `greeting`/`signature`/`signatureDate`/`coverImage`/`subtypeLabel`/`tagColor` 六个字段形状对
     （复验按 §7.35 那个坑：**先 `curl -o 文件` 再按 UTF-8 读**，管道量中文会虚高）。
-    ⑥ 详情页底部那张「司南风险提示」白卡：**标题那五个字居中**、下面的正文段落仍然左对齐（§7.38；这条只能眼看，或按 §7.38 那张表读 `getComputedStyle`）。
+    ⑥ 详情页底部那句「司南风险提示」：**标题那五个字居中**、下面的正文段落仍然左对齐（§7.38）；
+    ⑦ **它现在和正文共用同一个边框**（§7.39）：风险提示应当在正文那张白卡**里面**、落款下面、由一条**虚线**和正文分隔，
+      它自己**不再是一张独立的白卡**（若你看到上下两个分开的白框 = 传的是旧 dist，按 §7.37 第三轮那套四层测量重刷）。
+      这两条都只能眼看，或按 §7.38 / §7.39 那两张表读 `getComputedStyle`。
 
     **不发版就能改的**（这次特意这么设计）：全站默认敬语/落款 → 「系统配置 → 全局参数 → 内容与公告」那两格；
     单条公告用自己的 → 「内容 → 公告管理」编辑弹窗那两格（**留空保存 = 改回跟随全局默认**）；
