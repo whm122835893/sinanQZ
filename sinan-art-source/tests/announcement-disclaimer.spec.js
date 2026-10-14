@@ -44,13 +44,25 @@ function mountDetail() {
   return flushPromises().then(() => wrapper)
 }
 
+/**
+ * a 是否排在 b 之前（按文档顺序）。
+ * compareDocumentPosition 的 BITTING_POSITION 位表示「b 在 a 之前」，
+ * 所以 a.contains(b) 为 false 时，`(a.compareDocumentPosition(b) & 4) === 0` 就是 a 在前。
+ * 用 DOM 顺序而不是「第几个 children」：卡片外面还包了导航栏和返回按钮，位置数会变，
+ * 而「正文在前、声明在后」这条口径不会变。
+ */
+function afterInDocumentOrder(a, b) {
+  if (a.contains(b) || b.contains(a)) return false
+  return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING) === 0
+}
+
 describe('NoticeDetail · 正文底部平台风险提示', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     document.body.innerHTML = ''
   })
 
-  it('富文本正文：提示块出现在正文卡片最底部，标题与段落都在', async () => {
+  it('富文本正文：提示作为独立卡片排在正文卡片之后，标题与段落都在', async () => {
     shared.detail = {
       id: 1,
       title: '盲盒玩法上线',
@@ -64,12 +76,15 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
     expect(box.exists()).toBe(true)
     expect(box.find('.warn-title').text()).toBe('司南风险提示')
     expect(box.findAll('p')).toHaveLength(3)
-    // 顺序：正文在前、提示在后
-    const children = wrapper.find('.notice-detail__content').element.children
-    expect(children[children.length - 1].className).toContain('notice-detail__warning')
+    // 2026-10-14 版式改造：提示从正文卡片里搬出来，成为正文卡片下面的独立白卡片
+    // （参考图口径：声明和正文分开才像「平台在说话」）。所以它不能再嵌在正文卡片内。
+    const main = wrapper.find('.notice-detail__main')
+    expect(main.exists()).toBe(true)
+    expect(main.element.contains(box.element)).toBe(false)
+    expect(afterInDocumentOrder(main.element, box.element)).toBe(true)
   })
 
-  it('纯文本正文：同样在落款之后补上提示块', async () => {
+  it('纯文本正文：同样在落款那张卡片之后补上提示卡片', async () => {
     shared.detail = {
       id: 2,
       title: '系统维护通知',
@@ -78,12 +93,14 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
       disclaimer: '<p class="warn-title">司南风险提示</p><p>只有一段</p>'
     }
     const wrapper = await mountDetail()
-    // 纯文本分支：段落 + 落款 + 提示
+    // 纯文本分支：段落 + 落款仍在正文卡片内，提示在卡片外面
     expect(wrapper.findAll('.notice-detail__p')).toHaveLength(2)
-    expect(wrapper.find('.notice-detail__foot').exists()).toBe(true)
-    const children = wrapper.find('.notice-detail__content').element.children
-    expect(children[children.length - 1].className).toContain('notice-detail__warning')
-    expect(children[children.length - 2].className).toContain('notice-detail__foot')
+    const foot = wrapper.find('.notice-detail__foot')
+    expect(foot.exists()).toBe(true)
+    expect(wrapper.find('.notice-detail__main').element.contains(foot.element)).toBe(true)
+    const box = wrapper.find('.notice-detail__warning')
+    expect(box.exists()).toBe(true)
+    expect(afterInDocumentOrder(foot.element, box.element)).toBe(true)
   })
 
   it('接口没给 disclaimer（旧后端或开关关闭）时不留空灰块', async () => {

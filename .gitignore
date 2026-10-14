@@ -49,7 +49,13 @@ Thumbs.db
 # pnpm-lock.yaml
 
 # Runtime uploads (user-uploaded images, not source code)
-sinan-nft-backend/public/uploads/
+# 用 /* 而不是 / ：git 不会进被整目录排除的目录，写法不改就没法在下面开口子
+sinan-nft-backend/public/uploads/*
+# 例外：公告「类型默认头图」的四张出厂图是**部署产物**，不是用户上传（RUNBOOK §7.36）。
+# 迁移 SQL 与 AnnouncementCover::FACTORY_DIR 都写着「随版本放 public/uploads/notice-default/」，
+# 不进版本库那句就是假的：换机器 clone 出来这四张图不存在，C 端详情页一片空白。
+# 用户上传的图仍然被上面的 /* 挡在外面：它们只会落在 uploads/{announcement,banner,...}/年月/随机名。
+!sinan-nft-backend/public/uploads/notice-default/
 
 # 备份/临时文件
 *.bak

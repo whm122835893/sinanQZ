@@ -8,15 +8,25 @@ export const useNoticeStore = defineStore('notice', () => {
     { key: 'all', label: '全部' },
     { key: 'activity', label: '活动公告' },
     { key: 'compose', label: '合成公告' },
+    { key: 'consignment', label: '寄售公告' },
     { key: 'operation', label: '运营公告' }
   ])
 
-  // 子分类 → 展示标签
+  // 子分类 → 展示标签。
+  // 详情/列表接口都带了后端算好的 subtypeLabel（真源：后端 AnnouncementCover::SUBTYPES），
+  // 这里只当兜底：接口哪天没带，也不至于显示成空白。加一类要同步改这里 + 后台 maps.js，
+  // 漏了会被 tests/unit/AnnouncementCoverTest.php 的红线拦下。
   const categoryLabels = {
     activity: '活动公告',
     compose: '合成公告',
+    consignment: '寄售公告',
     operation: '运营公告'
   }
+
+  // 展示标签就这一个出口：后端算好的 subtypeLabel 优先，接口没带才退回上面这张表。
+  // 兜底口径和后端 AnnouncementCover::normalize() 一致 —— 没标类型的老公告按「运营公告」算，
+  // 不是显示成一个光秃秃的「公告」（那样两端就分成两套说法了）
+  const labelOf = (a) => a.subtypeLabel || categoryLabels[a.subtype || 'operation'] || '公告'
 
   // 公告列表（真实接口：GET /api/announcements）
   const notices = ref([])
@@ -29,7 +39,7 @@ export const useNoticeStore = defineStore('notice', () => {
       title: a.title,
       summary: a.summary || '',
       category: a.subtype || 'operation',
-      categoryLabel: categoryLabels[a.subtype] || '公告',
+      categoryLabel: labelOf(a),
       time: (a.createdAt || '').slice(0, 19).replace('T', ' ')
     }))
     loaded.value = true
@@ -46,9 +56,13 @@ export const useNoticeStore = defineStore('notice', () => {
       title: a.title,
       summary: a.summary || '',
       category: a.subtype || 'operation',
-      categoryLabel: categoryLabels[a.subtype] || '公告',
+      categoryLabel: labelOf(a),
       time: (a.createdAt || '').slice(0, 19).replace('T', ' '),
+      // 顶部横幅：后端按「这条公告自己传的图 > 该类型默认头图 > 空」三级算好的最终地址，
+      // 空串就整块不渲染（真源：后端 AnnouncementCover::coverFor）
       coverImage: a.coverImage || '',
+      // 类型标签底色：公告自带的 tag_color（后端只收 #rrggbb）> 该类型主题色
+      tagColor: a.tagColor || '',
       // 平台风险提示（后端 AnnouncementDisclaimer 生成的 HTML 片段，空串 = 不显示）。
       // 正文与提示分两个字段下发，不拼进 content：拼进去会让纯文本公告被认成富文本，
       // 段落换行就得在接口里重做一遍（见 RUNBOOK §7.32 的口径说明）

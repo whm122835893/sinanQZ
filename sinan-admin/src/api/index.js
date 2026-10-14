@@ -2258,7 +2258,7 @@ export function closeTicket(id) {
 // ============================================================
 
 export async function getAnnouncements(params) {
-  // 前端筛选 type（activity/compose/operation）对应后端 subtype；
+  // 前端筛选 type（activity/compose/consignment/operation）对应后端 subtype；
   // 后端 type 仅 notice/news，直接传会导致 enumParam 静默忽略（筛选失效）
   const query = { ...params }
   if (query.type) {
@@ -2281,22 +2281,29 @@ export async function getAnnouncements(params) {
         createdAt: s(a.created_at),
         summary: s(a.summary),
         content: s(a.content),
+        // 公告图（C 端详情页顶部横幅）。空串 = 这条没单独上传，C 端会改用该类型的默认头图
+        coverImage: s(a.cover_image),
         isTop: n(a.isTop) === 1
       })),
-      total: n(d.total)
+      total: n(d.total),
+      // 四个子分类的默认头图（后端随列表带下来，编辑弹窗用它显示「选这个类型会配哪张图」）
+      covers: d.covers || {}
     }
   }
 }
 
 export function saveAnnouncement(payload) {
-  // 管理端三类公告 = 用户端 subtype（activity/compose/operation），
-  // 后端 type 固定 notice（news 为资讯预留），C 端按 subtype 分类展示
+  // 管理端四类公告 = 用户端 subtype（activity/compose/consignment/operation），
+  // 后端 type 固定 notice（news 为资讯预留），C 端按 subtype 分类展示。
+  // 白名单真源在后端 AnnouncementCover::SUBTYPES，这里少一类的话后端会把该值当没传（enumParam 不报错）
   const body = {
     title: payload.title,
     type: 'notice',
     subtype: payload.type || 'operation',
     summary: payload.summary || '',
     content: payload.content || '',
+    // 公告图：留空即「跟随类型默认头图」（后端按 subtype 取 announcement_cover_* 参数），不是「没有图」
+    cover_image: payload.coverImage || '',
     status: payload.status || 'draft',
     publish_time: payload.publishTime || '',
     is_top: payload.isTop ? 1 : 0

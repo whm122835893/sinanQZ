@@ -59,11 +59,14 @@ export const ACTIVITY_STATUS = {
   disabled: { label: '已停用', type: 'info' }
 }
 
-// 公告分类（与用户端 subtype 一致：活动/合成/运营）
+// 公告分类（与用户端 subtype 一致：活动/合成/寄售/运营）
+// 白名单与中文名的真源在后端 app/service/AnnouncementCover.php::SUBTYPES，
+// 顺序与名称由 tests/unit/AnnouncementCoverTest.php 钉住（漏改这里 = 后台筛选少一类、列表显示原始英文值）
 export const NOTICE_TYPE = {
-  activity:    { label: '活动公告', type: 'success' },
-  compose:     { label: '合成公告', type: 'warning' },
-  operation:   { label: '运营公告', type: 'primary' }
+  activity:      { label: '活动公告', type: 'success' },
+  compose:       { label: '合成公告', type: 'warning' },
+  consignment:   { label: '寄售公告', type: 'danger' },
+  operation:     { label: '运营公告', type: 'primary' }
 }
 
 export const WALLET_TYPE = {

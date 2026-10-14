@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 use app\BaseController;
 
+use app\service\AnnouncementCover;
 use app\service\AnnouncementDisclaimer;
 use think\facade\Db;
 
@@ -32,15 +33,18 @@ class Content extends BaseController
         $list  = $query->order('is_top', 'desc')->order('created_at', 'desc')
             ->limit($p['offset'], $p['pageSize'])->select()->toArray();
 
+        // 子分类的名称与标签色只在 AnnouncementCover 一处定义（RUNBOOK §7.36）。
+        // 这里不读默认头图：列表页没有图片位，多查一次库、多下发一个没人用的字段都是债。
         return $this->paginate(array_map(fn ($a) => [
-            'id'         => (int) $a['id'],
-            'title'      => $a['title'],
-            'summary'    => $a['summary'],
-            'type'       => $a['type'],
-            'subtype'    => $a['subtype'],
-            'tagColor'   => $a['tag_color'],
-            'isTop'      => (bool) $a['is_top'],
-            'createdAt'  => $a['created_at'],
+            'id'           => (int) $a['id'],
+            'title'        => $a['title'],
+            'summary'      => $a['summary'],
+            'type'         => $a['type'],
+            'subtype'      => AnnouncementCover::normalize($a['subtype']),
+            'subtypeLabel' => AnnouncementCover::label($a['subtype']),
+            'tagColor'     => AnnouncementCover::colorFor($a['subtype'], $a['tag_color']),
+            'isTop'        => (bool) $a['is_top'],
+            'createdAt'    => $a['created_at'],
         ], $list), $total, $p['page'], $p['pageSize']);
     }
 
@@ -59,15 +63,20 @@ class Content extends BaseController
             ->find();
         if (!$a) return $this->fail(1002, '公告不存在');
 
+        // 头图与标签色的口径（AnnouncementCover，RUNBOOK §7.36）：
+        //   coverImage = 公告自己上传的封面优先，否则该子分类的默认图（后台「全局参数 → 公告头图」可换），
+        //                两者都没有 = 空串，C 端不渲染横幅块；
+        //   tagColor   = 公告自带的 tag_color（须是 #rrggbb）优先，否则用该子分类的主题色。
         return $this->success([
-            'id'         => (int) $a['id'],
-            'title'      => $a['title'],
-            'content'    => $a['content'],
-            'coverImage' => $a['cover_image'],
-            'type'       => $a['type'],
-            'subtype'    => $a['subtype'],
-            'tagColor'   => $a['tag_color'],
-            'createdAt'  => $a['created_at'],
+            'id'           => (int) $a['id'],
+            'title'        => $a['title'],
+            'content'      => $a['content'],
+            'coverImage'   => AnnouncementCover::coverFor($a['subtype'], $a['cover_image'], AnnouncementCover::defaultCovers()),
+            'type'         => $a['type'],
+            'subtype'      => AnnouncementCover::normalize($a['subtype']),
+            'subtypeLabel' => AnnouncementCover::label($a['subtype']),
+            'tagColor'     => AnnouncementCover::colorFor($a['subtype'], $a['tag_color']),
+            'createdAt'    => $a['created_at'],
             // 正文底部统一附加的平台风险提示（HTML 片段，空串 = 不显示）。
             // 全仓库只有这一个出口对外输出公告正文，所以提示只在这里拼；
             // 文案与开关在「系统配置 → 全局参数」，见 app/service/AnnouncementDisclaimer.php 与 RUNBOOK §7.32

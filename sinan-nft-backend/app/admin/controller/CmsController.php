@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\admin\controller;
 
 use think\facade\Db;
+use app\service\AnnouncementCover;
 use HTMLPurifier;
 use HTMLPurifier_Config;
 
@@ -380,8 +381,8 @@ class CmsController extends BaseController
         if ($type !== null) {
             $query->where('type', $type);
         }
-        // 子分类筛选（管理端类型 = C 端 subtype：activity/compose/operation）
-        $subtype = $this->enumParam('subtype', ['activity', 'compose', 'operation']);
+        // 子分类筛选（管理端类型 = C 端 subtype：活动/合成/寄售/运营，白名单见 AnnouncementCover::SUBTYPES）
+        $subtype = $this->enumParam('subtype', AnnouncementCover::values());
         if ($subtype !== null) {
             $query->where('subtype', $subtype);
         }
@@ -405,7 +406,12 @@ class CmsController extends BaseController
         $items = $query->order('is_top', 'desc')->order('created_at', 'desc')
             ->page($page, $pageSize)->select()->toArray();
 
-        return $this->paginate($items, $total, $page, $pageSize);
+        // covers：四个子分类当前的默认头图，随列表一起给后台。
+        // 编辑弹窗要靠它把「选了这个类型会配哪张图」显示出来（不传就得为这点事新开一个接口，
+        // 而新接口要重新过一遍权限码，不如搭这趟车）。真源仍是 AnnouncementCover，这里只是转发。
+        return $this->paginate($items, $total, $page, $pageSize, [
+            'covers' => AnnouncementCover::defaultCovers(),
+        ]);
     }
 
     /**
@@ -440,7 +446,8 @@ class CmsController extends BaseController
             'cover_image' => $this->request->param('cover_image') !== null
                 ? mb_substr(trim((string) $this->request->param('cover_image')), 0, 255) : null,
             'type'        => $type,
-            'subtype'     => $this->enumParam('subtype', ['activity', 'compose', 'operation']),
+            // 缺省或非法子分类按「运营公告」入库（兜底口径与 C 端同一个 normalize，见 AnnouncementCover）
+            'subtype'     => AnnouncementCover::normalize($this->enumParam('subtype', AnnouncementCover::values())),
             'tag_color'   => $this->request->param('tag_color') !== null
                 ? mb_substr(trim((string) $this->request->param('tag_color')), 0, 20) : null,
             'status'      => $this->enumParam('status', ['draft', 'published']) ?? 'draft',
@@ -495,7 +502,7 @@ class CmsController extends BaseController
             $update['cover_image'] = mb_substr(trim((string) $this->request->param('cover_image')), 0, 255);
         }
         if ($this->request->param('subtype') !== null) {
-            $update['subtype'] = $this->enumParam('subtype', ['activity', 'compose', 'operation']);
+            $update['subtype'] = AnnouncementCover::normalize($this->enumParam('subtype', AnnouncementCover::values()));
         }
         if ($this->request->param('tag_color') !== null) {
             $update['tag_color'] = mb_substr(trim((string) $this->request->param('tag_color')), 0, 20);

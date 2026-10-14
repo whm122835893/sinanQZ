@@ -1,22 +1,20 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getAnnouncements, saveAnnouncement, removeAnnouncement } from '@/api'
+import { getAnnouncements, saveAnnouncement, removeAnnouncement, uploadImage } from '@/api'
 import AdminTablePage from '@/components/AdminTablePage.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import RichTextEditor from '@/components/RichTextEditor.vue'
 import { NOTICE_TYPE } from '@/utils/maps'
 
+// 分类选项由 NOTICE_TYPE 一处派生（不再各处抄一遍四类清单）：
+// 加一类只需改 @/utils/maps.js，真源在后端 AnnouncementCover::SUBTYPES，防漂移测试盯这两处
 const filters = [
   {
     field: 'type',
     label: '类型',
-    options: [
-      { value: 'activity', label: '活动公告' },
-      { value: 'compose', label: '合成公告' },
-      { value: 'operation', label: '运营公告' }
-    ]
+    options: Object.entries(NOTICE_TYPE).map(([value, m]) => ({ value, label: m.label }))
   },
   {
     field: 'status',
@@ -32,7 +30,25 @@ const listRef = ref(null)
 const editShow = ref(false)
 const editing = ref(null)
 const submitting = ref(false)
+const uploading = ref(false)
 const form = ref(emptyForm())
+
+// 四个子分类的默认头图（来自列表接口的 data.covers，键即 activity/compose/consignment/operation）
+// 走列表接口而不是 /system/configs：那个接口要 system:config 权限，只给运营开的内容管理员会 403
+const covers = ref({})
+
+onMounted(loadCovers)
+
+async function loadCovers() {
+  // 只要 covers，所以 size 取 1；失败也不影响发布流程，弹窗里少一张预览图而已
+  const res = await getAnnouncements({ page: 1, size: 1 })
+  if (res.code === 0) covers.value = res.data?.covers || {}
+}
+
+// 当前所选类型的默认头图（后台「全局参数 → 公告头图」里配的）
+const typeDefault = computed(() => covers.value[form.value.type] || '')
+// C 端详情页真正会显示的那张：自己上传的 > 该类型默认
+const activeCover = computed(() => form.value.coverImage || typeDefault.value)
 
 function emptyForm() {
   return {
@@ -40,6 +56,8 @@ function emptyForm() {
     type: 'operation',
     summary: '',
     content: '',
+    // 公告图：留空 = 跟随该类型默认头图，不是「不显示图」
+    coverImage: '',
     // 发布方式：now 立即发布 / schedule 定时发布 / draft 存草稿
     mode: 'now',
     publishTime: ''
@@ -79,10 +97,28 @@ function openEdit(a) {
     type: a.type,
     summary: a.summary || '',
     content: a.content || '',
+    coverImage: a.coverImage || '',
     mode: a.status === 'draft' ? 'draft' : scheduled ? 'schedule' : 'now',
     publishTime: scheduled ? a.publishTime : ''
   }
   editShow.value = true
+}
+
+// ---- 公告图上传（≤5MB，存 /uploads/announcement/年月/随机名；HEIC 由 api/index.js 总闸转 JPEG）----
+async function onUploadCover({ file }) {
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
+  uploading.value = true
+  const res = await uploadImage(file, 'announcement')
+  uploading.value = false
+  if (res.code === 0 && res.data?.url) {
+    form.value.coverImage = res.data.url
+    ElMessage.success('公告图已上传，保存后 C 端详情页即换成这张')
+  } else {
+    ElMessage.error(res.message || '上传失败，请重试')
+  }
 }
 
 async function onSave() {
@@ -105,6 +141,7 @@ async function onSave() {
     type: f.type,
     summary,
     content: f.content,
+    coverImage: f.coverImage,
     status: f.mode === 'draft' ? 'draft' : 'published',
     publishTime: f.mode === 'schedule' ? f.publishTime : ''
   })
@@ -183,11 +220,49 @@ async function onRemove(a) {
         </el-form-item>
         <el-form-item label="公告类型">
           <el-radio-group v-model="form.type">
-            <el-radio value="activity">活动</el-radio>
-            <el-radio value="compose">合成</el-radio>
-            <el-radio value="operation">运营</el-radio>
+            <el-radio v-for="(m, k) in NOTICE_TYPE" :key="k" :value="k">{{ m.label }}</el-radio>
           </el-radio-group>
-          <div class="t-tertiary" style="font-size: 12px; width: 100%">C 端公告列表按此分类展示（活动/合成/运营 Tab）</div>
+          <div class="t-tertiary" style="font-size: 12px; width: 100%">C 端公告列表按此分类展示（各分类 Tab），同时决定下面「公告图」用哪张默认头图</div>
+        </el-form-item>
+        <el-form-item label="公告图">
+          <div class="an__cover">
+            <div class="an__cover-row">
+              <div class="an__cover-cell">
+                <div class="an__cover-cap">
+                  详情页实际显示
+                  <span v-if="!form.coverImage" class="t-tertiary">（跟随类型默认）</span>
+                </div>
+                <div class="an__cover-frame" :class="{ 'is-empty': !activeCover }">
+                  <img v-if="activeCover" :src="activeCover" alt="公告图预览" />
+                  <div v-else class="an__cover-none">该类型暂未设置默认头图</div>
+                </div>
+                <div class="an__cover-ops">
+                  <el-upload :show-file-list="false" :http-request="onUploadCover" accept="image/*">
+                    <el-button link type="primary" size="small" :loading="uploading">
+                      {{ form.coverImage ? '重新上传' : '上传自定义公告图' }}
+                    </el-button>
+                  </el-upload>
+                  <el-button v-if="form.coverImage" link type="warning" size="small" @click="form.coverImage = ''">
+                    恢复跟随类型默认
+                  </el-button>
+                </div>
+              </div>
+              <div class="an__cover-cell">
+                <div class="an__cover-cap">{{ NOTICE_TYPE[form.type]?.label || '该类型' }}默认头图</div>
+                <div class="an__cover-frame" :class="{ 'is-empty': !typeDefault }">
+                  <img v-if="typeDefault" :src="typeDefault" alt="该类型默认头图" />
+                  <div v-else class="an__cover-none">未设置</div>
+                </div>
+                <div class="an__cover-ops">
+                  <span class="t-tertiary" style="font-size: 11px">想换这张：系统设置 → 全局参数 → 公告头图（改完实时生效，不用发版）</span>
+                </div>
+              </div>
+            </div>
+            <div class="t-tertiary" style="font-size: 12px; margin-top: 8px; width: 100%">
+              公告图显示在 C 端公告详情页正文上方的横幅条。不上传就用该类型的默认头图（右边那张）；
+              上传了就以这条公告自己的为准。建议 1280×495（约 2.59:1），不超过 5MB。
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="摘要">
           <el-input
@@ -241,3 +316,66 @@ async function onRemove(a) {
     </el-dialog>
   </div>
 </template>
+
+<style scoped lang="scss">
+// 公告图：左边是这条公告最终生效的图（自己传的，没传就是该类型默认），
+// 右边是「该类型默认头图」本体——两张同框，运营一眼能看出留空会显示哪张。
+// 1280×495 的横幅比例按 260px 宽铺出来约 100px 高，两格并排不撑破 760px 弹窗。
+.an__cover {
+  width: 100%;
+}
+
+.an__cover-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.an__cover-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.an__cover-cap {
+  font-size: 12px;
+  color: $color-text-secondary;
+}
+
+.an__cover-frame {
+  width: 260px;
+  aspect-ratio: 1280 / 495;
+  border-radius: 8px;
+  overflow: hidden;
+  background: $color-surface;
+  border: 1px solid $color-border;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  &.is-empty {
+    background: $color-bg;
+  }
+}
+
+.an__cover-none {
+  font-size: 12px;
+  color: $color-text-tertiary;
+  padding: 0 10px;
+  text-align: center;
+}
+
+.an__cover-ops {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+</style>

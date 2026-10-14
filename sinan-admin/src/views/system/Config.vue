@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { get } from '@/utils/request'
+import { uploadImage } from '@/api'
 
 // ============================================================
 // 全局参数（system:config）
@@ -21,6 +22,17 @@ const GROUPS = [
   { key: 'marketing', name: '营销参数', icon: 'Present', keys: ['checkin_rewards'] },
   { key: 'service', name: '客服配置', icon: 'Service', keys: ['service_hotline', 'service_hours', 'service_online_url'] },
   { key: 'content', name: '内容与公告', icon: 'Document', keys: ['announcement_disclaimer_enabled', 'announcement_disclaimer'] },
+  {
+    key: 'announcement_covers',
+    name: '公告头图',
+    icon: 'Picture',
+    keys: [
+      'announcement_cover_activity',
+      'announcement_cover_compose',
+      'announcement_cover_consignment',
+      'announcement_cover_operation'
+    ]
+  },
   { key: 'risk', name: '风控阈值', icon: 'Warning', keys: ['large_recharge_alert', 'large_refund_approval_threshold'] },
   { key: 'user', name: '用户与实名', icon: 'User', keys: ['realname_audit_mode'] },
   { key: 'platform', name: '平台运维', icon: 'Operation', keys: ['cleanup_sms_required', 'chain_mint_batch_limit'] }
@@ -40,6 +52,12 @@ const META = {
   service_online_url: { label: '在线客服链接', unit: '', hint: 'C 端「在线客服」跳转链接（可空，空则展示提示）' },
   announcement_disclaimer_enabled: { label: '公告风险提示开关', unit: '', hint: '开启后 C 端公告与新闻详情页正文底部自动显示下方「公告正文底部风险提示」那段文字；关闭即完全恢复改造前的样子。公告表里的正文一个字节都不改，随时可以再打开', bool: true },
   announcement_disclaimer: { label: '公告正文底部风险提示', unit: '', hint: 'C 端每条公告 / 新闻正文底部自动附加的平台声明。格式：第一行是加粗标题，空一行分段，段内直接回车也会换行。保存后实时生效、不用发版，存量公告当场就有提示。这里是纯文本：尖括号会照原样显示成文字，不会变成网页标签；上限 5000 字，清空则不显示（想整段隐藏请用上面的开关，清空会丢掉原文案）', multiline: true },
+  // 四类公告的默认头图：C 端详情页正文上方的横幅。公告自己传了图就用它自己的，
+  // 没传就回落到这里配的这张（真源见后端 app/service/AnnouncementCover.php）
+  announcement_cover_activity: { label: '活动公告默认头图', unit: '', image: true, hint: 'C 端「活动公告」详情页正文上方的横幅图。该类型公告留空不传自己的图时就用这里这张；点「换图」上传（建议 1280×495，≤5MB），清空则该类型详情页不显示横幅。保存后实时生效、不用发版；出厂图在服务器 public/uploads/notice-default/，这里只改指向、不动那张文件' },
+  announcement_cover_compose: { label: '合成公告默认头图', unit: '', image: true, hint: 'C 端「合成公告」详情页正文上方的横幅图。该类型公告留空不传自己的图时就用这里这张；点「换图」上传（建议 1280×495，≤5MB），清空则该类型详情页不显示横幅。保存后实时生效、不用发版；出厂图在服务器 public/uploads/notice-default/，这里只改指向、不动那张文件' },
+  announcement_cover_consignment: { label: '寄售公告默认头图', unit: '', image: true, hint: 'C 端「寄售公告」详情页正文上方的横幅图。该类型公告留空不传自己的图时就用这里这张；点「换图」上传（建议 1280×495，≤5MB），清空则该类型详情页不显示横幅。保存后实时生效、不用发版；出厂图在服务器 public/uploads/notice-default/，这里只改指向、不动那张文件' },
+  announcement_cover_operation: { label: '运营公告默认头图', unit: '', image: true, hint: 'C 端「运营公告」详情页正文上方的横幅图。该类型公告留空不传自己的图时就用这里这张（没标类型的老公告也按运营公告算，所以这条也管它们）；点「换图」上传（建议 1280×495，≤5MB），清空则该类型详情页不显示横幅。保存后实时生效、不用发版；出厂图在服务器 public/uploads/notice-default/，这里只改指向、不动那张文件' },
   large_recharge_alert: { label: '大额充值告警', unit: '元', hint: '单笔充值超过该金额触发风控告警' },
   large_refund_approval_threshold: { label: '大额退款审批阈值', unit: '元', hint: '退款金额超过后需审批中心复核' },
   realname_audit_mode: {
@@ -109,6 +127,41 @@ async function onSave(cfg) {
     ElMessage.success(res.message || '参数已保存并实时生效')
   }
 }
+
+// ---- 图片型参数（公告头图）----
+// 流程：先把图传到后端（存 /uploads/announcement/年月/随机名），再走 onSave 的确认 + 审计。
+// 用户在确认框点「取消」时把本地值还原回去，否则预览会停在「已换/已清空」的假状态。
+const uploadingKey = ref('')
+
+async function onUploadConfigImage(cfg, file) {
+  if (!file) return
+  if (file.size > 5 * 1024 * 1024) {
+    return ElMessage.warning('图片大小不能超过 5MB')
+  }
+  uploadingKey.value = cfg.key
+  const res = await uploadImage(file, 'announcement')
+  uploadingKey.value = ''
+  if (res.code !== 0 || !res.data?.url) {
+    return ElMessage.error(res.message || '上传失败，请重试')
+  }
+  const prev = cfg.value
+  cfg.value = res.data.url
+  try {
+    await onSave(cfg)
+  } catch {
+    cfg.value = prev
+  }
+}
+
+async function onClearConfigImage(cfg) {
+  const prev = cfg.value
+  cfg.value = ''
+  try {
+    await onSave(cfg)
+  } catch {
+    cfg.value = prev
+  }
+}
 </script>
 
 <template>
@@ -125,7 +178,10 @@ async function onSave(cfg) {
             v-for="cfg in g.items"
             :key="cfg.key"
             class="cfg__item"
-            :class="{ 'cfg__item--multiline': META[cfg.key]?.multiline }"
+            :class="{
+              'cfg__item--multiline': META[cfg.key]?.multiline,
+              'cfg__item--image': META[cfg.key]?.image
+            }"
           >
             <div class="cfg__item-main">
               <div class="cfg__item-name">
@@ -185,6 +241,36 @@ async function onSave(cfg) {
                   :loading="savingKey === cfg.key"
                   @click="onSave(cfg)"
                 >保存</el-button>
+              </template>
+              <template v-else-if="META[cfg.key]?.image">
+                <div class="cfg__image">
+                  <div class="cfg__image-frame" :class="{ 'is-empty': !cfg.value }">
+                    <img v-if="cfg.value" :src="cfg.value" :alt="META[cfg.key].label" />
+                    <span v-else class="cfg__image-none">未设置（该类型公告详情页不显示横幅）</span>
+                  </div>
+                  <div class="cfg__image-ops">
+                    <el-upload
+                      :show-file-list="false"
+                      :http-request="(o) => onUploadConfigImage(cfg, o.file)"
+                      accept="image/*"
+                    >
+                      <el-button
+                        type="primary"
+                        size="small"
+                        :loading="uploadingKey === cfg.key"
+                      >{{ cfg.value ? '换图' : '上传图片' }}</el-button>
+                    </el-upload>
+                    <el-button
+                      v-if="cfg.value"
+                      size="small"
+                      text
+                      type="danger"
+                      :loading="savingKey === cfg.key"
+                      @click="onClearConfigImage(cfg)"
+                    >清空</el-button>
+                    <code class="cfg__image-path">{{ cfg.value || '—' }}</code>
+                  </div>
+                </div>
               </template>
               <template v-else>
                 <el-input v-model="cfg.value" style="width: 160px" />
@@ -255,6 +341,66 @@ async function onSave(cfg) {
   :deep(textarea) {
     line-height: 1.7;
   }
+}
+
+// 图片型参数（公告头图）：整行铺开、顶部对齐，缩略图按 1280×495 的比例摆
+.cfg__item--image {
+  align-items: flex-start;
+
+  .cfg__item-ctrl {
+    align-items: flex-start;
+    flex-shrink: 1;
+  }
+}
+
+.cfg__image {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cfg__image-frame {
+  width: 260px;
+  aspect-ratio: 1280 / 495;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid $color-border;
+  background: $color-surface;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  &.is-empty {
+    background: $color-card;
+  }
+}
+
+.cfg__image-none {
+  font-size: 12px;
+  color: $color-text-tertiary;
+  padding: 0 10px;
+  text-align: center;
+}
+
+.cfg__image-ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cfg__image-path {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 11px;
+  color: $color-text-tertiary;
+  word-break: break-all;
 }
 
 .cfg__item-name {
