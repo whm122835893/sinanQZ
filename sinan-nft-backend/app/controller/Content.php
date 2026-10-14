@@ -6,6 +6,7 @@ use app\BaseController;
 
 use app\service\AnnouncementCover;
 use app\service\AnnouncementDisclaimer;
+use app\service\AnnouncementSalutation;
 use think\facade\Db;
 
 /**
@@ -67,11 +68,23 @@ class Content extends BaseController
         //   coverImage = 公告自己上传的封面优先，否则该子分类的默认图（后台「全局参数 → 公告头图」可换），
         //                两者都没有 = 空串，C 端不渲染横幅块；
         //   tagColor   = 公告自带的 tag_color（须是 #rrggbb）优先，否则用该子分类的主题色。
+        // 敬语与署名（AnnouncementSalutation，RUNBOOK §7.37）：公告自己填的 > 全局默认 > 出厂值，
+        //   三级里必有结果，所以 C 端每条公告都有开头那句称呼和结尾落款；signatureDate 按实际生效时间自动带。
+        $salutation = AnnouncementSalutation::resolve(
+            $a['greeting'] ?? null,
+            $a['signature'] ?? null,
+            $a['publish_time'] ?? null,
+            $a['created_at'] ?? null,
+            AnnouncementSalutation::defaults()
+        );
         return $this->success([
             'id'           => (int) $a['id'],
             'title'        => $a['title'],
             'content'      => $a['content'],
             'coverImage'   => AnnouncementCover::coverFor($a['subtype'], $a['cover_image'], AnnouncementCover::defaultCovers()),
+            'greeting'       => $salutation['greeting'],
+            'signature'      => $salutation['signature'],
+            'signatureDate'  => $salutation['signatureDate'],
             'type'         => $a['type'],
             'subtype'      => AnnouncementCover::normalize($a['subtype']),
             'subtypeLabel' => AnnouncementCover::label($a['subtype']),

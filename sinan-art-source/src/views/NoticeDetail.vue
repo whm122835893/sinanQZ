@@ -61,7 +61,8 @@ const typeStyle = computed(() => {
 
         <!-- 头图横幅：后端已经把「这条公告自己上传的图 > 该类型默认头图 > 空」算成一个最终地址下发下来，
              空串（该类型默认图也被清空了）就整块不渲染，不留灰坑。
-             图在卡片内左右出血铺满，上下留白由 __body 管（真源：后端 AnnouncementCover::coverFor） -->
+             位置：正文区最上方、卡片内通宽居中（2026-10-14 你的要求「首图放在顶部居中的位置，圆角10px」），
+             不再左右出血。真源：后端 AnnouncementCover::coverFor -->
         <img
           v-if="notice.coverImage"
           class="notice-detail__cover"
@@ -70,6 +71,9 @@ const typeStyle = computed(() => {
         />
 
         <div class="notice-detail__body">
+          <!-- 开头敬语：接口给的是「这条公告自己填的 > 全局默认」的最终值，纯文本 {{ }} 渲染 -->
+          <p v-if="notice.greeting" class="notice-detail__greeting">{{ notice.greeting }}</p>
+
           <!-- 富文本模式 -->
           <template v-if="notice.richContent">
             <div
@@ -89,10 +93,14 @@ const typeStyle = computed(() => {
           <!-- 普通文本模式 -->
           <template v-else>
             <p v-for="(p, i) in notice.content" :key="i" class="notice-detail__p">{{ p }}</p>
-            <div class="notice-detail__foot">
-              <span>司南文创 · 数字艺术品平台</span>
-            </div>
           </template>
+
+          <!-- 落款：署名（可后台逐条改）+ 发布日期（后端按实际生效时间算，运营改不了）；
+               写在两个正文分支之外，所以富文本与纯文本公告都有落款 -->
+          <div v-if="notice.signature" class="notice-detail__foot">
+            <span class="notice-detail__foot-name">{{ notice.signature }}</span>
+            <span v-if="notice.signatureDate" class="notice-detail__foot-date">{{ notice.signatureDate }}</span>
+          </div>
         </div>
       </article>
 
@@ -154,16 +162,25 @@ const typeStyle = computed(() => {
     font-size: 12px;
     color: $color-text-tertiary;
   }
-  // 头图横幅：在卡片内左右出血铺满（卡片左右各 16px 内边距，故宽度 +32px、负 margin 抵回去）；
+  // 头图横幅：卡片内通宽、水平居中，圆角 10px（2026-10-14 你的要求「首图放在顶部居中的位置，圆角10px」）。
   // 比例跟图本身走，出厂图 1280×495，运营自己传的图按宽度等比缩放、不裁头不裁尾
   &__cover {
     display: block;
-    width: calc(100% + 32px);
-    margin: 12px -16px 0;
+    width: 100%;
+    margin: 12px auto 0;
+    border-radius: 10px;
     object-fit: cover;
   }
   &__body {
     margin-top: 14px;
+  }
+
+  // 开头敬语：接口给的是最终值（这条自己填的 > 全局默认 > 出厂值），纯文本渲染，样式跟正文一致
+  &__greeting {
+    margin: 0 0 10px;
+    font-size: 14px;
+    color: $color-text-primary;
+    line-height: 1.85;
   }
 
   &__block { margin-bottom: 12px; }
@@ -249,11 +266,16 @@ const typeStyle = computed(() => {
     border-radius: $radius-md;
   }
 
+  // 落款：署名 + 发布日期，右对齐（2026-10-14 之前这里是写死的「司南文创 · 数字艺术品平台」居中一行）
   &__foot {
     margin-top: 18px; padding-top: 14px;
     border-top: 1px dashed $color-border;
+    display: flex; justify-content: flex-end; align-items: baseline; gap: 8px;
+    font-size: 13px; color: $color-text-secondary;
+    text-align: right;
+  }
+  &__foot-date {
     font-size: 12px; color: $color-text-tertiary;
-    text-align: center;
   }
 
   &__back { margin: 16px $page-padding 0; }

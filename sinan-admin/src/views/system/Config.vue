@@ -21,7 +21,7 @@ const GROUPS = [
   { key: 'resale', name: '寄售市场', icon: 'Sell', keys: ['resale_cooldown_seconds', 'resale_fee_rate', 'resale_price_global_max', 'market_recommend_tab_enabled'] },
   { key: 'marketing', name: '营销参数', icon: 'Present', keys: ['checkin_rewards'] },
   { key: 'service', name: '客服配置', icon: 'Service', keys: ['service_hotline', 'service_hours', 'service_online_url'] },
-  { key: 'content', name: '内容与公告', icon: 'Document', keys: ['announcement_disclaimer_enabled', 'announcement_disclaimer'] },
+  { key: 'content', name: '内容与公告', icon: 'Document', keys: ['announcement_disclaimer_enabled', 'announcement_disclaimer', 'announcement_greeting_default', 'announcement_signature_default'] },
   {
     key: 'announcement_covers',
     name: '公告头图',
@@ -52,6 +52,10 @@ const META = {
   service_online_url: { label: '在线客服链接', unit: '', hint: 'C 端「在线客服」跳转链接（可空，空则展示提示）' },
   announcement_disclaimer_enabled: { label: '公告风险提示开关', unit: '', hint: '开启后 C 端公告与新闻详情页正文底部自动显示下方「公告正文底部风险提示」那段文字；关闭即完全恢复改造前的样子。公告表里的正文一个字节都不改，随时可以再打开', bool: true },
   announcement_disclaimer: { label: '公告正文底部风险提示', unit: '', hint: 'C 端每条公告 / 新闻正文底部自动附加的平台声明。格式：第一行是加粗标题，空一行分段，段内直接回车也会换行。保存后实时生效、不用发版，存量公告当场就有提示。这里是纯文本：尖括号会照原样显示成文字，不会变成网页标签；上限 5000 字，清空则不显示（想整段隐藏请用上面的开关，清空会丢掉原文案）', multiline: true },
+  // 公告默认敬语 / 落款：后台发布弹窗里两格留空时 C 端用的那句（真源见后端 app/service/AnnouncementSalutation.php）
+  // 与「风险提示」不同，这两个是**必有**的：这里清空不会让 C 端空着，而是回落到代码里的出厂值，所以不写「清空则不显示」
+  announcement_greeting_default: { label: '公告默认敬语', unit: '', hint: 'C 端公告详情页正文第一行。发布公告时那一格留空就用这里填的，填了则以那条公告自己写的为准。这里是纯文本（尖括号照原样显示成文字，不会变成网页标签），最长 100 字，超出部分保存时截掉。改完实时生效、不用发版，存量公告当场跟着变。留空则用系统出厂值「尊敬的司南用户：」' },
+  announcement_signature_default: { label: '公告默认落款署名', unit: '', hint: 'C 端公告详情页正文右下的落款名字。发布公告时那一格留空就用这里填的，填了则以那条公告自己写的为准。名字后面 C 端会自动带这条公告的实际发布日期（如「司南运营团队 2026年10月14日」），日期由系统生成、这里不用写也改不了。纯文本，最长 100 字，超出保存时截掉；改完实时生效、不用发版。留空则用系统出厂值「司南运营团队」' },
   // 四类公告的默认头图：C 端详情页正文上方的横幅。公告自己传了图就用它自己的，
   // 没传就回落到这里配的这张（真源见后端 app/service/AnnouncementCover.php）
   announcement_cover_activity: { label: '活动公告默认头图', unit: '', image: true, hint: 'C 端「活动公告」详情页正文上方的横幅图。该类型公告留空不传自己的图时就用这里这张；点「换图」上传（建议 1280×495，≤5MB），清空则该类型详情页不显示横幅。保存后实时生效、不用发版；出厂图在服务器 public/uploads/notice-default/，这里只改指向、不动那张文件' },

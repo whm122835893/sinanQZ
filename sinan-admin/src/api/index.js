@@ -2283,11 +2283,16 @@ export async function getAnnouncements(params) {
         content: s(a.content),
         // 公告图（C 端详情页顶部横幅）。空串 = 这条没单独上传，C 端会改用该类型的默认头图
         coverImage: s(a.cover_image),
+        // 敬语 / 落款名（C 端详情页正文开头与结尾）。空串 = 这条没填，C 端改用全局默认
+        greeting: s(a.greeting),
+        signature: s(a.signature),
         isTop: n(a.isTop) === 1
       })),
       total: n(d.total),
       // 四个子分类的默认头图（后端随列表带下来，编辑弹窗用它显示「选这个类型会配哪张图」）
-      covers: d.covers || {}
+      covers: d.covers || {},
+      // 全局默认的敬语与落款（同上，弹窗里两格的占位符与「留空会用哪句」提示用它，键见后端 AnnouncementSalutation）
+      salutation: d.salutation || {}
     }
   }
 }
@@ -2304,6 +2309,10 @@ export function saveAnnouncement(payload) {
     content: payload.content || '',
     // 公告图：留空即「跟随类型默认头图」（后端按 subtype 取 announcement_cover_* 参数），不是「没有图」
     cover_image: payload.coverImage || '',
+    // 敬语 / 落款名：留空即「跟随全局默认」（后端 announcement_greeting_default / _signature_default）。
+    // 落款日期不走这里 —— 后端按这条公告的实际生效时间自动带，运营填不了也改不了。
+    greeting: payload.greeting || '',
+    signature: payload.signature || '',
     status: payload.status || 'draft',
     publish_time: payload.publishTime || '',
     is_top: payload.isTop ? 1 : 0

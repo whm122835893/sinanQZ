@@ -5,6 +5,7 @@ namespace app\admin\controller;
 
 use think\facade\Db;
 use app\service\AnnouncementCover;
+use app\service\AnnouncementSalutation;
 use HTMLPurifier;
 use HTMLPurifier_Config;
 
@@ -409,8 +410,11 @@ class CmsController extends BaseController
         // covers：四个子分类当前的默认头图，随列表一起给后台。
         // 编辑弹窗要靠它把「选了这个类型会配哪张图」显示出来（不传就得为这点事新开一个接口，
         // 而新接口要重新过一遍权限码，不如搭这趟车）。真源仍是 AnnouncementCover，这里只是转发。
+        // salutation：同理，弹窗里敬语/署名两格的占位符与「留空会用哪句」提示要显示全局默认，
+        //             真源仍是 AnnouncementSalutation（RUNBOOK §7.37）。
         return $this->paginate($items, $total, $page, $pageSize, [
             'covers' => AnnouncementCover::defaultCovers(),
+            'salutation' => AnnouncementSalutation::defaults(),
         ]);
     }
 
@@ -445,6 +449,11 @@ class CmsController extends BaseController
             'content'     => $this->sanitizeRichText((string) $this->request->param('content')),
             'cover_image' => $this->request->param('cover_image') !== null
                 ? mb_substr(trim((string) $this->request->param('cover_image')), 0, 255) : null,
+            // 敬语 / 落款名（§7.37）：存原样字符串，空串与 NULL 都算「这条没填」，读取时回落到全局默认
+            'greeting'    => $this->request->param('greeting') !== null
+                ? mb_substr(trim((string) $this->request->param('greeting')), 0, AnnouncementSalutation::MAX_CHARS) : null,
+            'signature'   => $this->request->param('signature') !== null
+                ? mb_substr(trim((string) $this->request->param('signature')), 0, AnnouncementSalutation::MAX_CHARS) : null,
             'type'        => $type,
             // 缺省或非法子分类按「运营公告」入库（兜底口径与 C 端同一个 normalize，见 AnnouncementCover）
             'subtype'     => AnnouncementCover::normalize($this->enumParam('subtype', AnnouncementCover::values())),
@@ -500,6 +509,14 @@ class CmsController extends BaseController
         }
         if ($this->request->param('cover_image') !== null) {
             $update['cover_image'] = mb_substr(trim((string) $this->request->param('cover_image')), 0, 255);
+        }
+        // 敬语 / 落款名（§7.37）：跟 cover_image 一样，传空串就是「清空、改回跟随全局默认」，
+        // 不传这个参数才是不动它（编辑弹窗每次都会带上，所以运营点清空能真的清掉）
+        if ($this->request->param('greeting') !== null) {
+            $update['greeting'] = mb_substr(trim((string) $this->request->param('greeting')), 0, AnnouncementSalutation::MAX_CHARS);
+        }
+        if ($this->request->param('signature') !== null) {
+            $update['signature'] = mb_substr(trim((string) $this->request->param('signature')), 0, AnnouncementSalutation::MAX_CHARS);
         }
         if ($this->request->param('subtype') !== null) {
             $update['subtype'] = AnnouncementCover::normalize($this->enumParam('subtype', AnnouncementCover::values()));

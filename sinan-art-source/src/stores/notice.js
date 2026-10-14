@@ -63,6 +63,13 @@ export const useNoticeStore = defineStore('notice', () => {
       coverImage: a.coverImage || '',
       // 类型标签底色：公告自带的 tag_color（后端只收 #rrggbb）> 该类型主题色
       tagColor: a.tagColor || '',
+      // 正文开头敬语与结尾落款（后端 AnnouncementSalutation 三级算好的最终值：
+      // 这条公告自己填的 > 全局默认参数 > 出厂值，所以正常情况下两个字段都非空）。
+      // 和 disclaimer 一样分字段下发、不拼进 content：拼进去纯文本公告会被认成富文本。
+      // 日期不落库、也不由运营填，后端按这条公告的实际生效时间算好放在 signatureDate
+      greeting: a.greeting || '',
+      signature: a.signature || '',
+      signatureDate: a.signatureDate || '',
       // 平台风险提示（后端 AnnouncementDisclaimer 生成的 HTML 片段，空串 = 不显示）。
       // 正文与提示分两个字段下发，不拼进 content：拼进去会让纯文本公告被认成富文本，
       // 段落换行就得在接口里重做一遍（见 RUNBOOK §7.32 的口径说明）

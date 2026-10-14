@@ -90,6 +90,10 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
       title: '系统维护通知',
       content: PLAIN,
       createdAt: '2026-10-14 00:00:00',
+      // 2026-10-14 起落款是接口下发的（署名 + 发布日期），不再是模板里写死的一行平台名，
+      // 所以这条用例要自己把字段给全（真源：后端 AnnouncementSalutation::resolve）
+      signature: '司南运营团队',
+      signatureDate: '2026年10月14日',
       disclaimer: '<p class="warn-title">司南风险提示</p><p>只有一段</p>'
     }
     const wrapper = await mountDetail()
@@ -97,6 +101,8 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
     expect(wrapper.findAll('.notice-detail__p')).toHaveLength(2)
     const foot = wrapper.find('.notice-detail__foot')
     expect(foot.exists()).toBe(true)
+    expect(foot.text()).toContain('司南运营团队')
+    expect(foot.text()).toContain('2026年10月14日')
     expect(wrapper.find('.notice-detail__main').element.contains(foot.element)).toBe(true)
     const box = wrapper.find('.notice-detail__warning')
     expect(box.exists()).toBe(true)

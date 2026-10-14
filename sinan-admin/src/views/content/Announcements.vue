@@ -36,13 +36,19 @@ const form = ref(emptyForm())
 // 四个子分类的默认头图（来自列表接口的 data.covers，键即 activity/compose/consignment/operation）
 // 走列表接口而不是 /system/configs：那个接口要 system:config 权限，只给运营开的内容管理员会 403
 const covers = ref({})
+// 全局默认的敬语与落款名（同一次请求的 data.salutation，键 greeting / signature）
+// 这里只当「留空会显示什么」的占位符用，不在前端抄一份出厂文案——真源是后端 AnnouncementSalutation
+const salutation = ref({})
 
 onMounted(loadCovers)
 
 async function loadCovers() {
   // 只要 covers，所以 size 取 1；失败也不影响发布流程，弹窗里少一张预览图而已
   const res = await getAnnouncements({ page: 1, size: 1 })
-  if (res.code === 0) covers.value = res.data?.covers || {}
+  if (res.code === 0) {
+    covers.value = res.data?.covers || {}
+    salutation.value = res.data?.salutation || {}
+  }
 }
 
 // 当前所选类型的默认头图（后台「全局参数 → 公告头图」里配的）
@@ -58,6 +64,9 @@ function emptyForm() {
     content: '',
     // 公告图：留空 = 跟随该类型默认头图，不是「不显示图」
     coverImage: '',
+    // 开头敬语 / 落款署名：留空 = 跟随全局默认（系统参数），不是「不显示」
+    greeting: '',
+    signature: '',
     // 发布方式：now 立即发布 / schedule 定时发布 / draft 存草稿
     mode: 'now',
     publishTime: ''
@@ -98,6 +107,8 @@ function openEdit(a) {
     summary: a.summary || '',
     content: a.content || '',
     coverImage: a.coverImage || '',
+    greeting: a.greeting || '',
+    signature: a.signature || '',
     mode: a.status === 'draft' ? 'draft' : scheduled ? 'schedule' : 'now',
     publishTime: scheduled ? a.publishTime : ''
   }
@@ -142,6 +153,8 @@ async function onSave() {
     summary,
     content: f.content,
     coverImage: f.coverImage,
+    greeting: f.greeting.trim(),
+    signature: f.signature.trim(),
     status: f.mode === 'draft' ? 'draft' : 'published',
     publishTime: f.mode === 'schedule' ? f.publishTime : ''
   })
@@ -283,6 +296,30 @@ async function onRemove(a) {
           <div class="t-tertiary" style="font-size: 12px; width: 100%">
             C 端详情页会在正文底部自动附上平台《风险提示》（公告与新闻都带，正文里不必再自己写一遍）；
             文案与开关在「系统 → 全局参数 → 内容与公告」，改完实时生效、不用发版
+          </div>
+        </el-form-item>
+        <el-form-item label="开头敬语">
+          <el-input
+            v-model="form.greeting"
+            maxlength="100"
+            show-word-limit
+            :placeholder="salutation.greeting"
+          />
+          <div class="t-tertiary" style="font-size: 12px; width: 100%">
+            显示在 C 端正文第一行（顶格，不在正文里）。占位符即当前全局默认，留空 = 用这句；
+            想让所有公告都换一句：系统设置 → 全局参数 → 内容与公告 → 公告默认敬语
+          </div>
+        </el-form-item>
+        <el-form-item label="落款署名">
+          <el-input
+            v-model="form.signature"
+            maxlength="100"
+            show-word-limit
+            :placeholder="salutation.signature"
+          />
+          <div class="t-tertiary" style="font-size: 12px; width: 100%">
+            显示在 C 端正文右下。日期由系统按这条公告的实际生效时间自动跟在名字后面（如「{{ salutation.signature }} 2026年10月14日」），
+            这里不用填日期、也改不了日期。留空 = 名字用全局默认。
           </div>
         </el-form-item>
         <el-form-item label="发布方式">
