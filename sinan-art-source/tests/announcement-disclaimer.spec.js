@@ -13,7 +13,10 @@ import { resolve } from 'node:path'
  *      段落换行就得在接口里重做一遍）；
  *   2. C 端只负责渲染：有值才出现，空串连灰块都不留；
  *   3. 富文本与纯文本两种正文都要在最底部出现，所以模板块放在两个分支之外；
- *   4. 样式复用早就写好的 .notice-detail__warning（灰底小字 + .warn-title 加粗），不新画一套。
+ *   4. 样式复用早就写好的 .notice-detail__warning（居中标题 + 灰底小字），不新画一套；
+ *      盒子从 2026-10-15 起不再是独立白卡片 —— 你要求「公告正文和风险提示共用一个边框」，
+ *      它搬进正文那张卡片的最底下，中间只用一条虚线隔开（RUNBOOK §7.39，
+ *      推翻 §7.32/§7.36 的「分开才像平台在说话」口径）。
  *
  * 这里盯的是 C 端这半边；后端转义/分段/开关的口径由
  * sinan-nft-backend/tests/unit/AnnouncementDisclaimerTest.php 钉。
@@ -62,7 +65,7 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
     document.body.innerHTML = ''
   })
 
-  it('富文本正文：提示作为独立卡片排在正文卡片之后，标题与段落都在', async () => {
+  it('富文本正文：提示嵌在正文卡片最底部，标题与段落都在', async () => {
     shared.detail = {
       id: 1,
       title: '盲盒玩法上线',
@@ -76,15 +79,26 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
     expect(box.exists()).toBe(true)
     expect(box.find('.warn-title').text()).toBe('司南风险提示')
     expect(box.findAll('p')).toHaveLength(3)
-    // 2026-10-14 版式改造：提示从正文卡片里搬出来，成为正文卡片下面的独立白卡片
-    // （参考图口径：声明和正文分开才像「平台在说话」）。所以它不能再嵌在正文卡片内。
+    // 2026-10-15 §7.39：提示从「自己的白卡片」搬回正文那张卡片里面，和正文共用一个边框。
+    // 所以它必须是 .notice-detail__main 的后代，而且排在正文卡片内的最后一位。
     const main = wrapper.find('.notice-detail__main')
     expect(main.exists()).toBe(true)
-    expect(main.element.contains(box.element)).toBe(false)
-    expect(afterInDocumentOrder(main.element, box.element)).toBe(true)
+    expect(main.element.contains(box.element)).toBe(true)
+    expect(main.element.lastElementChild).toBe(box.element)
   })
 
-  it('纯文本正文：同样在落款那张卡片之后补上提示卡片', async () => {
+  // 防漂移：「共用一个边框」这个决定的全部技术含义就在样式上 —— 它只能靠一条虚线和正文分隔，
+  // 不能再自带一张白卡（否则视觉上又变回两个框，而 DOM 结构是对的，只看渲染结果看不出来）。
+  it('卡内那条提示不再自己画白卡（2026-10-15 你的要求：和正文共用一个边框）', () => {
+    const src = readFileSync(resolve(process.cwd(), 'src/views/NoticeDetail.vue'), 'utf-8').replace(/\r\n/g, '\n')
+    const rule = src.match(/&__main > \.notice-detail__warning \{([^}]*)\}/)
+    expect(rule, '找不到正文卡片内风险提示的容器样式').not.toBeNull()
+    expect(rule[1]).toMatch(/border-top:\s*1px dashed/)
+    // 故意留着的历史分支：富文本正文里夹的 warning 块仍是卡内灰底小块，那条规则不归这次改
+    expect(rule[1]).not.toMatch(/background|border-radius|\$page-padding/)
+  })
+
+  it('纯文本正文：落款之后同样接上提示（和正文同一个边框内）', async () => {
     shared.detail = {
       id: 2,
       title: '系统维护通知',
@@ -97,7 +111,7 @@ describe('NoticeDetail · 正文底部平台风险提示', () => {
       disclaimer: '<p class="warn-title">司南风险提示</p><p>只有一段</p>'
     }
     const wrapper = await mountDetail()
-    // 纯文本分支：段落 + 落款仍在正文卡片内，提示在卡片外面
+    // 纯文本分支：段落 + 落款在正文卡片内，提示接在落款之后、仍在同一张卡片里（§7.39）
     expect(wrapper.findAll('.notice-detail__p')).toHaveLength(2)
     const foot = wrapper.find('.notice-detail__foot')
     expect(foot.exists()).toBe(true)

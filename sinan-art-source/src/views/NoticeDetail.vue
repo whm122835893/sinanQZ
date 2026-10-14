@@ -102,14 +102,15 @@ const typeStyle = computed(() => {
             <span v-if="notice.signatureDate" class="notice-detail__foot-date">{{ notice.signatureDate }}</span>
           </div>
         </div>
-      </article>
 
-      <!-- 平台风险提示（2026-10-14，见 RUNBOOK §7.32）：
-           后端 GET /api/announcements/:id 的 disclaimer 字段，公告与新闻、富文本与纯文本正文
-           都统一拼在最底部，所以放在上面两个分支之外；文案在后台「系统配置 → 全局参数」改。
-           它单独占一张白卡（参考图口径：声明和正文分开，读起来才是平台在说话），
-           里面仍复用 __warning 这套现成样式（灰标题 + 小字 + .warn-title 加粗）。 -->
-      <div v-if="notice.disclaimer" class="notice-detail__warning" v-html="notice.disclaimer"></div>
+        <!-- 平台风险提示（2026-10-14 起，见 RUNBOOK §7.32）：后端 GET /api/announcements/:id 的
+             disclaimer 字段，公告与新闻、富文本与纯文本正文都统一拼在最底部，所以放在上面两个分支之外；
+             文案在后台「系统配置 → 全局参数」改。
+             2026-10-15 你的要求「公告正文和风险提示共用一个边框」→ 它搬进正文那张卡片里，
+             不再自己占一张白卡（§7.39，这条推翻了 §7.32/§7.36 的「分开才像平台在说话」口径）；
+             里面仍复用 __warning 这套现成样式（居中标题 + 灰底小字）。 -->
+        <div v-if="notice.disclaimer" class="notice-detail__warning" v-html="notice.disclaimer"></div>
+      </article>
 
       <div class="notice-detail__back">
         <AppButton @click="back">返回公告列表</AppButton>
@@ -239,7 +240,7 @@ const typeStyle = computed(() => {
   }
 
   // 风险提示共用一套文字样式，盒子按场合分两种：
-  //  - 挂在页面上的那条（接口 disclaimer 字段）→ 独立白卡片，和正文分开才像「平台在说话」
+  //  - 挂在页面上的那条（接口 disclaimer 字段）→ 就在正文卡片最底下，用一条虚线和正文隔开（§7.39）
   //  - 夹在正文块里的（富文本 block.type === 'warning'，现网接口不产出，留着兜历史数据）→ 卡内灰底小块
   &__warning {
     font-size: 12px;
@@ -254,11 +255,10 @@ const typeStyle = computed(() => {
       text-align: center;
     }
   }
-  > .notice-detail__warning {
-    margin: 12px $page-padding 0;
-    padding: 14px 16px;
-    background: $color-card;
-    border-radius: $radius-lg;
+  &__main > .notice-detail__warning {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px dashed $color-border;
   }
   &__body &__warning {
     margin-top: 18px;

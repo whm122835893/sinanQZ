@@ -252,22 +252,20 @@ class AnnouncementDisclaimerTest extends TestCase
             $view,
             '详情页的提示块必须走 __warning 这套现成样式，且不能无条件渲染（空串会留一个空灰块）'
         );
-        // 2026-10-14 公告详情页版式改造（§7.36）：风险提示从正文卡片里搬出来，成了正文卡片下面的独立白卡片。
-        // 原来这条「</template> 紧跟提示注释」是位置代理断言，卡片一挪就红（并不是口径变了），
-        // 所以换成直接量 DOM 位置：提示块必须排在正文卡片之后，且正文卡片内部不能再出现一份 ——
-        // 这两条合起来才是「富文本/纯文本两种正文，提示都只在最底部出现一次」的真正口径。
+        // 2026-10-15 你要求「公告正文和风险提示共用一个边框」（§7.39）：提示块从正文卡片外面的独立白卡
+        // 搬进正文卡片的最底下，用一条虚线和正文分隔。所以位置断言整个翻了个方向 ——
+        // 上一版（§7.36）钉的是 $bodyClose < $warn（排在卡片之后），现在钉 $bodyOpen < $warn < $bodyClose（嵌在卡片里）。
+        // 两份都留不得：它必须只有一份，且落在正文卡片内部（否则两种正文会重复贴）。
         $warn = strpos($view, 'v-if="notice.disclaimer"');
         $this->assertNotFalse($warn, '详情页找不到风险提示块');
         $bodyOpen = strpos($view, '<article class="notice-detail__main"');
         $this->assertNotFalse($bodyOpen, '正文卡片类名变了，这条防漂移要跟着一并改');
         $bodyClose = strpos($view, '</article>');
         $this->assertNotFalse($bodyClose);
-        $this->assertLessThan($warn, $bodyClose, '风险提示要排在正文卡片之后（自己占一张卡）');
-        $this->assertStringNotContainsString(
-            'notice.disclaimer',
-            substr($view, $bodyOpen, $bodyClose - $bodyOpen),
-            '正文卡片里不许再放一份风险提示，否则页面出现两块'
-        );
+        $this->assertGreaterThan($bodyOpen, $warn, '风险提示要嵌在正文卡片里面（和正文共用一个边框）');
+        $this->assertLessThan($bodyClose, $warn, '风险提示要嵌在正文卡片里面，不能又跑回卡片外面');
+        $this->assertSame(1, substr_count($view, 'v-if="notice.disclaimer"'),
+            '风险提示在模板里只能有一份，否则富文本与纯文本两种正文会各贴一遍');
         // 这块的历史依赖（为什么单独下发、为什么只拼在详情）必须留在注释里，别改成裸代码
         $this->assertMatchesRegularExpression('/<!--[^>]*风险提示/', $view);
     }
