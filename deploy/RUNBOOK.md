@@ -2309,6 +2309,135 @@ CSS 只留 `text-align`/`color`）→ C 端 `#/notice/2` 的 DOM 里 4 个 `<h2>
 ② 那条 10-11 的测试公告「用户你好 / 哈哈哈特别牛逼」还在列表里当着「运营公告」第一位之后的位置，
 要不要删（不可逆，按规矩你点头我才动）或改成正式内容；③ C 端真机看这条公告的版式与折行（还是 0×0 视口 + px→vw 量不到像素那件事）。
 
+### 7.36 公告详情页照参考图重排 + 每个类型一张可换的默认头图（2026-10-14 本地做完并测过，**未上线，等你批准第 9 次发版**）
+
+**你怎么点的头**：两张别的平台的「公告详情」截图 + 一句
+「**c端公告页面的内容和样式参考这两张图。后台的话我想要有公告图，就像图中的运营公告图片和寄售公告图片一样，选择哪个类型都有对应的图片，并且这个图片可以上传更换。**」
+参考图的读法（我按这个排的）：标题 → 彩色类型标签 + 日期 → 一条与类型配套的横幅图 → 正文 → 底部风险提示**单独一张白卡**。
+**公告列表页不动** —— 它没有图片位，多查一次库、多下发一个没人用的字段都是债。
+
+四个岔路口我用问题框问了你，你的选择是：① 默认头图「**我用 AI 生成三张（推荐）**」（实际做了四张，因为你选了③）；
+② 默认图存放「**后台可改（推荐）**」= 存系统参数，以后换默认图**不用发版**；③ 类型「**加一个「寄售公告」**」；
+④ 富文本高亮「**暂不要高亮**」（HTMLPurifier 的 CSS 白名单一个字没动）。
+
+**核心决定：子分类这件事收成一处 —— `app/service/AnnouncementCover.php`（新增）**
+有哪几个子分类、叫什么、标签什么色、默认头图读哪个参数键，四个答案只写在这个类里；后台筛选/表单/C 端三边都从它取值或对齐它。
+为什么要收：原来「合法子分类」抄了三份（`CmsController` 的列表筛选 + 新建 + 编辑），中文名和顺序 C 端与后台又各抄一份，
+加一类要同时改六处，而**漏改的表现是静默的** —— `enumParam()` 对不在白名单里的值是「当没传」而不是报错，
+漏改筛选 = 筛不出寄售公告，漏改 C 端 = 寄售公告显示成「公告」。现在这四份抄本都由 `tests/unit/AnnouncementCoverTest.php` 用正则钉在一起。
+
+**头图优先级（`coverFor()`）**：公告自己上传的封面 > 该子分类的默认图 > 都没有 = 空串（C 端整块不渲染，不留灰坑）。
+默认图存在 `nft_system_configs` 的四个 `announcement_cover_{类型}` 键里，**清空某个键 = 该类型新公告不再有默认横幅，已单独传过封面的公告不受影响**。
+
+**顺手救活了一个死字段**：`nft_announcements.tag_color` 从建表起就在，接口也下发，但 C 端从来没用、后台也从来没填过（第 8 节 13 条）。
+这次详情页的标签色就是它 —— 但**只认 `#rrggbb`**（后端 `colorFor()` 用正则收，C 端 `typeStyle` 再收一遍），
+其余形状（`url(...)`、带分号的片段、`"><script>`）一律回落类型色。理由：这个值最后要写进 `style`，后台一个手滑或一个恶意值不该变成 C 端的样式注入。
+
+**寄售公告不需要改表**：`subtype` 是 `varchar(20)` 不是 `enum`，所以这次**零 ALTER**、生产零 DDL 结构变更。
+「空 subtype 怎么兜底」也收进了 `normalize()`：库里那列可空、存量有 NULL，以前列表端按「运营公告」算、详情端按「公告」算，
+同一个 NULL 在两个页面叫两个名字 —— 现在两端都走 `normalize()`，一律「运营公告」。
+
+**四张出厂图怎么来的**（`scripts/make_notice_banners.php`，提示词原文在下面，脚本注释里承诺要记的就是这几行）：
+AI 只出**无字底图**（提示词最后 explicitly 写 `Absolutely NO text, NO letters, NO Chinese characters… no cat`，
+「no cat」是特意写的，别抄成参考平台那只猫），中文标题由脚本用系统字体 `simhei.ttf` 画上去 ——
+生成式模型画汉字经常缺笔少画，而这张图挂在正式公告顶上，错一个笔画就是平台级事故；画字还能保证四张风格一致、以后改文案不用重画。
+底部裁掉 90px 是去掉 AI 右下角的水印条，裁完 1280×495（约 2.59:1）反而更贴参考图的横幅比例。
+
+| 子分类 | 主题色 | 出厂图 | AI 底图提示词（去掉主题色那半句就是另外三张） |
+| --- | --- | --- | --- |
+| activity 活动公告 | `#C00000` | `announcement-activity.webp` 41,550B | Ultra-wide horizontal banner background illustration, 21:9, for a Chinese digital-art collectibles platform. Deep crimson red palette (#C00000 to #7A0000 gradient), abstract flat-vector style with soft glow. On the RIGHT third: an elegant ancient Chinese sinan compass — a bronze spoon resting on an engraved square divining plate with concentric ring markings and faint constellation lines, drawn in thin gold linework with subtle 3D shading. Left two-thirds: mostly clean gradient space for text, with a few faint gold hairline arcs, tiny star dots and a subtle grid. Premium, minimal, modern, museum-quality. Absolutely NO text, NO letters, NO Chinese characters, NO numbers, NO logo, NO watermark, NO people, NO mascots, no cat. |
+| compose 合成公告 | `#B08D55` | `announcement-compose.webp` 31,278B | 同上，换成 `Warm bronze and antique gold palette (#B08D55 to #6B4A22 gradient)`，右侧图案换成 `three or four translucent artifact fragments (porcelain shard, jade bi disc, bronze ding tripod silhouette) merging together into one whole object, connected by thin gold construction lines and small geometric nodes, like a fusion diagram` |
+| consignment 寄售公告 | `#E89121` | `announcement-consignment.webp` 27,658B | 同上，换成 `Warm amber orange palette (#E89121 to #A85B00 gradient)`，右侧图案换成 `a minimal modern shopfront/consignment motif — an open display case or a hanging price tag card holding a small glowing collectible token, plus a subtle upward price line chart, drawn in thin cream and gold linework` |
+| operation 运营公告 | `#3D5A99` | `announcement-operation.webp` 32,836B | 同上，换成 `Deep indigo blue palette (#3D5A99 to #1E2C52 gradient)`，右侧图案换成 `an official-announcement motif — a stylized megaphone horn emitting concentric arcs, layered over a faint circular compass rose and a subtle dotted orbit, drawn in thin pale-blue and gold linework` |
+
+**出厂图不会被「清理未引用图片」扫掉，有两道闸**（§7.20 那套保护）：
+① 它们住的目录叫 `notice-default`，不是 `UploadController::BIZ_DIRS` 里的业务目录，清理服务的闸门从一开始就进不去；
+② 就算进去了，`UploadCleanupService::IMAGE_COLUMNS['announcements']` 含 `cover_image`、`KV_COLUMNS['system_configs'] = 'config_value'`，
+四个参数键与公告表里的引用都算「被引用」。运营自己上传的公告图落 `announcement/年月/随机名`，同样受②保护。
+
+**后台做了两处**（都在你说的那个「可以上传更换」上）：
+- 「内容 → 公告管理 → 发布/编辑公告」新增**「公告图」**：左边一格「详情页实际显示（跟随类型默认）」= C 端最终会显示的那张，
+  右边一格「{该类型}默认头图」= 这张类型的默认本体。两张同框，运营一眼能看出留空会显示哪张；
+  切换类型时右边那格和左边的回落图**跟着换**（预览是 `computed`，不是快照）。按钮：`上传自定义公告图 ⇄ 重新上传`、`恢复跟随类型默认`。
+  四张默认图**随公告列表接口的 `data.covers` 下发**，没有新开接口也不读 `/admin/system/configs` —— 那个口要 `system:config` 权限，
+  只开了内容权限的运营账号点进弹窗会 403；新开接口则要新权限码，属于扩大改动面。
+- 「系统配置 → 全局参数」新增**「公告头图」分组**，四个键做成**图片控件**（预览 + 换图 + 清空 + 当前路径），不再是 160px 单行文本框。
+  换图/清空都走原来的保存确认弹框与审计（`config_save`），改完实时生效。
+
+**C 端详情页**（`NoticeDetail.vue`）按参考图重排：一张主卡片「标题 → 类型标签+日期 → 出血横幅 → 正文」，
+风险提示**搬到卡片外面单独一张白卡**（和正文分开才像「平台在说话」），横幅在卡片内左右出血铺满
+（`width: calc(100% + 32px)` + `margin: 0 -16px`，px 会被编译成 vw）。类型标签的底色来自接口的 `tagColor`，前端再校验一次形状。
+
+**迁移第 25 份 `20261014_announcement_cover_defaults.sql`：只有 4× INSERT IGNORE，故意不写 UPDATE。**
+和 §7.32 那次同一个口径 —— 这四个值运营会在后台换图，重复执行本文件不该把他们换过的图冲回出厂图；缺行才补，有行就跳过。
+
+**一处我自己搞错、当场纠正的事**：`.gitignore` 原来写的是整目录排除 `sinan-nft-backend/public/uploads/`，
+而迁移注释和 `AnnouncementCover::FACTORY_DIR` 都写着「出厂图**随版本**放 public/uploads/notice-default/」——
+**那句话在我改之前是假的**：这四张图从来没进过版本库，换台机器 clone 出来它们不存在，C 端详情页一片空白。
+现在改成 `uploads/*` + `!uploads/notice-default/`（写成 `uploads/` 时 git 根本不会进这个目录，负向规则不生效），
+四张 webp 已入库（133KB），用户上传的图仍然照旧挡在外面（`git status -uall` 复核：只有那四张能被 add）。
+
+**还有一处纠正**：这一轮之前的笔记里我写过「三个仓库各自提交」，**是错的** —— `git rev-parse --show-toplevel` 是 `E:/sinan`，
+`sinan-nft-backend`/`sinan-admin`/`sinan-art-source` 上面没有各自的 `.git`，**整个项目是一个 monorepo**，一次提交覆盖三边。
+
+**三端基线（本轮结束时重跑，全是当场实测）**：后端 `--testsuite unit` **251 用例 / 1619 断言 OK**（1 条 deprecation 是老 PG 驱动那句，与本轮无关）；
+后端全量（unit + api，需要本地 8080 与库在跑）**290 / 2101 OK**；后台 **158 通过（13 文件）**；C 端 **141 通过（16 文件）**。
+新增测试：`tests/unit/AnnouncementCoverTest.php` **17 用例 / 150 断言**（A 纯函数 / B 防漂移源码正则 / C 种子逐字节 + 跨仓接线），
+C 端 `tests/announcement-cover.spec.js` **8 用例**（含一条「后端源码里的 SUBTYPES 与前端字面量逐字节相同」的跨仓检查，本地没那两个仓库时 skip）。
+
+**反证 12/12：每一项都先证明「真的拆掉了」再信它的红**（`needle 命中 1 次` + md5 前后不同 + 跑完整 unit 套件而不是 `--filter`，
+中文 filter 在 Windows 上会传参失败，这是上一轮踩过的坑；跑完逐项还原并 `md5 … SAME`）：
+
+| 项 | 拆掉什么 | 结果 | 还原 |
+| --- | --- | --- | --- |
+| A | `coverFor()` 把「自带封面优先」改成「默认图优先」 | 红 2 | SAME |
+| B | 后台 `maps.js` 删掉寄售公告 | 红 1 | SAME |
+| C | 后台筛选退回硬写一条 `[{value:'activity'…}]` | 红 1 | SAME |
+| D | 后台 `api/index.js` 去掉 `cover_image` | 红 1 | SAME |
+| E | 全局参数页寄售那行去掉 `image: true` | 红 1 | SAME |
+| F | C 端 `notice.js` 删掉寄售公告标签 | 红 1 | SAME |
+| G | C 端 `NoticeDetail.vue` 去掉头图的 `v-if` | 红 1 | SAME |
+| H | `colorFor()` 不校验形状、原样返回后台填的值 | 红 2 | SAME |
+| I | 后台列表不再随分页下发 `covers` | 红 1 | SAME |
+| J | 迁移里删掉寄售公告那行种子 | 红 3 | SAME |
+| K | 把运营公告那张出厂图改名移出仓库 | 红 1 | SAME |
+| L | 风险提示搬回正文卡片里（`</article>` 前再放一份） | 红 1 | SAME |
+
+**本轮顺手改了一个既有测试的口径**（不是新写的，是把旧的换掉）：`AnnouncementDisclaimerTest` 原来用
+`</template>\s*<!--[^>]*风险提示` 这种「注释挨着谁」的写法代替真正的顺序检查 —— 我这次把风险提示移到了 `</article>` 之后，
+旧断言会因为注释位置变化而误报。现在它比的是**真实位置**：`disclaimer` 的 index 必须 > `</article>` 的 index，且 `article` 内部不得出现 `notice.disclaimer`。
+**L 项就是专门拆这个的**：搬回卡片里它就红，证明新断言不是空跑。
+
+**本地真人端到端实测（三端服务全在跑：MySQL 3308 / 后端 8080 / 后台 5174 / C 端 5173；造了 8 条探针公告，跑完全部退回）**
+登录用的是 `database/admin_init.sql` 里**公开写在仓库中的开发种子口令**（本地库 `password_verify` 实测命中种子值），
+本地 `captcha.enable=0`，所以这是**真人路径不是绕闸**；生产口令本轮没参与、没读取、也没打印过。
+
+| 检查 | 实测结果 |
+| --- | --- |
+| 列表接口字段 | `id,title,summary,type,subtype,subtypeLabel,tagColor,isTop,createdAt` —— **没有** `coverImage`，符合「列表页没图片位」 |
+| 详情接口 8 条头图 | 四类型各命中自己那张默认图；`探针E` 是 activity 但自带 operation 封面 → 返回**自带那张**（优先级成立）；`探针G` subtype 为 NULL → 回落 operation；每条的 `coverImage` 在磁盘上真存在（27,658~41,550B） |
+| 标签色 | 活动 `#C00000` / 合成 `#B08D55` / 寄售 `rgb(232,145,33)` / 运营 `#3D5A99`；自带合规色 `#123456` → `rgb(18,52,86)` 透传；脏值 `url(http://x/evil)` → **回落类型色**，且 DOM 的 `style` 属性里只剩 `background-color` + `border-color` 两个 rgb，无 `url(`、无 `script` |
+| 详情页 DOM 顺序 | 标题(43) < 类型标签(45) < 头图(47) < 正文(48) < 风险提示(53) < 返回按钮(58)；风险提示 `matches('.notice-detail > .notice-detail__warning') = true` 且**不在**主卡片里 |
+| 头图真的加载 | `naturalWidth × naturalHeight = 1280×495`，`complete = true`（走 5173 的 `/uploads` 代理，与生产同路径形状） |
+| 编译后的 CSS 规则 | `.notice-detail__cover { width: calc(100% + 8.53333vw); margin: 3.2vw -4.26667vw 0 }`（= 出血 16px）、独立卡 `.notice-detail > .notice-detail__warning { margin/padding/background: var(--color-card); border-radius: 3.2vw }` —— 数值都在，只是**量不到渲染像素**（内嵌浏览器视口 0×0，见下） |
+| 公告列表页 | Tab 顺序 全部/活动/合成/寄售/运营（与 `SUBTYPES` 同序），点「寄售公告」只剩那 2 条、点回全部恢复 8 条；列表卡片里 `<img>` **0 个** |
+| 后台弹窗 | 四张默认图从 `data.covers` 到手、左右两格预览都是 1280×495；**把类型从寄售改成活动，两格预览同时换成活动那张**；点「上传自定义公告图」→ 落地 `/uploads/announcement/202610/90daaf76….webp`、提示「公告图已上传，保存后 C 端详情页即换成这张」、按钮组变成「重新上传 / 恢复跟随类型默认」、左格换成新图；点「恢复跟随类型默认」→ 左格回到类型默认、保存后库里 `cover_image` = 空串；「发布公告」默认预选运营 + 立即发布，取消不产生行 |
+| 全局参数页 | 「公告头图」分组里四个键都是图片控件（**没有掉进「其他参数」**）；点「换图」→ 上传 → 弹「确认更新「合成公告默认头图」？保存后立即生效并写入审计日志」→ 确定 → 库里值变成新上传地址 → **不重启不发版**，C 端 `#/notice/{合成公告}` 的横幅当场换成新图（`naturalWidth` 1280）；点「清空」→ 该类型详情页 `cover` 字段空串 → C 端 `.notice-detail__cover` **元素不存在**、卡片顺序变「标题 → meta → 正文」、其他类型不受影响；再把值退回出厂指向 |
+| 跑完清场 | 8 条探针公告删除（公告数回 **0**，与本轮开始前一致）、4 个参数键复核为出厂值、本轮上传的 2 个文件删除、本轮新建的空目录 `announcement/202610`、`announcement/` 一并删掉（生产不会有这个目录，它在 `.gitignore` 覆盖范围内） |
+
+**本轮没验到的（不给自己记假绿）**：
+① **像素级视觉**还是量不到 —— 内嵌浏览器视口 `0×0`、`document.hidden=true`，`getComputedStyle` 返回的长度全是 0 或vw 折算值，`take_screenshot` 直接报
+`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`。所以上面写的是「DOM 顺序 + `matches()` + 编译后规则文本 + 图片真实尺寸」这四样，
+**色板与出血的观感要你或真机看一眼**（第 8 节 20 条）。
+② 一个**既有行为**（不是本次引入，`git diff` 证明 `onMounted` 那段我没动）：C 端从「详情 A」用 hash 直接跳「详情 B」时组件复用、不会重新取数，
+页面还停在 A。现网路径是「列表 → 详情 → 返回 → 列表」，没有 detail→detail 的入口，所以人踩不到；记在这里备将来有人加「相关公告」之类的跳转。
+
+**还欠你的**：
+① **第 9 次发版要你单独点头**，清单见第 8 节 20 条（4 张 webp + 后端 3 文件 + 第 25 份迁移 + 后台 4 文件 + C 端 2 文件 + 新增一个 `uploads/notice-default/` 目录要传到生产）；
+② `tag_color` 现在 C 端真的用了，但**后台表单还是没有输入口** —— 想让某条公告用非主题色，眼下只能改库，或我给你补一个颜色输入框；
+③ 参考图里那种「正文关键句高亮」你说了暂不要，所以没做，将来想做要动 HTMLPurifier 的 CSS 白名单（现在是 `text-align`/`color` 两个）。
+
+
 
 
 
@@ -2397,6 +2526,8 @@ CSS 只留 `text-align`/`color`）→ C 端 `#/notice/2` 的 DOM 里 4 个 `<h2>
 13. **四处「新建活动默认停用」与公告 `tag_color` 无入口**（2026-10-11，都在你报的范围之外，等定）：
     `LuckyDraw.vue:58,154`、`resale/Index.vue:87`、`marketing/Invite.vue:53`、`marketing/Register.vue:48` 仍是 `enabled: false`；
     公告的 `tag_color` 后端字段、接口下发、C 端读取都在，只有后台表单缺一个输入口。详见 7.14「查出来但故意没改的」。
+    **2026-10-14 更正这半句**：当时「C 端读取都在」**是错的** —— C 端详情页那时用的是固定 `AppTag`，根本没读 `tagColor`（我这次读代码看到的）。
+    现在 7.36 把它接上了（只认 `#rrggbb`，脏值回落类型色），**但后台那个输入口仍然没有**：要给某条公告用非主题色，眼下只能改库或补输入框。
 16. **后台「修改密码」弹窗的修复**（2026-10-12，见 7.23 / 7.24）：**已上线**，只发后台一个前端。
     唯一没在线上验的是「真人登录后点一次看见弹窗浮出来」（后台登录有图形验证码，不用脚本绕）—— 你点一次就是最终确认。
 17. **~~奖励编辑器选不了盲盒~~**（2026-10-13 发现，**2026-10-14 已按你「那就修共享组件」修完并上线，见 7.30 / 7.31**）：
@@ -2430,3 +2561,32 @@ CSS 只留 `text-align`/`color`）→ C 端 `#/notice/2` 的 DOM 里 4 个 `<h2>
     不像 `captcha.enable` 那样掉进「其他参数」）里把 `service_hotline` 换成真号、`service_online_url` 填一个真实的
     在线入口（企业微信客服链接 / 腾讯客服 / 邮箱 `mailto:` 都行），再到「内容 → 社区管理」建一条带 QQ 群号或二维码的社群
     （那张卡片就是 C 端「我的客服」页要用的官方社群入口）。等你给渠道，我不替你编一个号码。
+20. **公告头图这一批：本地全绿、生产一行没动，等你点头才发（第 9 次发版）**（2026-10-14，做完的过程见 **7.36**）：
+    这批改的是「C 端公告详情页的样子 + 后台能不能换图」，**发版前生产的公告页还是老版式**。三端测试、12 项反证、本地真人端到端都过了（7.36 末尾两张表）。
+
+    **要传到生产的（运行时必需 9 个字节级动作）**：
+    - 后端 3 个文件：`app/service/AnnouncementCover.php`（**新增**，全站子分类/标签色/默认图的唯一真源）、
+      `app/admin/controller/CmsController.php`（列表筛选/新建/编辑三处白名单改走它 + 列表随分页下发 `covers`）、
+      `app/controller/Content.php`（列表下发 `subtypeLabel`/`tagColor`，详情下发 `coverImage`）。
+    - **一个新目录 4 个文件**：`public/uploads/notice-default/announcement-{activity,compose,consignment,operation}.webp`（共 133KB）。
+      ⚠️ 它在后端站点根，**不在两个前端的 dist 包里**，整包覆盖带不到 —— 必须单独 `scp`，并且生产上这个目录现在是**不存在**的（发之前先 `ls` 确认，别把「传了」当成「传对」）。
+    - 迁移**第 25 份** `migrations/20261014_announcement_cover_defaults.sql`：4× `INSERT IGNORE`，**零 DDL、公告表一个字节不动**；
+      `nft_system_configs` 从 41 行 → **45 行**。**故意没有 UPDATE**，重复执行安全（运营换过的默认图不会被冲回出厂图）。
+    - 后台前端整包（改了 4 个源文件：`api/index.js`、`utils/maps.js`、`views/content/Announcements.vue`、`views/system/Config.vue`）。
+    - C 端前端整包（改了 2 个源文件：`stores/notice.js`、`views/NoticeDetail.vue`）。
+
+    **顺序（跟第 8 次那次一样：DDL 先行 → 后端 → 两个前端）**：回滚点 + 上传前快照 → 跑第 25 份迁移并 `SELECT` 复核 4 行都在 →
+    传 3 个后端文件 + 4 张图 → **双端 md5**（`md5sum` 逐个比，包括四张图）→ 传两个前端 dist →
+    上线后**走公网 IP 复验**（`127.0.0.1` 会被宝塔 `phpfpm_status` 站点截走造成假 404，这坑记在 §7.22）。
+
+    **上线后要当场看的三件事**：① 生产那 2 条存量公告（id=1 测试公告、id=2 实名认证须知）的详情页**立刻**有横幅、
+    标签显示「运营公告」—— 这是「读取时解析、不回填」的设计，本来就该当场生效，看不到就是四张图或四个参数没落地；
+    ② 后台「发布公告」弹窗里那两格预览出图（没出图 = `covers` 没随列表下发，多半是后端文件没覆盖成功）；
+    ③ 公网 `GET /api/announcements/2` 的 `coverImage`/`tagColor`/`subtypeLabel` 三个字段形状对（复验按 §7.35 那个坑：**先 `curl -o 文件` 再按 UTF-8 读**，管道量中文会虚高）。
+
+    **不发版就能改的**（这次特意这么设计的，记住就不用再找我）：某个类型的默认图 → 「系统配置 → 全局参数 → 公告头图」点「换图」；
+    某条公告用别的图 → 「内容 → 公告管理」编辑弹窗里传一张「公告图」，或点「恢复跟随类型默认」；想让某类型不显示横幅 → 把那个参数清空。
+
+    **仍然没验的**：像素级观感（内嵌浏览器视口 `0×0` + 本项目 px 编译成 vw，`getComputedStyle` 的长度量不到，只验到 DOM 顺序、
+    `matches()`、编译后规则文本与图片真实尺寸）。**你或真机看一眼详情页那张横幅与风险提示白卡**就是这批的最终确认。
+
