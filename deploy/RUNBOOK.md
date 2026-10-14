@@ -2710,6 +2710,47 @@ H5 `dist/assets/index-8xzA_hEW.js`（md5 `bfce17326cb063d19bf6eda97be709c4`，15
 **要改成正式句子不用发版也不用我动库**：后台「内容 → 公告管理 → 编辑」那两格，**清空保存 = 这条回落到全局默认**
 （「尊敬的司南用户：」+「司南运营团队」），或直接敲正式文案。我没替你改这 5 行 —— 那是你自己造的数据，按规矩（改数据先给清单点头）等你开口。
 
+### 7.38 「司南风险提示」这五个字改成居中（2026-10-15 00:5x，本地做完并测过，**未上线**）
+
+**你的原话**：「司南风险提示这几个字居中显示。」
+
+**改了一行 CSS，没有第二处**：`sinan-art-source/src/views/NoticeDetail.vue` 里 `&__warning` 内的 `:deep(.warn-title)` 加 `text-align: center;`。
+为什么只有这一处：那句标题**不是前端写的字**，是后端 `AnnouncementDisclaimer` 生成的 `<p class="warn-title">…</p>`（§7.32 的口径），
+C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种盒子**（正文卡片下面的独立白卡 + 富文本块里的卡内灰块），
+所以一处改动两种正文模式都跟着居中，不需要再补第二处。
+
+**范围就停在「这几个字」**：正文段落、开头敬语、落款、风险提示的正文都**没动**（新加的防漂移用例专门钉住「正文段落不许跟着居中」，
+把居中错加到 `:deep(p)` 上会红）。
+
+**实测（浏览器里读 `getComputedStyle`，不是只看源码）**：
+
+| 元素 | `text-align` 实测 |
+| --- | --- |
+| `.warn-title`（司南风险提示） | **`center`** ✅ |
+| 风险提示正文第一段 | `start`（左对齐，没被带跑） |
+| 敬语 `.notice-detail__greeting` | `start`（没动） |
+| 正文段落 `.notice-detail__p` | `justify`（没动） |
+
+**测试**：`tests/announcement-disclaimer.spec.js` 加 1 条（源码扫样式块，形状对齐 §7.37 那条 `__cover` 的钉法）。
+**反证 2 行**（口径照 §7.37 v2：跑整套、从 JSON 报告取失败用例名、必须命中那条才算红）：
+
+| 档 | 拆什么 | 结果 |
+| --- | --- | --- |
+| R1 | 删掉 `text-align: center;` 那一行 | 150 条 / 红 1 = 「这几个字居中，正文段落不跟着居中」→ **RED-AS-PREDICTED**，还原 md5 `33631a71…` **SAME** |
+| R2 | 把居中错加到 `:deep(p)`（整段都居中） | 同上那条红 → **RED-AS-PREDICTED**，还原 **SAME** |
+
+**基线**：C 端 **150**（+1）、后台 **167**、后端 **269 / 1759**（都不受这次改动影响，跑了一遍确认没连带）。
+
+**整包又重过一次**（§7.37 第三轮那条教训的直接应用）：H5 入口换成 `index-BY_I9mXE.js`（md5 `a4d00011dec2cafbd2c1b3e53418ef61`），
+新包 CSS 里量到 `warn-title{…;text-align:center}`。
+**注意**：入口文件名与 md5 **每次 `npm run build` 都会变**，所以第 8 节 21 条那两个指纹只是 00:5x 的快照，
+**发版前必须当场重量**（`grep -c notice-detail__greeting dist/assets/*.js` ≥1、`grep -o 'warn-title{[^}]*}' dist/assets/NoticeDetail-*.css` 里有 `text-align:center`），别照抄这里的数。
+
+**发版归属**：`NoticeDetail.vue` 本来就在第 9 + 第 10 批那 7 个共用文件清单里，**这次不新增文件、不新增迁移、不动库**，
+配置行数仍是 41 → **47**；跟着同一批发即可（第 8 节 21 条）。
+
+**没验的**：居中之后好不好看（像素观感仍要你或真机看一眼）。`text-align` 这个**生效**是量到的，不是猜的。
+
 
 
 
@@ -2895,14 +2936,16 @@ H5 `dist/assets/index-8xzA_hEW.js`（md5 `bfce17326cb063d19bf6eda97be709c4`，15
       幂等：DDL 先查 `information_schema` 再 `PREPARE`，参数种子只有 `INSERT IGNORE`、**故意没有 UPDATE**。
     - 后台前端整包（本批多改了 `api/index.js`、`Announcements.vue`、`Config.vue` 三个文件，与第 20 条那 4 个重叠，合并后是**同一份 dist**）。
     - C 端前端整包（本批改了 `stores/notice.js`、`views/NoticeDetail.vue`，同样并入第 20 条那份 dist）。
-    - 三端测试基线要用**这份**（7.37 第二轮补充实测）：后端 **269/1759**、后台 **167**、C 端 **149** ——
-      比本节上一版写的 267/1732、165、149 新，也比第 20 条写的 251/1619、158、141 新。反证 **15 行**（P1~P10 + A1~A5，全红如预期、还原 md5 SAME）。
+    - 三端测试基线要用**这份**（10-15 00:5x 实测，含 §7.38）：后端 **269/1759**、后台 **167**、C 端 **150** ——
+      比本节上一版写的 267/1732、165、149 新，也比第 20 条写的 251/1619、158、141 新。反证 **15 行 + 2 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2，全红如预期、还原 md5 SAME）。
 
-    **⚠️ 两个 dist 必须是 2026-10-15 00:18 / 00:19 重过的那份，别用 10-14 14:41 的旧整包**（缘由见 7.37 第三轮：旧包里有 §7.36 的头图、
+    **⚠️ 两个 dist 必须是重过到新代码的那份，别用 10-14 14:41 的旧整包**（缘由见 7.37 第三轮：旧包里有 §7.36 的头图、
     **没有 §7.37 的敬语落款**，照旧包传上线就是「测试全绿但线上整批功能静默缺失」）。发版时按老规矩当场重量：
-    H5 入口 `index-8xzA_hEW.js` / md5 `bfce17326cb063d19bf6eda97be709c4`，后台入口 `index-qMvhze0Z.js` / md5 `f3b0a3457c874a37729ce3a09a4df70f`；
-    并且**在传之前先 `grep -c notice-detail__greeting sinan-art-source/dist/assets/*.js`（应 ≥1）与 `grep -c lastSalutation sinan-admin/dist/assets/*.js`（应 ≥1）**
-    —— 这两条是「包对不对版」的指纹，比看时间戳可靠（时间戳会被复制文件骗过去）。
+    00:5x 的快照是 H5 入口 `index-BY_I9mXE.js` / md5 `a4d00011dec2cafbd2c1b3e53418ef61`，后台入口 `index-qMvhze0Z.js` / md5 `f3b0a3457c874a37729ce3a09a4df70f`
+    —— **但入口文件名与 md5 每 `npm run build` 一次就变，所以这两个数只当"是不是旧包"的对照，重量以你当场量的为准**。
+    传之前先跑三条指纹（比时间戳可靠）：`grep -c notice-detail__greeting sinan-art-source/dist/assets/*.js` ≥1、
+    `grep -c lastSalutation sinan-admin/dist/assets/*.js` ≥1、
+    `grep -o 'warn-title{[^}]*}' sinan-art-source/dist/assets/NoticeDetail-*.css` 里必须含 `text-align:center`（§7.38 那句）。
 
     **顺序（DDL 先行 → 后端 → 两个前端）**：回滚点 + 上传前快照 → 跑第 25 份（4 行参数）→ 跑第 26 份（2 列 + 2 行参数）并
     `SELECT`/`SHOW COLUMNS` 双复核 → 传后端 **4 个文件**（`AnnouncementCover.php`、`AnnouncementSalutation.php`、`Content.php`、`CmsController.php`）
@@ -2919,6 +2962,7 @@ H5 `dist/assets/index-8xzA_hEW.js`（md5 `bfce17326cb063d19bf6eda97be709c4`，15
       见 7.37 第二轮补充那次缺陷），落款示例那句要印出「司南运营团队 <今天>」而不是「 <今天>」；清空保存后 C 端跟着回到默认那句；
     ⑤ 公网 `GET /api/announcements/2` 里 `greeting`/`signature`/`signatureDate`/`coverImage`/`subtypeLabel`/`tagColor` 六个字段形状对
     （复验按 §7.35 那个坑：**先 `curl -o 文件` 再按 UTF-8 读**，管道量中文会虚高）。
+    ⑥ 详情页底部那张「司南风险提示」白卡：**标题那五个字居中**、下面的正文段落仍然左对齐（§7.38；这条只能眼看，或按 §7.38 那张表读 `getComputedStyle`）。
 
     **不发版就能改的**（这次特意这么设计）：全站默认敬语/落款 → 「系统配置 → 全局参数 → 内容与公告」那两格；
     单条公告用自己的 → 「内容 → 公告管理」编辑弹窗那两格（**留空保存 = 改回跟随全局默认**）；
