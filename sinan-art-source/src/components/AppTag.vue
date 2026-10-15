@@ -1,13 +1,16 @@
 <script setup>
-// 标签：primary（红底白字）/ gray（灰底）
+// 标签：primary（红底白字）/ gray（灰底）/ gold（金底）
+// color：可选的自定义底色（十六进制），传了就在 primary 之上覆盖背景，文字仍是白的。
+//        公告的类型标签用它 —— 底色由接口算好（见 utils/tagColor.js），不能写死成平台红。
 defineProps({
   type: { type: String, default: 'primary' }, // primary | gray | gold
-  size: { type: String, default: 'small' }
+  size: { type: String, default: 'small' },
+  color: { type: String, default: '' }
 })
 </script>
 
 <template>
-  <span class="app-tag" :class="[`app-tag--${type}`, `app-tag--${size}`]">
+  <span class="app-tag" :class="[`app-tag--${type}`, `app-tag--${size}`]" :style="color ? { backgroundColor: color } : null">
     <slot />
   </span>
 </template>

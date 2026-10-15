@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useNoticeStore } from '@/stores/notice'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
+import { safeTagColor } from '@/utils/tagColor'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,14 +33,12 @@ function back() {
 }
 
 /**
- * 类型标签的底色。接口已经把 tagColor 收敛成 #rrggbb（后端 AnnouncementCover::colorFor：
- * 公告自带的 tag_color 优先，否则该子分类主题色），这里再核一次是因为 style 绑定是
- * 往 DOM 里写颜色，脏值最好别进到浏览器 —— 认不下来就用平台主红兜底。
+ * 类型标签的底色。接口已经把 tagColor 收敛过一轮（后端 AnnouncementCover::colorFor：
+ * 公告自带的 tag_color 优先，否则该子分类主题色），校验与兜底收在 utils/tagColor.js，
+ * 列表页共用同一个出口（§7.41）—— 这里只把颜色摊到 backgroundColor 与 borderColor 两格上。
  */
-const FALLBACK_COLOR = '#C00000'
 const typeStyle = computed(() => {
-  const c = String(notice.value?.tagColor || '')
-  const color = /^#[0-9a-fA-F]{6}$/.test(c) ? c : FALLBACK_COLOR
+  const color = safeTagColor(notice.value?.tagColor)
   return { backgroundColor: color, borderColor: color }
 })
 </script>

@@ -40,6 +40,9 @@ export const useNoticeStore = defineStore('notice', () => {
       summary: a.summary || '',
       category: a.subtype || 'operation',
       categoryLabel: labelOf(a),
+      // 类型标签底色：接口逐行算好的（公告自带 tag_color > 该类型主题色）。
+      // 详情页一直有读它，列表页早先是写死平台红的，2026-10-15 起两边共用（RUNBOOK §7.41）
+      tagColor: a.tagColor || '',
       time: (a.createdAt || '').slice(0, 19).replace('T', ' ')
     }))
     loaded.value = true

@@ -5,6 +5,7 @@ import { useNoticeStore } from '@/stores/notice'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import AppTag from '@/components/AppTag.vue'
+import { safeTagColor } from '@/utils/tagColor'
 
 const router = useRouter()
 const store = useNoticeStore()
@@ -64,7 +65,9 @@ function openNotice(id) {
         <h3 class="notice-item__title">{{ item.title }}</h3>
         <p class="notice-item__summary">{{ item.summary }}</p>
         <div class="notice-item__foot">
-          <AppTag type="primary">{{ item.categoryLabel }}</AppTag>
+          <!-- 底色跟着接口下发的 tagColor 走（和详情页同一个出口 utils/tagColor.js），
+               不再写死 type="primary" 那个平台红 —— 四类公告原本该有四种颜色（RUNBOOK §7.41） -->
+          <AppTag :color="safeTagColor(item.tagColor)">{{ item.categoryLabel }}</AppTag>
           <span class="notice-item__time">{{ item.time }}</span>
         </div>
       </div>
