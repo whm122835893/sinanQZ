@@ -153,8 +153,23 @@ function logout() {
   &__title { font-size: 15px; font-weight: 700; color: #FFFFFF; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.55); }
   &__sub { font-size: 12px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
   &__btn {
-    border: none; cursor: pointer; background: #C00000; color: #fff; font-size: 14px;
-    padding: 8px 18px; border-radius: $radius-pill; position: relative; z-index: 1;
+    // 透明灰按钮（2026-10-16 §7.44：用户把上一条口径「液态玻璃白 + 深红字」改成「透明灰」）。
+    // 基准色 rgb(46,46,52)、α=0.62 都是量出来的：这颗按钮整个压在深色海报上，
+    // 底下那片海报亮度跨度 L=0.005~0.797（右端有玉璧高光），白字最坏点：
+    //   α=0.58 → 4.51:1、0.62 → 4.98:1、0.65 → 5.37:1（AA 线 4.5）
+    // 这三个数是离线 GD 按 CSS 几何合成量的；落位后又用 headless Chrome 走真排版复量（CDP，390x844/dpr2）：
+    // 「邀请」两字的行盒（29x16 设备px）上最坏 5.12:1，整块板子外接框上最坏 4.69:1 —— 两个口径都过 4.5。
+    // 这里**不写 backdrop-filter**：不糊底就没有"这台机器的 WebView 支不支持 blur"的争议，
+    // 上面那串数字即真机逐像素读数。代价是底图细节会透出来一点，这正是"透明灰"要的观感。
+    // 字色只能是浅色：同一组合成下 #C00000 深红字的最坏点只有 1.00~1.57:1，等于看不见。
+    border: 1px solid rgba(255, 255, 255, 0.32); cursor: pointer;
+    background: rgba(46, 46, 52, 0.62); color: #FFFFFF; font-size: 14px;
+    // 内边距**四个方向各收 1px**，把新增的 1px 边框补回去：外沿和改之前是同一个盒子
+    // （实测 66.45x38.38 设备px，改之前 66.55x38.47，差 0.1px = 亚像素噪声）。
+    // 只收左右那一版（padding: 8px 17px）也量过：高出来的 2.6px 就是上下两条边框，
+    // 被它盖住的海报区域会往外长一圈，上面那串对比度读数的几何前提就不成立了。
+    padding: 7px 17px; border-radius: $radius-pill; position: relative; z-index: 1;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
   }
 }
 

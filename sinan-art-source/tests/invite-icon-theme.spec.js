@@ -14,6 +14,11 @@ import zlib from 'node:zlib'
  * 主题 type 的 'svg' 只是标签。邀新卡原来是五套主题里唯一一个还在吃 AppIcon 矢量图的功能入口，
  * 所以「换成位图」这件事 = 给五个主题的 features.invite 各补一条 { type:'image' }。
  *
+ * 2026-10-16 §7.44 又改一次：用户要「图标再换一个，平面的」，并明确只换**现在看到的这一张**
+ * （= classic 家族的 modern-invite.png），另四套仍留立体/磨砂那张。所以这一节新增的三条钉
+ * 只对着 modern-invite.png 生效：平面度（色阶层数 + 纯色集中度）、墨迹体量不掉档、主体仍是家族浅灰。
+ * 「五套都要位图」那条口径没变，五张互不相同也没变。
+ *
  * 位图带不带透明通道、有没有把绿幕一起抠进来，jsdom 量不到，这里直接解 PNG 头 + 解 IDAT 自己数，
  * 这样「图标糊成一坨不透明方块」「边上镶一圈荧光绿」这类缺陷能在 CI 里红，而不是等人眼看。
  */
@@ -101,6 +106,45 @@ function alphaProfile(file) {
   return { w, h, solidRatio: solid / n, softRatio: translucent / n, greenRatio: green / n }
 }
 
+// ---------------- 平面度与墨迹体量（§7.44 起 classic 那张换成平面图标） ----------------
+/**
+ * 「平面的」不能靠人眼验收，这里翻译成两条能数的口径：
+ *   · 色阶层数：把墨迹按每通道 4bit 量化后有几种 —— 平面 = 少数几个纯色块，立体 = 连续渐变
+ *   · 纯色集中度：最常见的 8 个精确颜色盖了多少比例的墨迹 —— 平面高、立体低
+ * 两条阈值都是当场量出来对照后取的中段（见 RUNBOOK §7.44）：
+ *   新平面图 modern-invite = 54 阶 / 94.9%，被它替换掉的立体图 = 229 阶 / 0.8% ⇒ 中间隔着 4 倍，不会误伤
+ */
+function flatProfile (file) {
+  const { w, h, px } = decodeRgba(file)
+  const q = new Map(); const exact = new Map()
+  let ink = 0
+  for (let i = 0; i < w * h * 4; i += 4) {
+    if (px[i + 3] <= 51) continue
+    ink++
+    const qk = (px[i] >> 4 << 8) | (px[i + 1] >> 4 << 4) | (px[i + 2] >> 4)
+    q.set(qk, (q.get(qk) || 0) + 1)
+    const ek = (px[i] << 16) | (px[i + 1] << 8) | px[i + 2]
+    exact.set(ek, (exact.get(ek) || 0) + 1)
+  }
+  const top8 = [...exact.values()].sort((a, b) => b - a).slice(0, 8).reduce((s, v) => s + v, 0)
+  return { ink, q4: q.size, top8Ratio: top8 / ink }
+}
+
+/** 墨迹外接框：画布同是 256，但墨迹只占一半的图标在 28px 里会明显比兄弟小一圈 */
+function inkBox (file) {
+  const { w, h, px } = decodeRgba(file)
+  let minx = w, miny = h, maxx = -1, maxy = -1
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (px[(y * w + x) * 4 + 3] > 51) {
+        if (x < minx) minx = x; if (x > maxx) maxx = x
+        if (y < miny) miny = y; if (y > maxy) maxy = y
+      }
+    }
+  }
+  return { w: maxx - minx + 1, h: maxy - miny + 1 }
+}
+
 // ---------------- 主题表本身 ----------------
 const storeSrc = readFileSync(resolve(ROOT, 'src/stores/iconTheme.js'), 'utf8').replace(/\r\n/g, '\n')
 const sfcSrc = readFileSync(resolve(ROOT, 'src/views/User.vue'), 'utf8').replace(/\r\n/g, '\n')
@@ -182,6 +226,33 @@ describe('invite 位图本体：透明、没镶绿幕、够清晰、别拖慢「
       expect(statSync(file).size).toBeLessThanOrEqual(80 * 1024)
     })
   }
+})
+
+describe('§7.44：classic 那张 modern-invite 换成平面图标，另外四套本轮没动', () => {
+  const file = TAB('modern-invite.png')
+
+  it('它是平面的：色阶层数少、纯色集中（立体磨砂那张实测 229 阶 / 0.8%，会在这里红）', () => {
+    const p = flatProfile(file)
+    expect(p.q4, `量化后还有 ${p.q4} 档色阶 = 图里在走渐变，不是平面`).toBeLessThanOrEqual(100)
+    expect(p.top8Ratio, `最常见的 8 个颜色只盖了 ${(p.top8Ratio * 100).toFixed(1)}% 的墨迹`).toBeGreaterThanOrEqual(0.8)
+  })
+
+  it('墨迹体量没掉档：外接框长边 ≥ 同家族 calendar 墨迹长边的 85%（画布都是 256，光看文件尺寸看不出变小）', () => {
+    const inv = inkBox(file)
+    const cal = inkBox(TAB('modern-calendar.png'))
+    expect(Math.max(inv.w, inv.h) / Math.max(cal.w, cal.h), `墨迹长边 ${Math.max(inv.w, inv.h)} vs calendar ${Math.max(cal.w, cal.h)}`).toBeGreaterThanOrEqual(0.85)
+  })
+
+  it('用的还是家族那套浅灰主体色：深色卡的玻璃 tile 上不能出现一块黑底', () => {
+    const { w, h, px } = decodeRgba(file)
+    let lit = 0, ink = 0
+    for (let i = 0; i < w * h * 4; i += 4) {
+      if (px[i + 3] <= 51) continue
+      ink++
+      if (px[i] > 180 && px[i + 1] > 180 && px[i + 2] > 180) lit++
+    }
+    expect(lit / ink, `只有 ${(lit / ink * 100).toFixed(0)}% 的墨迹是亮色，压在深色卡上会糊成一团`).toBeGreaterThan(0.5)
+  })
 })
 
 describe('User.vue 的接线：拿到 image 分支就渲染 <img>，拿不到才退回 AppIcon', () => {
