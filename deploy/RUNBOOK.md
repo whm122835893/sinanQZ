@@ -2827,21 +2827,27 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
 **你的原话**：「寄售公告和运营公告的首图重新生成」。方向按你在选项里点的那句：**「换构图：主体更小更靠右，左半边留白更干净」**。
 主题色**没动**（寄售橙 `#E89121`、运营靛蓝 `#3D5A99`，仍与类型标签同色 —— 标签色和头图同源这件事是 §7.36 定的，这次不碰）。
 
-**只换了 2 个文件的内容，文件名一个都没改**：
+> ⚠️ **本节分两轮，第一轮那版已作废**：第一轮按上面那句选项做出来的是「扁平小图标 + 纯渐变」，
+> 你 02:2x 追加一句「**风格要和合成公告还有活动公告一样**」把它推翻了 —— 那两张的底图是**写实 3D 中国古物**，
+> 不是极简矢量。现值以本节末尾「第二轮」那张 md5 表为准。
 
-| 文件（`sinan-nft-backend/public/uploads/notice-default/`） | 旧 | 新 |
-| --- | --- | --- |
-| `announcement-consignment.webp` | 27,658B `5d6863aa72e85e6927cf6e11a891c557` | **18,458B `78048a7b61f4dfef82807f742e199fd5`** |
-| `announcement-operation.webp` | 32,836B `aae08ec17fc881acf844fbc36e1995d7` | **17,674B `1d4d9ec805116a24f350d6c954f442f4`** |
+**只换了 2 个文件的内容，文件名一个都没改**（三轮字节对照，`sinan-nft-backend/public/uploads/notice-default/`）：
+
+| 文件 | 10-14 原图（§7.36） | 第一轮（**已作废**，风格断层） | 第二轮（**现值**） |
+| --- | --- | --- | --- |
+| `announcement-consignment.webp` | 27,658B `5d6863aa…` | 18,458B `78048a7b…` | **38,774B `b944b8dc593c9a48f50dde5770098cb0`** |
+| `announcement-operation.webp` | 32,836B `aae08ec1…` | 17,674B `1d4d9ec8…` | **46,832B `4dd103114fca2caa1505d8856e91493a`** |
 
 `announcement-activity.webp`（41,550B）与 `announcement-compose.webp`（31,278B）**没动**。四张仍是 `1280×495`。
+**一个顺带量出来的信号**：第一轮那两张只有 18KB，而活动/合成是 41KB / 31KB —— 体积差一倍本身就是「风格不是一路」的旁证
+（写实古物有材质纹理与金线，编码后必然更大；纯渐变几乎压不出字节）。下次判断「这张是不是同一套风格」，可以先看体积档位。
 
 **不动代码、不动库、不动接口**：`AnnouncementCover` 里那四个 `cover_key` 参数值、`FACTORY_DIR` 常量、
 `coverFor()` 的解析口径全是**按路径**走的，文件名不变 → 后端与两个前端**一个源文件都不用改**。
 运营在后台「全局参数 → 公告头图」自己换过的图存在参数里，也不受这次出厂图更新影响（这正是 §7.36「读取时解析、不回填」的设计）。
 `scripts/make_notice_banners.php` 这次也**没改**。
 
-**新的两段 prompt**（下次要重画直接抄；`ImageGen` 尺寸**必须 2560×1080**，理由见坑 ②）：
+**第一轮的两段 prompt（已作废，别照抄，风格断层就断在这两段）**：
 
 - 寄售（采用版）：`Ultra-wide horizontal banner background illustration, 21:9, ... Warm amber orange palette
   (#E89121 to #A85B00 smooth gradient) ... The LEFT two-thirds is almost empty, pure smooth gradient ...
@@ -2867,7 +2873,7 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
 ② 底图比例不是 21:9 时脚本**不报错**，只是产出高度跟着比例走：1792×1024 的素材会出 **1280×667**。
 这条**有测试兜着**（见下面反证那行），但脚本自己不会提醒你。
 
-**「AI 把画面切成两块板」这种分块痕迹怎么客观判**：量**每一列亮度中位数、相邻列的最大跳变 Δ**（一次性脚本 `qa_seam_probe.php`，纵向抽样约 150 行/列，用完已删）。
+**「AI 把画面切成两块板」这种分块痕迹怎么客观判**：量**每一列亮度中位数、相邻列的最大跳变 Δ**（一次性脚本 `qa_seam_probe.php` / `qa_probe2.php`，纵向抽样约 150 行/列，用完已删）。
 
 | 底图（运营） | 最大跳变 | 跳变位置 | 判定 |
 | --- | --- | --- | --- |
@@ -2897,23 +2903,85 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
 | 987671 | consignment | `/uploads/notice-default/announcement-consignment.webp` | 1280×495 | `rgb(232,145,33)` = `#E89121` |
 | 987672 | operation | `/uploads/notice-default/announcement-operation.webp` | 1280×495 | `rgb(61,90,153)` = `#3D5A99` |
 
-再加一层字节级：`curl` 5173 与 8080 上这两个 URL，拿到的与仓库工作区文件 **md5 逐张 SAME**（18,458B / 17,674B）。
+再加一层字节级：`curl` 5173 与 8080 上这两个 URL，拿到的与仓库工作区文件 **md5 逐张 SAME**。
 （`getComputedStyle` 读到的 width/height 是 `0px`，还是 §7.36 起那条「视口 0×0 + px 编译成 vw」的限制，不是图坏了；
 `naturalWidth` 那对才是图自己的真值。）
 
-**发版归属**：并进**第 9 + 第 10 那一批**（第 8 节 20 + 21 条）。清单**条目数不变** —— 仍是「一个新目录 4 个文件」，
-只是其中两张的**内容**换了。两处要跟着改口径：① 20 条里那句「共 133KB」已过期，现在四张合计 **108,960B（约 106KB）**；
-② 双端 md5 的基准按下面这张**当场量的**表，别照抄本节任何旧数字。
+---
 
-| 四张出厂图工作区现值（2026-10-15 02:1x） | 尺寸 | 字节 | md5 |
+**第二轮（同日 02:2x，你的追加口径：「风格要和合成公告还有活动公告一样」）**
+
+第一版做完给你看，你否掉了方向。这一句推翻的是**本小节第一轮**（也就是上一条那个「主体更小更靠右、左半边留白更干净」的选项），
+不是 §7.36 —— 恰恰相反，它是要**回到 §7.36 那两张的路线**上去。
+
+**「一样」我拆成了五条可核对的要素**（拿 `activity` / `compose` 两张反推出来的，下次再改风格照这五条量）：
+
+| # | 要素 | activity / compose 现值 | 第一轮那两张（不合格） |
+| --- | --- | --- | --- |
+| 1 | 主体是什么 | **写实 3D 中国古物**（青铜司南勺+罗盘盘 / 玉璧+青铜鼎+碎玉片） | 扁平矢量小图标（价签、水晶棱镜） |
+| 2 | 主体多大 | 占右半边约 **40–45%** 宽，纵向居中偏下、贴近右缘 | ≤20% 宽，孤零零悬在中间 |
+| 3 | 背景装饰 | 淡金**发丝弧 + 星点 + 极淡网格/同心环**，主体间有**金色连线与小节点**（合成那张最明显，是「碎片连线成图」） | 纯渐变，什么都没有 |
+| 4 | 质感 | 青铜锈、玉的温润、金属高光、四角暗角 | 平涂色块 |
+| 5 | 体积档位 | 41,550B / 31,278B | 18,458B / 17,674B（**小一半，本身就是不合格的信号**） |
+
+**第二轮的两段 prompt（这才是采用版；`ImageGen` 尺寸仍必须 2560×1080）**：
+
+- 寄售（`#E89121 → #A85B00`）：`Ultra-wide horizontal banner background illustration, 21:9, for a Chinese digital-art
+  collectibles platform. Warm amber orange palette (#E89121 to #A85B00 gradient), deep vignette at the corners, soft glow.
+  On the RIGHT third: an ancient Chinese consignment motif rendered as a photorealistic 3D artifact under soft studio
+  lighting — a polished piece of pale mutton-jade carved pendant resting on a small carved rosewood display stand, with a
+  traditional ivory consignment tally tag (rounded rectangle tablet with a punched hole) hanging beside it on a thin
+  braided red silk cord, and a small bronze hand scale with a dangling weight just behind. The pieces are linked by thin
+  gold construction lines and tiny glowing geometric nodes, like an antique appraisal diagram. Left two-thirds: mostly
+  clean gradient space for text, with a few faint gold hairline arcs, tiny star dots and a subtle grid. Premium,
+  museum-quality, rich material texture (jade translucency, wood grain, bronze patina), cohesive warm palette.
+  Absolutely NO text, NO letters, NO Chinese characters, NO numbers, NO logo, NO watermark, NO people, NO mascots, no cat.
+  The background must be one continuous smooth gradient with no panels, no rectangles, no vertical seams.`
+- 运营（`#3D5A99 → #1E2C52`）：同一副骨架，把配色换成 indigo，图案换成
+  `a square bronze official seal with a carved beast knob on top, resting tilted against a half-unrolled bamboo slip
+  scroll with blank slips, above a faint circular compass-rose plate engraved with concentric rings` +
+  `thin pale-gold construction lines and tiny glowing geometric nodes, with a subtle dotted orbit arc sweeping behind`。
+  **两句都保留了「blank slips / NO Chinese characters」**，否则模型一定会往竹简上写字。
+
+**拼缝探针在第二轮怎么读（重要更正第一轮的读法）**：**Δ 的绝对值不是判据，跳变落在哪里才是**。
+把四张参照底图一起量出来才看清：`compose` 底图自己就有 **Δ15.9 @81%**、`activity` 只有 Δ3.9 —— 因为写实古物主体边缘本来就是硬边。
+所以第二轮两张（寄售 Δ20 @78%、运营 Δ17.2 @94%）**全部落在右侧主体区**，背景中段没有尖峰 → 判合格。
+第一轮定的「Δ 要小于 9.9」那条阈值是**错的**，那是极简风格的图才有的量级，换成写实风格会一律误报。
+
+**水印**：运营那张底图右下角有 `Qoder AI 生成` 字样。脚本的 `$CROP=90` 正好把底部 90px 裁掉，成品里已无残留
+（**真人看过成品图确认**，探针量的是整带平均亮度差 −3.1，不足以证明小字被裁净 —— 这种小面积东西别信平均值）。
+
+**测试基线（第二轮重跑）**：后端 **269 / 1760**、后台 **167**、C 端 **151** —— 与第一轮、与 §7.39 都相同。
+**风格这件事没有任何测试钉住**（当场在三个仓库的 tests 里 grep `出厂图 / notice-default / 构图 / 留白 / webp`，
+只有 `AnnouncementCoverTest` 命中，钉的全是**路径、尺寸一致、webp 类型、体积 >4000B**，没有一条与画面内容有关）
+—— 所以这次推翻口径**没有防漂移测试要翻方向**，但也意味着**风格漂移只能靠人眼拦**。
+
+**反证（第二轮对新图重跑一次，不沿用第一轮那次）**：把当前 `announcement-operation.webp` 换成一张 **1280×667** 的错尺寸产物
+→ 整套 unit `tests=269 assertions=1759 failures=1`，红灯用例名 `test_四张出厂图真的在仓库里且尺寸一致`；还原后 md5 = **SAME**。
+
+**本地端到端实测（第二轮，同一批数据）**：
+
+| 公告 | subtype | 页面实际加载的 `img.src` | `naturalWidth×Height` | 标签底色 |
+| --- | --- | --- | --- | --- |
+| 987671 | consignment | `/uploads/notice-default/announcement-consignment.webp` | 1280×495 | `rgb(232,145,33)` = `#E89121` |
+| 987672 | operation | `/uploads/notice-default/announcement-operation.webp` | 1280×495 | `rgb(61,90,153)` = `#3D5A99` |
+
+`curl http://localhost:5173/uploads/notice-default/announcement-{consignment,operation}.webp` 与仓库工作区文件
+**md5 逐张 SAME**（38,774B / 46,832B）。
+
+**发版归属**：并进**第 9 + 第 10 那一批**（第 8 节 20 + 21 条）。清单**条目数不变** —— 仍是「一个新目录 4 个文件」，
+只是其中两张的**内容**换了。两处要跟着改口径：① 20 条里那句「共 133KB」已过期，现在四张合计 **158,434B（约 155KB）**；
+② 双端 md5 的基准按下面这张**当场量的**表（第二轮 02:2x 值），别照抄本节任何旧数字 —— 第一轮那张 18,458B / 17,674B 的表已作废。
+
+| 四张出厂图工作区现值（2026-10-15 02:2x，第二轮） | 尺寸 | 字节 | md5 |
 | --- | --- | --- | --- |
 | `announcement-activity.webp` | 1280×495 | 41,550 | `c6a2626313ce12e1202baf138c5b32c3` |
 | `announcement-compose.webp` | 1280×495 | 31,278 | `a914b63fc0e7d2e479cc02067e88fad4` |
-| `announcement-consignment.webp` | 1280×495 | 18,458 | `78048a7b61f4dfef82807f742e199fd5` |
-| `announcement-operation.webp` | 1280×495 | 17,674 | `1d4d9ec805116a24f350d6c954f442f4` |
+| `announcement-consignment.webp` | 1280×495 | 38,774 | `b944b8dc593c9a48f50dde5770098cb0` |
+| `announcement-operation.webp` | 1280×495 | 46,832 | `4dd103114fca2caa1505d8856e91493a` |
 
-**没验的**：① 观感最终确认（新构图好不好看、寄售右下角那几道淡金弧会不会被读成杂物）—— 仍要你或真机看一眼；
-② 生产（**一行没上**，这两张新图目前只存在于工作区与本地）。
+**没验的**：① 观感最终确认 —— 第二轮这两张已经和 `activity` / `compose` 同风格，但**「像不像同一套」这件事本身没有测试能钉**
+（见上面第二轮那段 grep 结论），只能你或真机看一眼；② 生产（**一行没上**，这两张新图目前只存在于工作区与本地）。
 
 
 
@@ -3060,7 +3128,7 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
       `app/admin/controller/CmsController.php`（列表筛选/新建/编辑三处白名单改走它 + 列表随分页下发 `covers`）、
       `app/controller/Content.php`（列表下发 `subtypeLabel`/`tagColor`，详情下发 `coverImage`）。
     - **一个新目录 4 个文件**：`public/uploads/notice-default/announcement-{activity,compose,consignment,operation}.webp`
-      （四张合计 **108,960B**；其中寄售与运营两张是 **2026-10-15 02:1x 重画的**，见 **7.40** —— 本条旧版写的「共 133KB」是 10-14 那版四张的总数，已过期）。
+      （四张合计 **158,434B**；其中寄售与运营两张是 **2026-10-15 02:2x 重画的**，与 `activity` / `compose` 同一套写实古物风格，见 **7.40 第二轮** —— 本条旧版写的「共 133KB」是 10-14 那版四张的总数，已过期）。
       ⚠️ 它在后端站点根，**不在两个前端的 dist 包里**，整包覆盖带不到 —— 必须单独 `scp`，并且生产上这个目录现在是**不存在**的（发之前先 `ls` 确认，别把「传了」当成「传对」）。
       **双端 md5 的基准表在 7.40 末尾**（四张逐条列了尺寸/字节/md5），别照抄本节任何旧数字。
     - 迁移**第 25 份** `migrations/20261014_announcement_cover_defaults.sql`：4× `INSERT IGNORE`，**零 DDL、公告表一个字节不动**；
@@ -3107,8 +3175,9 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
     - C 端前端整包（本批改了 `stores/notice.js`、`views/NoticeDetail.vue`，同样并入第 20 条那份 dist）。
     - 三端测试基线要用**这份**（10-15 01:0x 实测，含 §7.38 + §7.39）：后端 **269/1760**、后台 **167**、C 端 **151** ——
       比本节上一版写的 267/1732、165、149 新，也比第 20 条写的 251/1619、158、141 新。
-      反证 **15 行 + 2 行 + 4 行 + 1 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2；§7.39 S1~S4；§7.40 那张 1280×667 错比例图，全红如预期、还原 md5 SAME）。
-      **§7.40 没改基线数字**：它只换两张 webp 的内容，三端测试一条没加没减。
+      反证 **15 行 + 2 行 + 4 行 + 2 行**（§7.37 第二轮 P1~P10 + A1~A5；§7.38 R1~R2；§7.39 S1~S4；§7.40 第一轮与第二轮各 1 行，
+      都是把 1280×667 错尺寸图塞进 `announcement-operation.webp`，全红如预期、还原 md5 SAME）。
+      **§7.40 两轮都没改基线数字**：它只换两张 webp 的内容，三端测试一条没加没减。
 
     **⚠️ 两个 dist 必须是重过到新代码的那份，别用 10-14 14:41 的旧整包**（缘由见 7.37 第三轮：旧包里有 §7.36 的头图、
     **没有 §7.37 的敬语落款**，照旧包传上线就是「测试全绿但线上整批功能静默缺失」）。发版时按老规矩当场重量：
@@ -3141,8 +3210,10 @@ C 端只有一个渲染点，而那个 `__warning` 样式块**同时服务两种
     ⑦ **它现在和正文共用同一个边框**（§7.39）：风险提示应当在正文那张白卡**里面**、落款下面、由一条**虚线**和正文分隔，
       它自己**不再是一张独立的白卡**（若你看到上下两个分开的白框 = 传的是旧 dist，按 §7.37 第三轮那套四层测量重刷）。
       这两条都只能眼看，或按 §7.38 / §7.39 那两张表读 `getComputedStyle`。
-    ⑧ **寄售与运营那两张首图是 10-15 重画的**（见 **7.40**）：新构图的标志是「**主体很小、贴在右边约 3/4 处，左半边几乎只有渐变**」。
-      若线上看到的是旧版（寄售左边带展柜/图表、运营右边一大块棱镜墙），就是传了 10-14 那版四张 —— 按 7.40 末尾那张 md5 表逐张比对重传。
+    ⑧ **寄售与运营那两张首图是 10-15 重画的**（见 **7.40 第二轮**）：新版的标志是「**右侧一件写实 3D 中国古物**（寄售＝玉佩+木座+象牙签牌+小铜秤；
+      运营＝兽钮青铜官印+竹简+罗盘盘），主体间有淡金连线与小节点」，与 `activity`（司南勺+罗盘盘）、`compose`（玉璧+青铜鼎碎片连线）同一套语言。
+      若看到**扁平小图标 + 大片纯渐变**（寄售是一个小价签、运营是一颗小棱镜、左半边几乎空），那是 10-15 02:1x 第一轮的作废版；
+      若看到**带展柜/图表的旧寄售、megaphone 喇叭的旧运营**，那是 10-14 的 §7.36 原版。两种都按 7.40 末尾那张 md5 表逐张比对重传。
       这两张**与两个前端 dist 无关**，硬刷新解决不了，只能重传 `public/uploads/notice-default/` 里的文件。
 
     **不发版就能改的**（这次特意这么设计）：全站默认敬语/落款 → 「系统配置 → 全局参数 → 内容与公告」那两格；
