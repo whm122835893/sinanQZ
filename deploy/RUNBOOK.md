@@ -3300,11 +3300,15 @@ SFC 里写的地址就是磁盘上那个文件（换完图 404 露白底这种�
 否则改文案时红的是"字符串变了"，看不出真正的原因是**踩进了亮区**。
 另有：几何前提（16+44+12=72、`flex-shrink:0`、z-index 0/1 分层）全部重钉一遍，
 webp 从文件头解宽高（`VP8 `/`VP8X` 两种都读）核比例 ±3%、守住 40KB、且 `w ≥ 343×3 && h ≥ 76×3`（3 倍图，暗部糊了会出色带）。
+分组当场点名数是 **3 / 3 / 3 / 4 / 4 = 17**（只认 v4 那组 3 条、白纱翻红那组 3 条、文字配色那组 3 条、几何前提那组 4 条、发布图本体那组 4 条）。
 
-**26 例（`invite-icon-theme.spec.js`）**：表结构 8 例（五套都有 `features.invite`、`type` 与 calendar 同、五张互不相同、地址=表里那张）；
-每张文件 5×3 例（Node 端解 IHDR+IDAT、`zlib.inflateSync` 解压、按 Sub/Up/Average/Paeth 反滤波，
-断 colorType 6、alpha 真在用、长边 ≥56px 且 ≤256、绿幕残留 <0.5%、长边与同主题 calendar 差 ≤15%、≤80KB）；
-接线 6 例（`getFeatureIcon('invite')` 逐主题返回的路径在磁盘上存在、两条分支都渲染得到、后台自定义图仍优先、缺省时回退 `modern-invite.png`）。
+**26 例（`invite-icon-theme.spec.js`）—— 三个 describe，实际 3 / 20 / 3**（当场用 `--reporter=json` 点过名，别按"感觉"报数）：
+表结构 **3** 例（每条主题都写了 `features.invite` 且地址=表里那张 / `invite` 与 `calendar` 的 `type` 同为 `image` / 五张互不相同）；
+位图本体 **20** 例 = 五张 × 4 条（① RGBA 且 alpha 真在用：`solidRatio>0.05` 且 `softRatio>0.005`、长边 ≥56px、≤256px；
+② 绿幕残留 `greenRatio<0.005`；③ 长边与同主题 calendar 差 ±15% 以内；④ 体积 ≤80KB）——
+解码是 Node 端自己做的：读 IHDR + 拼 IDAT + `zlib.inflateSync` + 按 Sub/Up/Average/Paeth 反滤波，
+所以 `colorType` 必须是 6（`lg-calendar.png` 那种调色板图**只取 IHDR 宽高、不解码**，第一轮我在这儿被自己绊了一次）；
+接线 **3** 例（模板里 `getFeatureIcon('invite')` 与两条分支都在 / 逐主题运行时取到的路径磁盘上真有这张文件 / 后台自定义 invite 仍优先，缺省回退 `modern-invite.png`）。
 
 **反证 17 档**（逐项拆 → 只跑这两份 spec → 当场还原 → 逐文件核 md5）
 
