@@ -126,31 +126,32 @@ function logout() {
 
 .invite-banner {
   margin: 12px $page-padding; border-radius: $radius-lg; padding: 16px;
-  background: #ffffff;
-  border: 1px solid rgba(192,0,0,0.12);
+  // 深色海报卡的兜底底色：图没传上去时也不能是「白底白字」的空卡（§7.43）
+  background: #1A0D10;
+  border: 1px solid rgba(255,255,255,0.10);   // 宽度保持 1px：改了会挪动文字区那 72px 的起点
   display: flex; align-items: center; gap: 12px; cursor: pointer;
-  box-shadow: 0 2px 12px rgba(192,0,0,0.06);
+  box-shadow: 0 6px 18px rgba(26,13,16,0.28);
   position: relative; overflow: hidden;
   &::before {
     content: ''; position: absolute; inset: 0; z-index: 0;
-    // 白纱盖住左边 0~72%（标题+副标题的整条可用宽度），72%~88% 收尽，右边才露古物。
-    // 0.85 与这两个 stop 是量出来的：文字区最坏对比与换图前持平（标题 8.28:1 / 副标 3.60:1，
-    // 旧渲染 8.28 / 3.32），别随手调窄——穿过整幅的那条金线一露到文字底下就掉到 4.19:1。
-    background:
-      linear-gradient(90deg, #fff 0%, #fff 72%, rgba(255,255,255,0) 88%, rgba(255,255,255,0) 100%),
-      url('/images/invite-banner-bg-v3.webp') center/cover no-repeat;
-    opacity: 0.85; pointer-events: none;
+    // 深色满幅海报（§7.43 推翻了 §7.42 的「浅底 + 白纱」）：不叠白纱、也不降 opacity，
+    // 那两层都会把深色图洗成奶昔。可读性由图自己保证 —— 左 2/3 是均匀暗底，
+    // 按真实行盒逐像素量：标题最坏 18.46:1、副标最坏 8.25:1（§7.42 旧渲染基线 8.28 / 3.32），
+    // 字形足迹右界 x=215，玉璧亮边从 x≈223 才起。
+    background: url('/images/invite-banner-bg-v4.webp') center/cover no-repeat;
+    pointer-events: none;
   }
   &__icon {
     width: 44px; height: 44px; border-radius: 12px; position: relative; z-index: 1;
-    background: linear-gradient(135deg, rgba(192,0,0,0.1), rgba(210,140,50,0.08));
+    background: rgba(255,255,255,0.16);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.28);
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     backdrop-filter: blur(2px);
   }
   &__img { width: 28px; height: 28px; object-fit: contain; -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; pointer-events: none; }
   &__text { flex: 1; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
-  &__title { font-size: 15px; font-weight: 700; color: #9A1A1A; letter-spacing: 0.5px; }
-  &__sub { font-size: 12px; color: rgba(80,50,20,0.6); }
+  &__title { font-size: 15px; font-weight: 700; color: #FFFFFF; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.55); }
+  &__sub { font-size: 12px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
   &__btn {
     border: none; cursor: pointer; background: #C00000; color: #fff; font-size: 14px;
     padding: 8px 18px; border-radius: $radius-pill; position: relative; z-index: 1;

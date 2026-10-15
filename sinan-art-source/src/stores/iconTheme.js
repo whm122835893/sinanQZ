@@ -46,7 +46,7 @@ const ICON_THEMES = {
       lottery:    { type: 'image', image: '/images/tab/modern-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/modern-inventory.png' },
       wallet:     { type: 'image', image: '/images/tab/modern-wallet.png' },
-      invite:     { type: 'svg',   icon: 'invite' }
+      invite:     { type: 'image', image: '/images/tab/modern-invite.png' }
     }
   },
 
@@ -67,7 +67,8 @@ const ICON_THEMES = {
       activity:   { type: 'image', image: '/images/tab/gem-activity.png' },
       lottery:    { type: 'image', image: '/images/tab/gem-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/gem-cube.png' },
-      wallet:     { type: 'image', image: '/images/tab/gem-wallet.png' }
+      wallet:     { type: 'image', image: '/images/tab/gem-wallet.png' },
+      invite:     { type: 'image', image: '/images/tab/gem-invite.png' }
     }
   },
 
@@ -88,7 +89,8 @@ const ICON_THEMES = {
       activity:   { type: 'image', image: '/images/tab/ink-activity.png' },
       lottery:    { type: 'image', image: '/images/tab/ink-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/ink-cube.png' },
-      wallet:     { type: 'image', image: '/images/tab/ink-wallet.png' }
+      wallet:     { type: 'image', image: '/images/tab/ink-wallet.png' },
+      invite:     { type: 'image', image: '/images/tab/ink-invite.png' }
     }
   },
 
@@ -109,7 +111,8 @@ const ICON_THEMES = {
       activity:   { type: 'image', image: '/images/tab/shanse-activity.png' },
       lottery:    { type: 'image', image: '/images/tab/shanse-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/shanse-cube.png' },
-      wallet:     { type: 'image', image: '/images/tab/shanse-wallet.png' }
+      wallet:     { type: 'image', image: '/images/tab/shanse-wallet.png' },
+      invite:     { type: 'image', image: '/images/tab/shanse-invite.png' }
     }
   },
 
@@ -130,7 +133,8 @@ const ICON_THEMES = {
       activity:   { type: 'image', image: '/images/tab/lg-activity.png' },
       lottery:    { type: 'image', image: '/images/tab/lg-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/lg-cube.png' },
-      wallet:     { type: 'image', image: '/images/tab/lg-wallet.png' }
+      wallet:     { type: 'image', image: '/images/tab/lg-wallet.png' },
+      invite:     { type: 'image', image: '/images/tab/lg-invite.png' }
     }
   },
 
