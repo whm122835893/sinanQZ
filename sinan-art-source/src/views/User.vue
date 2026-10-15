@@ -133,8 +133,13 @@ function logout() {
   position: relative; overflow: hidden;
   &::before {
     content: ''; position: absolute; inset: 0; z-index: 0;
-    background: url('/images/invite-banner-bg.jpg') center/cover no-repeat;
-    opacity: 0.3; filter: brightness(1.6) saturate(0.7); pointer-events: none;
+    // 白纱盖住左边 0~72%（标题+副标题的整条可用宽度），72%~88% 收尽，右边才露古物。
+    // 0.85 与这两个 stop 是量出来的：文字区最坏对比与换图前持平（标题 8.28:1 / 副标 3.60:1，
+    // 旧渲染 8.28 / 3.32），别随手调窄——穿过整幅的那条金线一露到文字底下就掉到 4.19:1。
+    background:
+      linear-gradient(90deg, #fff 0%, #fff 72%, rgba(255,255,255,0) 88%, rgba(255,255,255,0) 100%),
+      url('/images/invite-banner-bg-v3.webp') center/cover no-repeat;
+    opacity: 0.85; pointer-events: none;
   }
   &__icon {
     width: 44px; height: 44px; border-radius: 12px; position: relative; z-index: 1;
