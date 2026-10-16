@@ -51,8 +51,10 @@ function logout() {
     <!-- 邀请横幅 -->
     <div class="invite-banner" @click="go('/user/invite')">
       <div class="invite-banner__icon">
+        <!-- 五套主题的 invite 走下面这条矢量分支（人形 + 加号，§7.47）；位图分支只留给后台那个与主题无关的自定义上传口。 -->
         <img v-if="inviteIcon?.type === 'image'" :src="inviteIcon.image" class="invite-banner__img" alt="" draggable="false" @contextmenu.prevent />
-        <AppIcon v-else :name="inviteIcon?.icon || 'invite'" :size="28" color="#C00000" />
+        <!-- ⚠️ 这里的 color 不能退回 #C00000：这块底板是深色海报上的一层磨砂白，深红线条量出来只有 1.0~1.6:1 = 看不见（§7.44）。 -->
+        <AppIcon v-else :name="inviteIcon?.icon || 'invite'" :size="28" color="#FFFFFF" />
       </div>
       <div class="invite-banner__text">
         <span class="invite-banner__title">司南·邀新玩法</span>

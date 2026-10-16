@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import crypto from 'node:crypto'
 
 /**
  * 公告详情页的头图横幅 + 彩色类型标签（2026-10-14，RUNBOOK §7.36）
@@ -187,4 +188,30 @@ crossRepo('后端 SUBTYPES 的「键 → 中文标签」和 notice.js 的 catego
   while ((g = two.exec(block[1]))) local.set(g[1], g[2])
 
   expect([...local.entries()]).toEqual([...fromBackend.entries()])
+})
+
+/**
+ * 四张出厂首图的字节 —— **这条是从 §7.46 的图标 spec 搬过来的**，不是新增的守卫。
+ * 原来它们钉在 `tests/invite-icon-theme.spec.js` 里，因为那批的口径是「图标要和首图同风格」，
+ * 要把首图当标准答案比色温；§7.47 图标退回矢量小人，不再比首图，那组比较作废了。
+ * 但「出厂图被人重出/换掉」这件事本身还是要有人管 —— 它是详情页四类公告的默认头图，
+ * 归本文件管。字节 + 尺寸抄自 §7.46 那张真值表，改了就要回台账改表。
+ */
+const DEFAULT_COVERS = [
+  ['announcement-activity.webp', 'c6a2626313ce12e1202baf138c5b32c3'],
+  ['announcement-compose.webp', 'a914b63fc0e7d2e479cc02067e88fad4'],
+  ['announcement-consignment.webp', 'b944b8dc593c9a48f50dde5770098cb0'],
+  ['announcement-operation.webp', '4dd103114fca2caa1505d8856e91493a']
+]
+
+describe('四张出厂首图的字节（后端目录里的成品，不是 C 端资产）', () => {
+  const dir = resolve(process.cwd(), '..', 'sinan-nft-backend', 'public/uploads/notice-default')
+  for (const [name, digest] of DEFAULT_COVERS) {
+    it(`${name} 逐位没变`, () => {
+      const f = resolve(dir, name)
+      expect(existsSync(f), `${name} 不在了：后台的默认头图配置会指到一张不存在的图`).toBe(true)
+      expect(crypto.createHash('md5').update(readFileSync(f)).digest('hex'),
+        `${name} 字节变了：台账 §7.46 那张真值表与这里抄的数都要重量`).toBe(digest)
+    })
+  }
 })
