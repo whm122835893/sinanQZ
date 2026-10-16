@@ -19,6 +19,17 @@ import zlib from 'node:zlib'
  * 只对着 modern-invite.png 生效：平面度（色阶层数 + 纯色集中度）、墨迹体量不掉档、主体仍是家族浅灰。
  * 「五套都要位图」那条口径没变，五张互不相同也没变。
  *
+ * 2026-10-16 §7.45 再改一次：用户口径「图标再换，换成符合功能的图标」。信封表达的是「寄信」，
+ * 而这张卡的动作是「下请柬邀好友」，所以五套主题**全部**换成同一套中式请柬轮廓（半圆拱顶 + 竖长帖身 +
+ * 一圈深色描边 + 拱心一颗印泥红 + 三行字），换主题只换色槽。三条口径上的连锁：
+ *   · §7.44 那句「只换现在看到的这一张、另四套留立体那张」的**范围**口径已被推翻（用户随后选了「五套主题各一格」），
+ *     所以本节末尾从「只管 classic 三条」变成「五套各五条 + 三条跨套一致性」。
+ *   · §7.44 那条「三个通道都 >180 的墨迹占比 >50%」的浅灰代理指标**换成墨迹平均相对亮度**：
+ *     金色纸面 (242,226,178) 的蓝通道只有 178，拿旧判据会把 shanse 判成假红（旧口径实测 3.4%、新口径 0.606）。
+ *   · top8 集中度从 classic 专用的 ≥0.8 改成五套共用的 ≥0.55：紧裁家族要从 256 再缩到 132，抗锯齿边像素占比涨了，
+ *     实测五张 0.662~0.856。线先画在 0.6 时被反证 C 档（整张缩到 80%）以 0.599 顺带绊倒 —— 那个位置离成品只有 0.06，
+ *     留给「重新出一版同风格图」的余量太小；而被换掉的立体四张最高才 0.170，降到 0.55 之后中间仍隔着 3 倍。
+ *
  * 位图带不带透明通道、有没有把绿幕一起抠进来，jsdom 量不到，这里直接解 PNG 头 + 解 IDAT 自己数，
  * 这样「图标糊成一坨不透明方块」「边上镶一圈荧光绿」这类缺陷能在 CI 里红，而不是等人眼看。
  */
@@ -145,6 +156,65 @@ function inkBox (file) {
   return { w: maxx - minx + 1, h: maxy - miny + 1 }
 }
 
+// ---------------- 请柬轮廓与四个色槽（§7.45 起五套主题共用同一套轮廓） ----------------
+/**
+ * sRGB 相对亮度（与 WCAG 同一套线性化和权重）。
+ * 判断「压在深色玻璃 tile 上糊不糊」要用它，不能用 §7.44 那句「三个通道都 >180」：
+ * 金色纸面 (242,226,178) 蓝通道只有 178，旧判据会把 shanse 判成假红。
+ */
+function relLum (px, i) {
+  const ch = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }
+  return 0.2126 * ch(px[i]) + 0.7152 * ch(px[i + 1]) + 0.0722 * ch(px[i + 2])
+}
+
+/**
+ * 出图脚本 qa/gen_flat_invite_icon.py 里那四个色槽，抄一份到测试里当标准答案。
+ * 下面有一条钉专门比对这两处 —— 色槽钉钉的是像素，脚本改了测试没改，四条钉就成了空气。
+ */
+const INVITE_PALETTE = {
+  'modern-invite.png': { rim: [208, 210, 222], body: [240, 240, 243], line: [176, 180, 196], seal: [201, 39, 52] },
+  'gem-invite.png': { rim: [186, 196, 208], body: [232, 238, 244], line: [150, 162, 178], seal: [176, 42, 58] },
+  'ink-invite.png': { rim: [212, 204, 188], body: [246, 243, 236], line: [128, 124, 116], seal: [178, 44, 46] },
+  'shanse-invite.png': { rim: [206, 164, 92], body: [242, 226, 178], line: [150, 112, 58], seal: [188, 50, 54] },
+  'lg-invite.png': { rim: [196, 62, 74], body: [244, 230, 232], line: [198, 140, 148], seal: [192, 0, 0] }
+}
+
+/**
+ * 墨迹平均相对亮度 + 四个色槽各占多少墨迹。
+ * 容差是当场量的：色块之间最近的一对差 32（classic 的描边 208 vs 字 176），28 不会串色；
+ * 印泥红与任何中性色三通道差都在 100 以上，45 宽裕。
+ */
+function inkProfile (file, pal) {
+  const { w, h, px } = decodeRgba(file)
+  const near = (i, c, tol) => Math.abs(px[i] - c[0]) <= tol && Math.abs(px[i + 1] - c[1]) <= tol && Math.abs(px[i + 2] - c[2]) <= tol
+  let ink = 0; let lum = 0; let rim = 0; let body = 0; let line = 0; let seal = 0
+  for (let i = 0; i < w * h * 4; i += 4) {
+    if (px[i + 3] <= 51) continue
+    ink++; lum += relLum(px, i)
+    if (near(i, pal.seal, 45)) seal++
+    else if (near(i, pal.line, 28)) line++
+    else if (near(i, pal.rim, 28)) rim++
+    else if (near(i, pal.body, 28)) body++
+  }
+  return { meanLum: lum / ink, rim: rim / ink, body: body / ink, line: line / ink, seal: seal / ink }
+}
+
+/**
+ * 拱顶判据：从墨迹顶部往下 5% 高那一行的宽度 / 最宽那一行的宽度。
+ * 信封和方卡是 1:1（顶边就是最宽处），请柬上半是个半圆 ⇒ 实测五张都在 0.47~0.50。
+ * 为什么取 5% 而不是第一行：抗锯齿让第一行只剩一两个像素，那个比值是噪声，不是形状。
+ */
+function archRatio (file) {
+  const { w, h, px } = decodeRgba(file)
+  const rows = []
+  for (let y = 0; y < h; y++) {
+    let n = 0
+    for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] > 51) n++
+    if (n) rows.push(n)
+  }
+  return rows[Math.round(0.05 * (rows.length - 1))] / Math.max(...rows)
+}
+
 // ---------------- 主题表本身 ----------------
 const storeSrc = readFileSync(resolve(ROOT, 'src/stores/iconTheme.js'), 'utf8').replace(/\r\n/g, '\n')
 const sfcSrc = readFileSync(resolve(ROOT, 'src/views/User.vue'), 'utf8').replace(/\r\n/g, '\n')
@@ -228,33 +298,78 @@ describe('invite 位图本体：透明、没镶绿幕、够清晰、别拖慢「
   }
 })
 
-describe('§7.44：classic 那张 modern-invite 换成平面图标，另外四套本轮没动', () => {
-  const file = TAB('modern-invite.png')
+describe('§7.45：五套主题都换成平面中式请柬，同一套轮廓只换四个色槽', () => {
+  for (const { id, prefix } of THEMES) {
+    const name = `${prefix}-invite.png`
+    const file = TAB(name)
+    const pal = INVITE_PALETTE[name]
 
-  it('它是平面的：色阶层数少、纯色集中（立体磨砂那张实测 229 阶 / 0.8%，会在这里红）', () => {
-    const p = flatProfile(file)
-    expect(p.q4, `量化后还有 ${p.q4} 档色阶 = 图里在走渐变，不是平面`).toBeLessThanOrEqual(100)
-    expect(p.top8Ratio, `最常见的 8 个颜色只盖了 ${(p.top8Ratio * 100).toFixed(1)}% 的墨迹`).toBeGreaterThanOrEqual(0.8)
-  })
+    it(`${name} 是平面的：色阶层数少、纯色集中（换掉的立体那张实测 0.7%~17%，会在这里红）`, () => {
+      const p = flatProfile(file)
+      expect(p.q4, `量化后还有 ${p.q4} 档色阶 = 图里在走渐变，不是平面`).toBeLessThanOrEqual(100)
+      expect(p.top8Ratio, `最常见的 8 个颜色只盖了 ${(p.top8Ratio * 100).toFixed(1)}% 的墨迹`).toBeGreaterThanOrEqual(0.55)
+    })
 
-  it('墨迹体量没掉档：外接框长边 ≥ 同家族 calendar 墨迹长边的 85%（画布都是 256，光看文件尺寸看不出变小）', () => {
-    const inv = inkBox(file)
+    it(`${name} 是请柬轮廓不是信封：顶部往下 5% 那一行只有最宽处的一半不到（矩形或信封会接近 1:1）`, () => {
+      const r = archRatio(file)
+      expect(r, `5% 高处宽 / 最宽行 = ${r.toFixed(3)}，看不出半圆拱顶`).toBeLessThanOrEqual(0.6)
+      expect(r, `5% 高处宽 / 最宽行 = ${r.toFixed(3)}，拱顶塌了或细得不像一张帖子`).toBeGreaterThanOrEqual(0.35)
+    })
+
+    it(`${name} 四个色槽各就各位：纸面过半、描边一圈、印泥红一小颗（红印是「请柬」的语义锚点）`, () => {
+      const p = inkProfile(file, pal)
+      expect(p.body, `纸面只占 ${(p.body * 100).toFixed(1)}% 的墨迹，主体色不对`).toBeGreaterThanOrEqual(0.5)
+      expect(p.rim, `描边占 ${(p.rim * 100).toFixed(1)}%，一圈描边没了或糊成一块`).toBeGreaterThanOrEqual(0.1)
+      expect(p.rim).toBeLessThanOrEqual(0.35)
+      expect(p.seal, `印泥红占 ${(p.seal * 100).toFixed(1)}%，红印要么丢了、要么盖过纸面`).toBeGreaterThanOrEqual(0.02)
+      expect(p.seal).toBeLessThanOrEqual(0.08)
+    })
+
+    it(`${name} 压在深色玻璃 tile 上不会糊：墨迹平均相对亮度 ≥ 0.5（换掉的立体那张实测 0.228~0.435）`, () => {
+      const p = inkProfile(file, pal)
+      expect(p.meanLum, `墨迹平均相对亮度只有 ${p.meanLum.toFixed(3)}`).toBeGreaterThanOrEqual(0.5)
+    })
+
+    it(`${name} 的墨迹把画布撑满：墨迹长边 / 画布长边 ≥ 0.85（紧裁家族的约定是"画布就是墨迹"，留一圈白就会在 28px 里比兄弟小一圈）`, () => {
+      const inv = inkBox(file)
+      const { w, h } = readPng(file)
+      const ratio = Math.max(inv.w, inv.h) / Math.max(w, h)
+      expect(ratio, `${id} 的墨迹长边 ${Math.max(inv.w, inv.h)} 只占画布 ${Math.max(w, h)} 的 ${(ratio * 100).toFixed(0)}%`).toBeGreaterThanOrEqual(0.85)
+    })
+  }
+
+  // classic 家族多比一层：它是 256 方画布家族，画布撑满不等于跟兄弟一样大，得直接量 calendar 的墨迹。
+  // 另外四套比不了 —— 它们的 calendar 是**索引色 PNG（colorType 3）**，decodeRgba 只解 8bit 真彩 RGBA，
+  // 硬套会在断言里红成"calendar 不是 RGBA"。这不是测试写错，是那四张出厂图本来就不是同一类编码。
+  it(`modern-invite 的墨迹体量与 modern-calendar 同档：长边 ≥ 85%（classic 是方画布家族，只能这么比）`, () => {
+    const inv = inkBox(TAB('modern-invite.png'))
     const cal = inkBox(TAB('modern-calendar.png'))
-    expect(Math.max(inv.w, inv.h) / Math.max(cal.w, cal.h), `墨迹长边 ${Math.max(inv.w, inv.h)} vs calendar ${Math.max(cal.w, cal.h)}`).toBeGreaterThanOrEqual(0.85)
+    expect(Math.max(inv.w, inv.h) / Math.max(cal.w, cal.h),
+      `classic 的墨迹长边 ${Math.max(inv.w, inv.h)} vs calendar ${Math.max(cal.w, cal.h)}`).toBeGreaterThanOrEqual(0.85)
   })
 
-  it('用的还是家族那套浅灰主体色：深色卡的玻璃 tile 上不能出现一块黑底', () => {
-    const { w, h, px } = decodeRgba(file)
-    let lit = 0, ink = 0
-    for (let i = 0; i < w * h * 4; i += 4) {
-      if (px[i + 3] <= 51) continue
-      ink++
-      if (px[i] > 180 && px[i + 1] > 180 && px[i + 2] > 180) lit++
+  it('五张共用同一套轮廓：拱顶比例互差不超过 0.06（换主题只许换色，不许顺手换形）', () => {
+    const r = THEMES.map(({ prefix }) => archRatio(TAB(`${prefix}-invite.png`)))
+    const spread = Math.max(...r) - Math.min(...r)
+    expect(spread, `五张拱顶比例 ${r.map((v) => v.toFixed(3)).join(' / ')}，跨度 ${spread.toFixed(3)}`).toBeLessThanOrEqual(0.06)
+  })
+
+  it('测试里那份色槽表 = 出图脚本里那份（两边必须一起改，否则上面四条钉的是空气）', () => {
+    const gen = readFileSync(resolve(ROOT, '..', 'qa', 'gen_flat_invite_icon.py'), 'utf8')
+    expect(gen.length, '出图脚本没读到，这条钉等于没钉').toBeGreaterThan(500)
+    for (const [name, pal] of Object.entries(INVITE_PALETTE)) {
+      const prefix = name.replace('-invite.png', '')
+      const entry = new RegExp(`'${prefix}',\\s*\\d+,\\s*'(?:canvas|tight)',\\s*\\{([\\s\\S]*?)\\}\\)`).exec(gen)
+      expect(entry, `出图脚本 THEMES 里找不到 ${prefix} 那一条（改了脚本的名字/结构，这条要一起改）`).not.toBeNull()
+      for (const slot of ['rim', 'body', 'line', 'seal']) {
+        const m = new RegExp(`'${slot}':\\s*\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)`).exec(entry[1])
+        expect(m, `脚本里 ${prefix} 缺 '${slot}' 色槽`).not.toBeNull()
+        expect([+m[1], +m[2], +m[3]],
+          `${prefix} 的 ${slot}：脚本写 [${m[1]},${m[2]},${m[3]}]、测试写 [${pal[slot]}]`).toEqual(pal[slot])
+      }
     }
-    expect(lit / ink, `只有 ${(lit / ink * 100).toFixed(0)}% 的墨迹是亮色，压在深色卡上会糊成一团`).toBeGreaterThan(0.5)
   })
 })
-
 describe('User.vue 的接线：拿到 image 分支就渲染 <img>，拿不到才退回 AppIcon', () => {
   it('卡片读的是 getFeatureIcon("invite")，并且两条分支都在', () => {
     expect(sfcSrc).toMatch(/getFeatureIcon\(\s*'invite'\s*\)/)

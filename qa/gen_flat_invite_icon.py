@@ -1,33 +1,50 @@
 """
-平面的「邀请」图标生成器（RUNBOOK §7.44）
+平面的「邀请」图标生成器（初版 RUNBOOK §7.44，五套主题版 §7.45）
 
 为什么这个脚本要入库，而 §7.43 那批 AI 生成图的脚本没有：
   · 那张深色海报底图是 AI 出的，原图不留在仓库里，脚本留着也复现不出同一张图（只能复现「裁切+编码」那一步）；
-  · 这张平面图标是**用几何图形画出来的**，三个色块 + 两条折线 + 一个圆，脚本本身就是它的源文件。
-    没有这个脚本，下次有人想调粗封口 V、换封蜡颜色，只能重新猜坐标。
+  · 这几张平面图标是**用几何图形画出来的**，一个拱顶轮廓 + 一圈描边 + 一颗印章 + 三行字，
+    脚本本身就是它们的源文件。没有这个脚本，下次想调粗印章、换纸色，只能重新猜坐标。
 
 用法（本机 PIL 只有 7.2.0，没有 numpy）：
-  "C:\\Program Files\\python\\python" qa/gen_flat_invite_icon.py
-  产物默认落在 sinan-art-source/public/images/tab/modern-invite.png（覆盖前老版本在 git 里，直接 git show 取回）
+  "C:\\Program Files\\python\\python" qa/gen_flat_invite_icon.py            # 五张全出，直接覆盖仓库里那五个文件
+  "C:\\Program Files\\python\\python" qa/gen_flat_invite_icon.py classic    # 只出一套
+  "C:\\Program Files\\python\\python" qa/gen_flat_invite_icon.py --out DIR  # 全出到别处（比对用，不碰仓库）
 
-画布约定（对着同家族 modern-calendar 量的，别单独改这张）：
-  256x256 方画布、透明底；墨迹外接框 233x197（长边 91% 画布，calendar 是 94%）
-  平面度实测：4bit 量化 54 档色阶、最常见 8 色覆盖 94.9% 墨迹
-  （被它替换掉的立体那张是 229 档 / 0.8%，所以 tests/invite-icon-theme.spec.js 里的 100 档与 80% 两条线不会误伤）
+造型口径（2026-10-16 §7.45，用户口径「换成符合功能的图标」）：
+  信封那张表达的是「寄信」，这张卡片的动作是「下请柬邀好友」，所以画成中式请柬的轮廓：
+  上半一个半圆拱（帖子形）、下半竖长卡片、外圈一圈深色描边、拱心里一颗印泥红、下方三行字（一行比一行短）。
+  五套主题共用同一套轮廓，只换四个色槽（描边/纸面/字/印泥），这样「互不相同」和「都表达邀请」能同时成立。
+
+画布约定（对着同家族 calendar 量的，见 RUNBOOK §7.43 那张表）：
+  · classic（modern- 前缀）：256x256 方画布、透明底、墨迹长边要到 calendar 墨迹的 85% 以上（它家是 242）
+  · 其余四套：紧裁、长边 132（各自 calendar 的长边也都是 132）
+  · 4 倍超采样再缩回：斜边自带抗锯齿，色块内部保持纯色 —— 平面图的命门是「内部不许有渐变」
 """
 import os
 import sys
 
 from PIL import Image, ImageDraw
 
-S = 4  # 4 倍超采样再缩回 256：斜边自带抗锯齿，同时每个色块内部保持纯色（平面图的命门是"内部不许有渐变"）
+S = 4  # 4 倍超采样
+TAB_DIR = os.path.join(os.path.dirname(__file__), os.pardir,
+                       'sinan-art-source', 'public', 'images', 'tab')
 
-BODY = (240, 240, 243, 255)  # 家族主体色，取自 modern-calendar / modern-lottery 的大块浅灰
-FLAP = (208, 210, 222, 255)  # 第二色块：封口分面，只压暗一档，不做高光/阴影
-SEAL = (201, 39, 52, 255)    # 封蜡红：modern-lottery 上那颗点缀就是同一个红
-
-OUT = os.path.join(os.path.dirname(__file__), os.pardir,
-                   'sinan-art-source', 'public', 'images', 'tab', 'modern-invite.png')
+# 主题 id → (文件前缀, 长边像素, None=方画布或 'tight'=紧裁, 四个色槽)
+# 色槽取自各家族 calendar 的主色（离线量化后取 top 档，见 §7.45 表），印泥红统一留在红族：
+# 「请柬 + 红印」是这五张共同的语义锚点，换主题不该把功能换掉。
+THEMES = {
+    'classic': ('modern', 256, 'canvas', {
+        'rim': (208, 210, 222), 'body': (240, 240, 243), 'line': (176, 180, 196), 'seal': (201, 39, 52)}),
+    'gem': ('gem', 132, 'tight', {
+        'rim': (186, 196, 208), 'body': (232, 238, 244), 'line': (150, 162, 178), 'seal': (176, 42, 58)}),
+    'ink': ('ink', 132, 'tight', {
+        'rim': (212, 204, 188), 'body': (246, 243, 236), 'line': (128, 124, 116), 'seal': (178, 44, 46)}),
+    'shanse': ('shanse', 132, 'tight', {
+        'rim': (206, 164, 92), 'body': (242, 226, 178), 'line': (150, 112, 58), 'seal': (188, 50, 54)}),
+    'glass': ('lg', 132, 'tight', {
+        'rim': (196, 62, 74), 'body': (244, 230, 232), 'line': (198, 140, 148), 'seal': (192, 0, 0)}),
+}
 
 
 def rounded_rect(d, z, box, rad, fill):
@@ -40,20 +57,56 @@ def rounded_rect(d, z, box, rad, fill):
         d.ellipse(z(cx, cy, cx + 2 * rad, cy + 2 * rad), fill=fill)
 
 
-def build():
+def card(d, z, cx, yc, r, x0, y0, x1, y1, rad, fill):
+    """请柬轮廓：上半是圆心 (cx, yc)、半径 r 的半圆拱，下半是圆角矩形 (x0, y0..x1, y1)
+    两者共用同一条中线与左右边界，接痕正好落在 yc 这条水平线上（描边版与内芯版只差 12 单位）"""
+    d.pieslice(z(cx - r, yc - r, cx + r, yc + r), 180, 360, fill=fill)
+    rounded_rect(d, z, (x0, yc, x1, y1), rad, fill)
+
+
+def build(pal):
+    """按 256 逻辑单位画，返回已缩回 256x256 的 RGBA"""
     im = Image.new('RGBA', (256 * S, 256 * S), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     z = lambda *a: [v * S for v in a]
+    a = lambda c: (c[0], c[1], c[2], 255)
 
-    rounded_rect(d, z, (12, 30, 244, 226), 20, BODY)                                # 信封主体
-    d.line(z(28, 48, 128, 150, 228, 48), fill=FLAP, width=26 * S, joint='curve')      # 封口 V（纯分面）
-    d.ellipse(z(98, 120, 158, 180), fill=SEAL)                                        # 封蜡红点压在 V 顶点
+    card(d, z, 128, 104, 96, 32, 104, 224, 248, 10, a(pal['rim']))      # 外圈：深色描边
+    card(d, z, 128, 104, 84, 44, 104, 212, 236, 8, a(pal['body']))       # 内芯：纸面，四边各让 12
+    d.ellipse(z(104, 50, 152, 98), fill=a(pal['seal']))                  # 印泥红，压在拱心里
+    for i, x1 in enumerate((192, 176, 152)):                             # 三行字，一行比一行短
+        y0 = 132 + i * 28
+        rounded_rect(d, z, (64, y0, x1, y0 + 12), 6, a(pal['line']))
 
     return im.resize((256, 256), Image.LANCZOS)
 
 
+def fit(img, mode, long_edge):
+    """classic 铺回 256 方画布；其余四套紧裁到墨迹框再把长边缩到 132（各自家族的约定）"""
+    box = img.getbbox()
+    if mode == 'canvas':
+        return img
+    cropped = img.crop(box)
+    w, h = cropped.size
+    scale = long_edge / max(w, h)
+    return cropped.resize((max(1, int(round(w * scale))), max(1, int(round(h * scale)))), Image.LANCZOS)
+
+
+def target(theme):
+    prefix, long_edge, mode, pal = THEMES[theme]
+    return fit(build(pal), mode, long_edge), os.path.join(TAB_DIR, '%s-invite.png' % prefix)
+
+
 if __name__ == '__main__':
-    out = os.path.normpath(sys.argv[1] if len(sys.argv) > 1 else OUT)
-    img = build()
-    img.save(out, optimize=True)
-    print('wrote %s  %dx%d  %s  %d bytes' % (out, img.size[0], img.size[1], img.mode, os.path.getsize(out)))
+    args = [a for a in sys.argv[1:]]
+    out_dir = None
+    if '--out' in args:
+        i = args.index('--out')
+        out_dir, args = args[i + 1], args[:i] + args[i + 2:]
+    wanted = args or list(THEMES)
+    for name in wanted:
+        img, path = target(name)
+        if out_dir:
+            path = os.path.join(out_dir, os.path.basename(path))
+        img.save(path, optimize=True)
+        print('wrote %s  %dx%d  %s  %d bytes' % (path, img.size[0], img.size[1], img.mode, os.path.getsize(path)))
