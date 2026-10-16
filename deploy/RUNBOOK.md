@@ -3827,6 +3827,14 @@ N 出厂首图被换（搬过来的那条钉要拦住）红 1。
 所以它的绝对 md5 不等于 §7.46 当年那份。这不影响结论，因为比的是**归一后的文本相等**，不是绝对 md5；
 要看旧字节请从工作树备份走，别把 `git show` 的输出当成逐位等价的工作树文件。）
 
+**留证与清理（这批）**：`E:\tmp\v47\css-proof\` 留下那两份入口 CSS 和各自的 `data-v` 归一化副本
+（`index-BcRoMzhL.css` = 本批产物 `8dfdeab8…`、`index-wSNEYHFO.css` = 用 HEAD 那份 `User.vue` 单独重跑出来的 `593d2777…`），
+谁要复核"CSS md5 变了但规则文本没变"就把那两个 `.norm` 再 `diff -q` 一次；
+同目录里那次重跑的整个 dist（5.4M）、Chrome 临时 profile（34M）和两份 `User.vue` 中转副本**已删**（可重建，且留着只会让人误当成一份"当前产物"）。
+其余留着的：`retired/invite-jade.webp`（三代口径之一的字节）、`strip/backup/`（反证基线字节）、
+`strip-tiers47.py` + `strip47-run.log`（14 档可重跑）、`cdp47*.js/json/log`、`measure_contrast.py` + `contrast.json` + `contrast-table.txt` + `vw.json`、
+`card-*.png` / `plate-*.png` 那 **30 张**截图（5 张整卡 + 五套 × {底板原尺寸 / `-zoom` / `-noink` / `-red` / `-again`} = 25 张）。**上一批 `E:\tmp\v46\` 那份没动**，`compare-old-new.png` 现在只能当"§7.45 vs §7.46"的历史对照，不含这一批。
+
 marker（在 dist 上实测的命中数）：
 `grep -c 'invite",size:28,color:"#FFFFFF"' dist/assets/index-*.js` = **1**（这批最新的那条接线）；
 `grep -c -F 'M16 7v6M13 10h6' dist/assets/index-*.js` = **1**（加号那条形本体，比文件名 marker 更硬）；
