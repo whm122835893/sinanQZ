@@ -14,6 +14,9 @@ import { ref, computed } from 'vue'
 //
 // 新增风格只需在 ICON_THEMES 中追加一个条目即可，无需改组件代码。
 // 若某风格暂未生成功能图标位图，features 可省略，自动回退到经典 SVG。
+//
+// 例外：**邀请入口五套主题共用同一张图**（`invite-jade.webp`，写实白玉佩 + 红绳，风格对齐公告详情首图，
+// 见 RUNBOOK §7.46）。用户 2026-10-16 的口径是"只出一张，五套共用"，和后台那个主题无关的上传口保持同一形状。
 // ============================================================
 
 /**
@@ -46,7 +49,7 @@ const ICON_THEMES = {
       lottery:    { type: 'image', image: '/images/tab/modern-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/modern-inventory.png' },
       wallet:     { type: 'image', image: '/images/tab/modern-wallet.png' },
-      invite:     { type: 'image', image: '/images/tab/modern-invite.png' }
+      invite:     { type: 'image', image: '/images/tab/invite-jade.webp' }
     }
   },
 
@@ -68,7 +71,7 @@ const ICON_THEMES = {
       lottery:    { type: 'image', image: '/images/tab/gem-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/gem-cube.png' },
       wallet:     { type: 'image', image: '/images/tab/gem-wallet.png' },
-      invite:     { type: 'image', image: '/images/tab/gem-invite.png' }
+      invite:     { type: 'image', image: '/images/tab/invite-jade.webp' }
     }
   },
 
@@ -90,7 +93,7 @@ const ICON_THEMES = {
       lottery:    { type: 'image', image: '/images/tab/ink-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/ink-cube.png' },
       wallet:     { type: 'image', image: '/images/tab/ink-wallet.png' },
-      invite:     { type: 'image', image: '/images/tab/ink-invite.png' }
+      invite:     { type: 'image', image: '/images/tab/invite-jade.webp' }
     }
   },
 
@@ -112,7 +115,7 @@ const ICON_THEMES = {
       lottery:    { type: 'image', image: '/images/tab/shanse-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/shanse-cube.png' },
       wallet:     { type: 'image', image: '/images/tab/shanse-wallet.png' },
-      invite:     { type: 'image', image: '/images/tab/shanse-invite.png' }
+      invite:     { type: 'image', image: '/images/tab/invite-jade.webp' }
     }
   },
 
@@ -134,7 +137,7 @@ const ICON_THEMES = {
       lottery:    { type: 'image', image: '/images/tab/lg-lottery.png' },
       inventory:  { type: 'image', image: '/images/tab/lg-cube.png' },
       wallet:     { type: 'image', image: '/images/tab/lg-wallet.png' },
-      invite:     { type: 'image', image: '/images/tab/lg-invite.png' }
+      invite:     { type: 'image', image: '/images/tab/invite-jade.webp' }
     }
   },
 
