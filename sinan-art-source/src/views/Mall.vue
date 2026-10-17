@@ -89,12 +89,19 @@ onMounted(() => {
 
 .exhibit-header {
   position: relative; height: 150px; overflow: hidden;
+  // §7.48：头图从「浅米黄青绿山水 + 松鹤」换成「深暗底青铜方鼎」。
+  // 图是 qa/make_exhibit_header_bronze.py 从 AI 原图裁出来的（裁掉右下角「Qoder AI生成」水印带 + 缩到 1280 宽），
+  // 52,972 B / md5 d09524b2…，比旧图小一个数量级。**换图必须连文字色一起换**：旧深棕字压在新暗底上只有 1.25:1 = 看不见。
   background:
     linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.55) 100%),
-    url('/images/exhibits/exhibit-header-ancient.jpg') center/cover no-repeat;
+    url('/images/exhibits/exhibit-header-bronze-ding-v2.webp') center/cover no-repeat;
   display: flex; flex-direction: column; justify-content: center; padding: 0 $page-padding;
-  &__title { position: relative; font-size: 28px; font-weight: 700; color: #2c1d0f; margin: 0; text-shadow: 0 1px 6px rgba(255,245,215,0.6); letter-spacing: 2px; }
-  &__sub { position: relative; margin: 6px 0 0; font-size: 13px; color: #5a3a1f; letter-spacing: 1px; font-weight: 500; text-shadow: 0 1px 4px rgba(255,245,215,0.5); }
+  // 暗底 + 白字：28px 粗体按 WCAG 属大字号，要求 ≥3:1；离线设计值最坏点 20.37:1、真渲染四档最坏 12.96:1
+  // （两套数差这么多是 postcss 把 px 折成 vw，两把尺量的盒子不一样，细节写在 tests/exhibit-header.spec.js 文件头）；
+  // 原来的 text-shadow 是一圈暖白辉光（给浅底深字用的），在暗底上它会糊在笔画边上，换成压深的投影。
+  &__title { position: relative; font-size: 28px; font-weight: 700; color: #FFFFFF; margin: 0; text-shadow: 0 1px 6px rgba(0,0,0,0.65); letter-spacing: 2px; }
+  // 副标 13px 是正文字号，要求 ≥4.5:1，离线 14.52:1 / 真渲染四档最坏 11.49:1（85% 白，量具已把半透明和底色合成后再算）。
+  &__sub { position: relative; margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.85); letter-spacing: 1px; font-weight: 500; text-shadow: 0 1px 4px rgba(0,0,0,0.55); }
 }
 
 .exhibit-cats {
