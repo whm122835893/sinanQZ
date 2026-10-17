@@ -26,14 +26,24 @@ import crypto from 'node:crypto'
  *   2. 唯一抄进来的数是「那块磨砂底板渲染出来是什么颜色」（`PLATE_RENDERED_RGB`）—— 它由海报图 +
  *      rgba 叠加 + backdrop-filter 合成，只有浏览器量得出来。所以对比度这条是
  *      **「测试算公式，CDP 供背景色」**，不是"像素在 CI 里重量过"。底板那三行 CSS 与海报 md5 一起钉住了，
- *      谁动底板/换海报，抄来的背景色就失效 ⇒ 必须重跑 `E:/tmp/v47/cdp47.js` 重抄。
+ *      谁动底板/换海报，抄来的背景色就失效 ⇒ 必须重跑一遍（§7.47 用 `E:/tmp/v47/cdp47.js`，
+ *      §7.49 换图后重抄用的是 `E:/tmp/v49/cdp49c.js`，见下面那段）。
  *   3. 另一处"抄"是 CDP 量到的几何（28.00 CSS px 方盒、线宽 2.33 px、getBBox 17×15 单位）。
  *      其中包络那条测试会**自己从 path 串算一遍**再与抄进来的数对上，两边不一致就是有人改了形状。
+ *
+ * ## 2026-10-17 §7.49：海报换成「雾中逆光」v5 并加了左侧深色罩，本节抄进来的那几个数已重抄
+ * 图标本身**一个字节没动**（path 串、28px 盒、#FFFFFF 全部照旧），动的是它背后那块板压着的东西：
+ * 海报 v4→v5、`::before` 多了一层左罩（图标在 x=16..60，正好落在罩的满值段里）。
+ * 于是 `plateRGB` 从 [42,47,51] 抬到 [59,59,56]（亮雾比那张暗海报亮，罩只压回一点），
+ * 白线对比从 13.52:1 降到 **11.24:1**，#C00000 控制组从 2.09:1 变 1.73:1 —— 两边都还在各自线内，
+ * 但**方向是降**，所以这一节原来的余量薄了 2.3 个点，台账里按"降"记。
+ * 重跑口径与 §7.47 完全一把尺（中位背景、>24 掩膜、前 10% 取中位），只是脚本换到
+ * `E:/tmp/v49/cdp49c.js` + `icon49c.py`（同一视口 390x844/dpr2，藏的是 `.app-icon` 而不是整块板）。
  */
 
 const ROOT = resolve(__dirname, '..')
 const TAB_DIR = resolve(ROOT, 'public/images/tab')
-const POSTER = resolve(ROOT, 'public/images/invite-banner-bg-v4.webp')
+const POSTER = resolve(ROOT, 'public/images/invite-banner-bg-v5.webp')
 
 const THEME_IDS = ['classic', 'gem', 'ink', 'shanse', 'glass']
 
@@ -44,25 +54,26 @@ const RETIRED_WEBP = 'invite-jade.webp'
 /** `AppIcon.vue` 里 `invite` 那条 path，逐字节钉住：换形状要红，红了就得重跑 CDP 重抄几何 */
 const INVITE_PATH = '<circle cx="8" cy="8" r="3"/><path d="M2 20c.5-3.3 3.2-5.5 6-5.5s5.5 2.2 6 5.5"/><path d="M16 7v6M13 10h6"/>'
 
-/** 渲染后实测（`E:/tmp/v47/cdp47.js` + `measure_contrast.py`，390×844 / DPR 2，五套主题逐位一致） */
+/** 渲染后实测（§7.49 重抄：`E:/tmp/v49/cdp49c.js` + `icon49c.py`，390×844 / DPR 2，与 §7.47 同一把尺） */
 const RENDER = {
-  // 那块 44px 磨砂底板**合成后**的中位色：rgba(255,255,255,.16) 叠在深色海报上、再过 blur(2px)。
+  // 那块 44px 磨砂底板**合成后**的中位色：rgba(255,255,255,.16) 叠在 v5 海报上、再过 blur(2px)、
+  // 外面还罩着那层左罩（图标在罩的满值段内）。旧海报 v4 上是 [42,47,51] / L=0.0276 —— 换图后抬到 [59,59,56]。
   // 它是本节唯一抄进来的颜色，对比度公式在测试里现算。
-  plateRGB: [42, 47, 51],
-  plateLum: 0.0276,
-  // 线条实色那档（掩膜内与背景差得最远的前 10% 取中位）与它相对底板的对比度
+  plateRGB: [59, 59, 56],
+  plateLum: 0.0434,
+  // 线条实色那档（掩膜内与背景差得最远的前 10% 取中位）与它相对底板的对比度（旧值 13.52:1，方向是**降**）
   inkWhite: [255, 255, 255],
-  contrastWhite: 13.52,
-  // 控制组：把颜色退回改之前的 #C00000，同一块底板上量到的最好一档也只有 2.09:1 ⇒ 非文字 3:1 不达标。
-  // （§7.44 当年量的是 1.00~1.57:1，那批的底板/海报与现在不同版；两个数都在线下，结论一字不变。）
+  contrastWhite: 11.24,
+  // 控制组：把颜色退回改之前的 #C00000，同一块底板上量到的最好一档只有 1.73:1 ⇒ 非文字 3:1 不达标。
+  // （§7.47 在旧海报上量到 2.09:1、§7.44 那批 1.00~1.57:1；三批的底板/海报不同版，结论一字不变。）
   inkRed: [192, 0, 0],
-  contrastRed: 2.09,
+  contrastRed: 1.73,
   // 几何：AppIcon 的行内 style 给宽高 ⇒ 不吃 px→vw 那层转换，实测就是 28.00 CSS px 见方
   //（上一版那张位图走 SCSS 的 `&__img{width:28px}`，被 px→vw 放大成 29.11，两者差 3.8%）。
   boxCss: 28.0,
   strokeCss: 2.333,        // stroke-width=2（24 单位）× 28/24
-  inkPixels: 637,          // 92×92 设备像素里，线条占 637 px = 底板面积的 7.5%
-  fringePixels: 24,        // 抗锯齿那一圈只有 24 px ⇒ 不是"几颗亮点"，线是连续的
+  inkPixels: 635,          // 92×92 设备像素里，线条占 635 px = 底板面积的 7.5%（旧海报上 637，差 2 px = 抗锯齿抖动）
+  fringePixels: 25,        // 抗锯齿那一圈只有 25 px ⇒ 不是"几颗亮点"，线是连续的
   // path 坐标包络（锚点 + 控制点），与 CDP 的 svg.getBBox() 逐位相同
   bboxUnits: [2, 5, 17, 15]
 }
@@ -70,7 +81,9 @@ const RENDER = {
 /** WCAG 1.4.11 非文字对比度下限（图标属于这一档），也是这一节真正的判据 */
 const MIN_NONTEXT_CONTRAST = 3
 
-const POSTER_MD5 = '41dc507c94e0dfea5778b2a20b3ae1bd'
+// §7.49 的 v5（1280x284 / 21,974 B）。上一版 v4（1280x284 / 32,466 B，md5 41dc507c…）已经没人引用，
+// 文件还躺在 public/images/ 等用户点头清理 —— 本节钉的是**当前这张**，回到 v4 就红。
+const POSTER_MD5 = '7faa4a09b3c0fa2578b0a4691dfc28da'
 
 const storeSrc = readFileSync(resolve(ROOT, 'src/stores/iconTheme.js'), 'utf8').replace(/\r\n/g, '\n')
 // 扫"旧位图还引用着没有"之前先把注释剥掉：这一条钉的是**代码引用**，不是"文档里不许提到旧文件名"——
