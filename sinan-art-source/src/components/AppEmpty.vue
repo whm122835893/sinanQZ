@@ -1,14 +1,21 @@
 <script setup>
-// 全局空状态：简笔画「开箱」+ 朱红回纹（内联 SVG，不再用位图）
+// 全局空状态：玉雕龙盘铜司南 + 脚下白云（透明底位图）。全站只有这一个空状态组件，14 个页面共用。
 //
-// 为什么是内联 SVG 而不是 public/ 下的图片：
-//   1) 换图不用再手动加 ?v= 绕 nginx 启发式缓存（老访客必然看到新图，因为 JS 分片名带 hash）；
-//   2) 回纹颜色写的是 var(--color-primary)，后台改主题色时图标跟着变，位图做不到；
-//   3) 120×120 的实物图 50KB，这套线条约 1KB，且任意屏幕密度都不糊。
+// 2026-10-19 用户给图并点名（原话）：「用这个图做空状态图标，把背景抠掉。所有页面没有数据的时候就显示这个图。」
+// 这是空状态的第五版：SVG 展柜 → 纸箱位图 → 铜鼎位图 → SVG 开箱回纹（§7.28，上一版）→ 这一张。
+// 中间还绕了一趟「把纸箱位图接回来」，同一天被这张图取代，经过记在 RUNBOOK §7.54。
 //
-// 图形口径（改之前先读）：等轴视角的开口箱，两片后翻盖支起，箱身下沿绕一圈回纹
-// —— 回纹取自平台文物图样的那圈纹饰，用来贴合「数字藏品」这个网站的特点。
-// 线条走次级文字色、回纹走主题色，全站只有这一个空状态组件（14 个页面引用它）。
+// 抠图口径（要重做先读 §7.54，别照抄色键）：
+//   底不是纯色，是 顶部纯白 → 底部浅灰 (219,223,226) 的渐变，而**云本身也是白的**
+//   ⇒ 任何"离某个固定色多远"的全局判据都会把云啃掉一块。
+//   做法：先用四条边建背景场 B(x,y)，判据换成"离**它所在位置该长的底**多远"；
+//   再只灌「与画布边界相连 && 离 B 够近」的像素 —— 云内部那些跟底同档却被自己暗边围住的，因为不连边界而活下来。
+//   阈值夹在两个实测数之间：边界离底最大 4.2（背景噪声上界）< T_HI=16 < 保留像素 d 的 p10=18.9（主体下界）。
+//
+// 换回位图的**代价**，认下来：
+//   1) 图是死的，后台改主题色时它**不会跟着变**（上一版 SVG 的回纹会 —— 那条 $color-primary 的联动随 §7.28 一起下线）；
+//   2) public/ 下的图没有构建期 hash，会撞 nginx 启发式缓存 ⇒ 文件名带 -v1，
+//      下次换图**必须再 +1 换 URL**，原地覆盖的话老访客必然看不到新图。
 defineProps({
   description: { type: String, default: '暂无数据' }
 })
@@ -16,26 +23,7 @@ defineProps({
 
 <template>
   <div class="app-empty">
-    <svg class="app-empty__img" viewBox="0 0 120 120" fill="none" aria-hidden="true" focusable="false">
-      <g class="app-empty__box" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M28 46 L60 30 L92 46 L60 62 Z" />
-        <path d="M28 46 L60 55 L92 46" />
-        <path d="M28 46 L24 31 L56 15 L60 30" />
-        <path d="M92 46 L96 31 L64 15 L60 30" />
-        <path d="M28 46 L28 80 L60 96 L60 62" />
-        <path d="M92 46 L92 80 L60 96 L60 62" />
-      </g>
-      <g class="app-empty__motif" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-        <g transform="translate(28 46) skewY(26.57)">
-          <path d="M0 11 L0 0 L13 0 L13 11 L3.5 11 L3.5 3.5 L9.5 3.5 L9.5 7 L6.5 7" transform="translate(2 20)" />
-          <path d="M0 11 L0 0 L13 0 L13 11 L3.5 11 L3.5 3.5 L9.5 3.5 L9.5 7 L6.5 7" transform="translate(17 20)" />
-        </g>
-        <g transform="translate(60 62) skewY(-26.57)">
-          <path d="M0 11 L0 0 L13 0 L13 11 L3.5 11 L3.5 3.5 L9.5 3.5 L9.5 7 L6.5 7" transform="translate(2 20)" />
-          <path d="M0 11 L0 0 L13 0 L13 11 L3.5 11 L3.5 3.5 L9.5 3.5 L9.5 7 L6.5 7" transform="translate(17 20)" />
-        </g>
-      </g>
-    </svg>
+    <img class="app-empty__img" src="/images/tab/empty-jade-compass-v1.webp" alt="" draggable="false" @contextmenu.prevent />
     <p class="app-empty__text">{{ description }}</p>
   </div>
 </template>
@@ -52,22 +40,15 @@ defineProps({
   grid-column: 1 / -1;
 }
 .app-empty__img {
+  // 显示档仍按 §7.28 的 120px（编译期 px→vw 换算成 32vw，375 设计宽下正好 120 CSS px）
   width: 120px;
   height: 120px;
+  object-fit: contain;
   display: block;
+  -webkit-user-drag: none;
   -webkit-touch-callout: none;
   user-select: none;
   pointer-events: none;
-}
-// 箱体线条：次级文字色压淡，只做「有个箱子」，不抢文字
-.app-empty__box {
-  stroke: $color-text-secondary;
-  opacity: 0.55;
-}
-// 回纹：跟随后台主题色（site.js 运行时写 --color-primary）
-.app-empty__motif {
-  stroke: $color-primary;
-  opacity: 0.85;
 }
 .app-empty__text {
   margin: 12px 0 0;
