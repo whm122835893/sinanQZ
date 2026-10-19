@@ -4936,10 +4936,11 @@ T7 把**现役的 `-v2` 删掉**（清错对象）→ 也红在编译层（同�
 ② `dist/images/tab/` 里**别的**零引用图（五套主题图标那批）没扫没删；③ 生产侧孤儿清单、`purge`；④ **没上线、没推送**；
 ⑤ `E:/tmp/v54|v55|v56` 那三个证据目录没删（清理口径写在 §7.55 第 13 条）；⑥ 排队的「邀请卡背景改白 + 字改黑」仍未动（前置读数 **1.07:1**）。
 
-**14. 本地提交**：**一笔代码 `0302369` + 一笔台账（就是写这一句的这一笔）= 本批共 2 笔**（写完当场 `git rev-list --count 3dcbf6c..HEAD` 复量 = 2，见下面那条执行记录）。
+**14. 本地提交**：**一笔代码 `0302369` + 两笔台账（主笔 `9f41f76` 与补订正的那一笔 = 本批共 3 笔）**。
 代码笔 5 个文件、31 增 / 2 删：`AppEmpty.vue`（+7 行注释）+ `app-empty.spec.js`（+24/-2）+ 三张 `D`；
-台账笔只动 `deploy/RUNBOOK.md` 一个文件 —— ⚠️ 这一句自己也在这笔里落数，**它是这条规矩（第 12 条）第二次执行**：
-它写的是**含它自己**的最终值 2，不是"代码 1 + 台账 0"。`AGENTS.md` 未跟踪、不占提交数。
+台账主笔 `9f41f76` 只动 `deploy/RUNBOOK.md` 一个文件（157 插 / 3 删，七个 hunk）。
+⚠️ **这一句自己就是第 12 条那条规矩的现场**：主笔落下时它写的是「本批共 2 笔」，**而我随后又补了一笔订正**（第 8 节 36 条里那张邀新旧图把 md5 写成了 12 位前缀 `08b551351bb4`、又写了一个会随 `User.vue` 改动而失效的死行号 `User.vue:197` —— 正是本条第 2 项刚立的"不写死行号"规矩自己违反了一次）
+⇒ 那一笔落下时"2 笔"就过期了，**本句改成含它自己的最终值 3，改完 `git rev-list --count 3dcbf6c..HEAD` 复量 = 3**（时间 10-19 11:1x）。`AGENTS.md` 未跟踪、不占提交数。
 证据全在 `E:/tmp/v57/`（**全部不入库**）：`refute_56.py` + `refute-56.log`、`probe_comment_hash.py` + `probe-comment-hash.log` + `build-A|B|C/`、
 `probe_js_diff.py` + `chunk-normalize-diff.log` + `residual-diff.log`、`routes_56.sh` + `routes-56.log` + `live-mall-375.png`、`server.log`、`build.log`、
 `backup/AppEmpty.{with,no}-comment.vue`（那 710 B 差异的两头各存一份）、三端基线 `art-full.txt` / `art-full.json` / `app-empty.json` / `admin-full.txt` / `backend-unit.log`。
@@ -6007,6 +6008,6 @@ T7 把**现役的 `-v2` 删掉**（清错对象）→ 也红在编译层（同�
     ② **生产侧的旧图一张都没清**：`/www/wwwroot/sinan-h5/images/` 里可能还躺着 `invite-banner-bg-v4/v5/v7`、`exhibit-header-ancient.jpg`、`invite-banner-bg.jpg`
       （§7.52 记过），**要先只读 `ls` 一份清单再谈删**；`runtime/upload_trash` 那 26 张的 `purge` **至今没跑**。
       ⚠️ **同一把尺顺手量了 C 端本地 `public/images/` 那五张邀新旧图**（当场 `stat`）：v4 32,466 + v5 21,974 + v6 21,236 + v7 7,554 + `invite-banner-bg.jpg` 45,701 = **128,931 B 死重**，
-      现役只有 v8（9,644 B / md5 前缀 `08b551351bb4`，被 `src/views/User.vue:197` 引用）⇒ **这一格与刚清掉那格是同一个病，但没在你点头的清单里，一个字节没动**（要清就说，流程照 §7.56 那三步：量引用面 → tar 存档 → `git rm`）。
+      现役只有 v8（9,644 B / md5 `08b551351bb49d665a165fa2c319f4db`，引用它的就是 `src/views/User.vue` 里那句 `background: url('/images/invite-banner-bg-v8.webp')`）⇒ **这一格与刚清掉那格是同一个病，但没在你点头的清单里，一个字节没动**（要清就说，流程照 §7.56 那三步：量引用面 → tar 存档 → `git rm`）。
     ③ `images/tab/` 下**别的**零引用图（五套主题 tab 图标那批）本批没扫；④ **没上线、没推送**；
     ⑤ 排队的「**邀请卡片背景改白 + 字体改黑**」仍未动（前置读数：黑字压在现有那块近黑底上只有 **1.07:1**）。
