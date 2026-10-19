@@ -15,6 +15,10 @@ import AppEmpty from '@/components/AppEmpty.vue'
  *     所有页面没有数据的时候就显示这个图。」⇒ 那一版是 -v1，纸箱那版没上线就被取代（§7.54）。
  *   · 同日（§7.55）用户再给一张「珊瑚粉红龙盘铜司南 + 白瓷祥云」：「空状态换成这一张」
  *     ⇒ 现值 = 这张 -v2。**同一个入口、同一套七步抠图，只有像素换了**。
+ *   · 次日（§7.56）用户一句「玉雕龙不要了」→「三张全清」：-v1（46,788 B）、铜鼎（50,423 B）、
+ *     纸箱（5,923 B）三张零引用孤儿位图**已从仓库与 dist 删除**（共 103,134 B 死重归零），
+ *     存档在仓库外的 `orphan-empty-images-20261019.tar.gz`。**三张的回滚点现在是 git 历史里的 blob**，
+ *     逐位实测可从 `2633261` 取回（那条命令在下面防漂移那组的注释里），删的不是记忆，是磁盘上的死重。
  *
  * 所以这组用例盯的是五件事（这五条从 §7.54 起没改口径，改的是常量）：
  *   1) 渲染的是 <img>，地址精确指向 public 下那张图，且**文件名带 -vN 版本号**
@@ -28,6 +32,8 @@ import AppEmpty from '@/components/AppEmpty.vue'
  *      ⚠️ 这三个常量**每换一张图都要现量重钉**，抄上一版的必然错（§7.54 就抄错过一次阈值，见那条第 5 点）；
  *   4) §7.28 那版内联 SVG 不许悄悄回来，文案 prop 只认 description，显示档仍是 120px；
  *   5) 全站只有这一个空状态出口，别有人再往 src 里塞第二张空状态图。
+ *      （§7.56 起这一条分成两层：**代码层**不许出现那三张的名字，**磁盘层**不许在
+ *       `public/images/tab/` 下躺着第二张 `empty-*` —— 只看代码会漏掉"文件还在、没人引用"那一类死重。）
  */
 
 /** 从组件里现读它引用的那张图，不在测试里写死路径（§7.51 的教训：常量要与真源互读） */
@@ -116,8 +122,13 @@ describe('AppEmpty · 龙盘铜司南空状态（-v2 位图）', () => {
 /**
  * 防漂移：空状态图只此一处。
  * 铜鼎位图当年是「列表页 → 详情页 → 空状态」一路复制过来的，改一处漏一处；
- * 纸箱、铜鼎、上一版 -v1 三张现在都是仓库里的死文件，src 里一次都不许出现
- * （-v1 这条从 §7.55 起钉上：换版本时最容易手滑的就是"再指回上一张"）。
+ * 纸箱、铜鼎、上一版 -v1 这三张的名字从 §7.54 起就钉在 src 里一次都不许出现，
+ * **§7.56 把它们从磁盘上删了，这三颗钉一颗都不撤** —— 撤了就没东西拦得住"手滑再指回上一张"，
+ * 而指回的那张此刻已经不在仓库里，症状不是报错、是**空状态只剩一行灰字**（14 个页面同时这样）。
+ * 要取回任何一张，别改代码，从 git 历史里拿字节（三张都在 `2633261` 这一版还在）：
+ *   git show 2633261:sinan-art-source/public/images/tab/empty-jade-compass-v1.webp > 那个文件
+ *   md5 逐位对得上：-v1 `d5702cdecdec8d9e18508aa6c6b0f886` / 铜鼎 `16995ed9836b2b186d3598a75385bddd`
+ *   / 纸箱 `aa33d83e96843576605ac6ec8e8cb2b7`（2026-10-19 当场从 blob 量出来的，不是抄台账）。
  */
 describe('空状态防漂移', () => {
   const srcRoot = resolve(process.cwd(), 'src')
@@ -140,6 +151,17 @@ describe('空状态防漂移', () => {
     expect(hit(/empty-carton/)).toEqual([])
     expect(hit(/empty-jade-compass-v1/)).toEqual([])
     expect(hit(/empty-jade-compass/)).toEqual(['/components/AppEmpty.vue'])
+  })
+
+  // §7.56 新增：上面那三颗钉只管「代码里不许提它们」，这一颗管「磁盘上它们真没了」——
+  // 只看 src 的扫描会漏掉"文件还躺在 public 里、只是没人引用"这一整类死重（它已经躺了三个版本）。
+  it('空状态位图在磁盘上只剩 -v2 这一张（三张孤儿已清，public/images/tab/ 下不许再落第二张）', () => {
+    const tabDir = resolve(process.cwd(), 'public/images/tab')
+    const empties = readdirSync(tabDir).filter((n) => /^empty-/.test(n)).sort()
+    expect(empties).toEqual(['empty-jade-compass-v2.webp'])
+    for (const gone of ['empty-jade-compass-v1.webp', 'empty-ding.png', 'empty-carton.png']) {
+      expect(existsSync(resolve(tabDir, gone))).toBe(false)
+    }
   })
 
   it('引用 AppEmpty 的页面只用 description 传文案（写成 text= 是不会生效的）', () => {
